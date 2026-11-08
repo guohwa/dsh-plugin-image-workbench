@@ -141,6 +141,83 @@ async def _req(method: str, tgt: dict, path: str, body=None, timeout: float = 30
     return await c.request(method, url, json=body, headers=hdr, timeout=timeout)
 
 
+# ---------- 号池出口代理（受限网络必填，默认直连） ----------
+async def get_pool_proxy() -> dict:
+    """读取本机号池的出口代理配置。admin 接口，浏览器不碰 key。
+
+    号池 agent 需要访问 OpenAI / ChatGPT；不受限网络可留空直连，受限网络
+    由用户在这里填自己的出口代理。默认不写死任何地址，公网用户各填各的。
+    """
+    tgt = target()
+    if not tgt["local"]:
+        return {"ok": False, "reason": "non_local",
+                "msg": "当前接口不是本机号池，无法读取代理配置"}
+    try:
+        r = await _req("GET", tgt, "api/proxy/runtime", timeout=20)
+    except Exception as e:
+        return {"ok": False, "reason": "net", "msg": str(e)[:160]}
+    if r.status_code != 200:
+        return {"ok": False, "reason": "http", "status": r.status_code, "msg": _err_text(r)}
+    try:
+        j = r.json()
+    except Exception:
+        return {"ok": False, "reason": "json", "msg": "号池返回非 JSON"}
+    return {"ok": True, "runtime": j.get("runtime", {}), "status": j.get("status", {})}
+
+
+async def set_pool_proxy(payload: dict) -> dict:
+    """把用户填的出口代理写进本机号池（默认直连；受限网络填自己的代理）。
+
+    payload: {enabled, egress_mode, proxy_url, resource_proxy_url}
+    号池接口要求扁平字段，会自动合并进 proxy_runtime，不会覆盖 clearance 等其它键。
+    """
+    tgt = target()
+    if not tgt["local"]:
+        return {"ok": False, "reason": "non_local",
+                "msg": "当前接口不是本机号池，无法修改代理配置"}
+    body = {
+        "enabled": bool(payload.get("enabled", True)),
+        "egress_mode": str(payload.get("egress_mode") or "single_proxy").strip().lower() or "single_proxy",
+        "proxy_url": str(payload.get("proxy_url") or "").strip(),
+        "resource_proxy_url": str(payload.get("resource_proxy_url") or payload.get("proxy_url") or "").strip(),
+    }
+    try:
+        r = await _req("POST", tgt, "api/proxy/runtime", body=body, timeout=20)
+    except Exception as e:
+        return {"ok": False, "reason": "net", "msg": str(e)[:160]}
+    if r.status_code not in (200, 201, 204):
+        return {"ok": False, "reason": "http", "status": r.status_code, "msg": _err_text(r)}
+    try:
+        j = r.json()
+    except Exception:
+        j = {}
+    return {"ok": True, "runtime": (j.get("runtime") if isinstance(j, dict) else None),
+            "msg": "代理已保存，号池将使用新出口"}
+
+
+async def test_pool_proxy(url: str = "") -> dict:
+    """用号池自己已配置的代理测连通性（测的是已保存配置，不是临时填的）。
+
+    返回号池 test_proxy 的原始结果：{ok, status, latency_ms, error, ...}
+    """
+    tgt = target()
+    if not tgt["local"]:
+        return {"ok": False, "reason": "non_local",
+                "msg": "当前接口不是本机号池，无法测试代理"}
+    try:
+        r = await _req("POST", tgt, "api/proxy/test", body={"url": str(url or "")},
+                       timeout=30)
+    except Exception as e:
+        return {"ok": False, "reason": "net", "msg": str(e)[:160]}
+    if r.status_code != 200:
+        return {"ok": False, "reason": "http", "status": r.status_code, "msg": _err_text(r)}
+    try:
+        j = r.json()
+    except Exception:
+        return {"ok": False, "reason": "json", "msg": "号池返回非 JSON"}
+    return {"ok": True, **(j.get("result") if isinstance(j.get("result"), dict) else {})}
+
+
 # ---------- 用户 Key（对外提供 API 就靠它） ----------
 def _key_file(home: str | Path) -> Path:
     return Path(home) / "user-api-keys.json"

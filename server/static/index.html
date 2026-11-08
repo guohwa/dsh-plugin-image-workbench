@@ -1050,6 +1050,14 @@
           </div>
           <p class="phint" id="pHome"></p>
         </div>
+        <div class="psec"><b>号池出口代理</b><span class="tag" id="pProxyTag"></span></div>
+        <div class="ptip"><span>🌐</span><span>号池需要访问 OpenAI / ChatGPT。不受限网络可留空直连；受限网络（如部分国内环境）在此填你自己的出口代理，例如 <code>socks5://127.0.0.1:1080</code> 或 <code>http://127.0.0.1:7890</code>。<b>别照抄示例地址</b>，填你本机实际在跑的那个。</span></div>
+        <div class="prow" style="align-items:flex-start;gap:8px">
+          <input id="pProxy" type="text" placeholder="socks5://127.0.0.1:1080（受限网络填；留空=直连）" style="flex:1 1 auto;min-width:0;width:100%">
+          <button class="btn ghost mini" type="button" id="pProxyTest">测试</button>
+          <button class="btn primary mini" type="button" id="pProxySave">保存代理</button>
+        </div>
+        <div class="prow"><span class="pmeta" id="pProxyMsg"></span></div>
         <div class="psec"><b>导入账号</b></div>
         <div class="ptip"><span>💡</span><span>提示：可以上 <a href="https://priceai.cc/" target="_blank" rel="noopener noreferrer">https://priceai.cc/</a> 买几分钱的普号（一般 3-5 毛钱可以买 10 个）。购买后直接上传或粘贴在下方文本框，点击「导入并授权入池」即可。</span></div>
         <div class="pdrop" id="pDropZone" tabindex="0" title="支持 txt / json / csv / tsv / log，可多选，单个文件不超过 5 MB">
@@ -2664,6 +2672,7 @@ async function loadPoolPanel(quiet){
   try{
     const d = await (await fetch('/api/pool/panel', {cache: 'no-store'})).json();
     renderPool(d);
+    loadPoolProxy();
   }catch(e){
     $('#pDot').className = 'dot off';
     $('#pState').textContent = '读取失败';
@@ -2707,6 +2716,49 @@ document.querySelectorAll('[data-copy]').forEach(b => {
 });
 
 $('#pReload').onclick = ()=> loadPoolPanel();
+
+/* 号池出口代理：读 / 存 / 测，全部走后端透传，浏览器不碰 admin key */
+async function loadPoolProxy(){
+  try{
+    const d = await (await fetch('/api/pool/proxy', {cache: 'no-store'})).json();
+    if (!d.ok){
+      $('#pProxyTag').textContent = d.reason === 'non_local' ? '非本机号池' : '';
+      return;
+    }
+    const rt = d.runtime || {};
+    $('#pProxy').value = rt.proxy_url || '';
+    const en = rt.enabled ? '开' : '关';
+    $('#pProxyTag').textContent = rt.proxy_url ? ('代理 ' + en) : '直连';
+    $('#pProxyMsg').textContent = '';
+  }catch(e){ /* 面板照常，代理框留空即可 */ }
+}
+$('#pProxySave').onclick = async ()=>{
+  const btn = $('#pProxySave'); btn.disabled = true;
+  try{
+    const d = await poolPost('/api/pool/proxy', {
+      enabled: true, egress_mode: 'single_proxy',
+      proxy_url: $('#pProxy').value.trim(),
+    });
+    if (d.ok){ $('#pProxyMsg').textContent = '已保存，号池将用新出口'; toast('代理已保存', 'ok'); }
+    else { $('#pProxyMsg').textContent = d.msg || '保存失败'; toast('保存失败', 'err'); }
+  }catch(e){ $('#pProxyMsg').textContent = e.message; }
+  finally{ btn.disabled = false; await loadPoolPanel(true); }
+};
+$('#pProxyTest').onclick = async ()=>{
+  const btn = $('#pProxyTest'); btn.disabled = true;
+  $('#pProxyMsg').textContent = '测连通性中…';
+  try{
+    const d = await poolPost('/api/pool/proxy/test', {url: ''});
+    if (d.ok){
+      $('#pProxyMsg').textContent = '连通 OK（延迟 ' + (d.latency_ms || 0) + 'ms，HTTP ' + (d.status || '') + '）';
+      toast('代理连通', 'ok');
+    } else {
+      $('#pProxyMsg').textContent = '不通：' + (d.error || d.msg || ('HTTP ' + d.status));
+      toast('代理不通', 'err');
+    }
+  }catch(e){ $('#pProxyMsg').textContent = e.message; }
+  finally{ btn.disabled = false; }
+};
 
 /* 号池进程归本工作台管：启动 / 停止 / 重启都打自己的后端，不去别的插件 */
 async function poolService(path, label){

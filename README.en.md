@@ -121,6 +121,16 @@ Import accounts under "Endpoint & Pool -> Local Pool". Click the file selector o
 
 Entries containing only an email, password and 2FA secret without an `access_token` are not supported; this pool version does not perform login-to-token exchange. After import, configure an outbound proxy for the network environment and confirm that the panel reports the pool as online.
 
+### Outbound proxy
+
+The built-in pool must reach OpenAI / ChatGPT. Whether you need a proxy depends on your network:
+
+- **Unrestricted network**: leave it empty (default) for a direct connection, no setup required.
+- **Restricted network** (e.g. some regions where direct access times out): open "Endpoint & Pool -> Local Pool -> Pool outbound proxy", enter your own outbound proxy such as `socks5://127.0.0.1:1080` or `http://127.0.0.1:7890`, click "Save proxy", then use "Test" to verify connectivity. **No address is hardcoded** — enter the proxy actually running on your machine.
+- Environment variable: set `CHATGPT2API_PROXY_RUNTIME_PROXY_URL` (e.g. `socks5://127.0.0.1:1080`) before launch; the pool reads it during bootstrap.
+
+With a proxy configured, the pool reaches its upstream through that egress and generation succeeds. Without one on a restricted network, the panel shows online but generation fails with connection timeouts in the log.
+
 ### Option B: Use a third-party endpoint
 
 Under "Endpoint & Pool -> Generation Endpoint", enter the Base URL, API key and model name, save, and run the connectivity test. This path does not require the built-in account pool.
@@ -178,6 +188,7 @@ Principal backend routes are listed below. The complete definitions are in `serv
 | `/api/history`, `/api/drafts` | GET / POST / DELETE | Generation history and drafts |
 | `/api/monitor` | GET | Runtime monitoring data |
 | `/api/pool/panel` | GET | Account and key overview |
+| `/api/pool/proxy`, `/proxy/test` | GET / POST | Read, save and test the pool's outbound proxy (required on restricted networks; direct by default) |
 | `/api/pool/accounts/import`, `/delete`, `/status` | POST | Import, delete and enable/disable accounts |
 | `/api/pool/key/ensure` | POST | Reissue a user API key |
 | `/api/pool/service` | GET | Pool process status |

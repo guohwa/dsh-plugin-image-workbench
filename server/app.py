@@ -447,6 +447,25 @@ async def api_pool_key(body: dict | None = None):
     return JSONResponse(await pool_admin.ensure_key(force_new=bool(body.get("new"))))
 
 
+# ---------- 号池出口代理（受限网络必填，默认直连） ----------
+@app.get("/api/pool/proxy")
+async def api_pool_proxy():
+    """读取本机号池的出口代理配置（admin 透传，浏览器不碰 key）。"""
+    return JSONResponse(await pool_admin.get_pool_proxy())
+
+
+@app.post("/api/pool/proxy")
+async def api_pool_proxy_save(body: dict):
+    """保存本机号池的出口代理配置。默认直连；受限网络由用户填自己的代理。"""
+    return JSONResponse(await pool_admin.set_pool_proxy(body or {}))
+
+
+@app.post("/api/pool/proxy/test")
+async def api_pool_proxy_test(body: dict):
+    """用号池已保存的代理测连通性。"""
+    return JSONResponse(await pool_admin.test_pool_proxy(str((body or {}).get("url", ""))))
+
+
 # ---------- 工作台自带号池：进程生命周期 ----------
 # 这些路由只在「当前接口指向本机号池」时生效；第三方接口与写作台 38650 一律不动。
 # 启动 / 停止会等几十秒（首次还要复制运行时），全部丢到线程池，别堵住事件循环。

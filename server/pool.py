@@ -436,8 +436,8 @@ def raise_for_response(r: httpx.Response) -> None:
             "接口地址不存在（404）：确认 Base URL 是否以 /v1 结尾、路径是否为 OpenAI 兼容接口")
     if r.status_code == 429 or "no available image quota" in low or "quota" in low and "exceed" in low:
         raise RuntimeError("接口额度已用完或触发限流，等配额恢复或换一个接口 / 密钥")
-    if r.status_code == 502 or "1080" in msg or "proxy" in low or "failed to connect" in low:
-        raise RuntimeError("接口不可达：确认地址、网络或代理（若走本地号池，检查本机 SOCKS5 127.0.0.1:1080）")
+    if r.status_code == 502 or "proxy" in low or "failed to connect" in low or "timed out" in low or "socks" in low:
+        raise RuntimeError("接口不可达：确认 Base URL、本机网络或出口代理（号池需能访问 OpenAI / ChatGPT）")
     if "unsupported image model" in low or "model_not_found" in low or "does not exist" in low:
         raise RuntimeError(f"接口不支持该出图模型：{msg[:120]}，请在「接口设置」里换一个模型名")
     if "content_policy_violation" in low or "text reply" in low:

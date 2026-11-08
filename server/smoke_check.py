@@ -107,6 +107,7 @@ routes = [
     ('/api/tasks', 200), ('/api/drafts', 200), ('/api/pool/check', 200),
     ('/api/pool/fails', 200), ('/api/pool/panel', 200),
     ('/api/pool/service', 200),
+    ('/api/pool/proxy', 200),
     ('/api/config', 200),
     ('/img/individual/FA/FA-001.webp', 200),
 ]
