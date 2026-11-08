@@ -11,6 +11,7 @@ output/
 out/
 
 # 生成历史 / 草稿 / 任务数据（绝不入库）
+workbench/
 history.json
 history.db
 drafts.json
