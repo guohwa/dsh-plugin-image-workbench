@@ -2452,7 +2452,7 @@ async function refreshPool(){
                            : Number(pool.active || 0);
       const total = hasAcc ? d.accounts.filter(a=>a.env_id).length
                            : Number(pool.total || 0);
-      $('#poolText').textContent = `号池 ${ready} 可用`
+      $('#poolText').textContent = `号池 ${ready}/${total} 可用`
         + (run ? ` · 并行 ${run}/${d.workers || 1}` : '')
         + ((d.queued || 0) ? ` · 排队 ${d.queued}` : '');
       $('#poolDot').className = 'dot' + (ready ? '' : ' off');
@@ -3756,9 +3756,11 @@ function renderMonitor(d){
   if (_ms2) _ms2.disabled = !(run.length || d.queued);
   // 明细拉不到时（换接口后 admin-key 对不上）用号池自报的可用数，别显示成 0/0
   const poolS = d.pool || {};
-  const kReady = accs.length ? d.ready : Number(poolS.active || 0);
+  // 与右上角用完全相同的算式，保证两处数字完全一致（都是 32/35）
+  const kReady = accs.length ? accs.filter(a=>a.status==='ready' && a.env_id).length : Number(poolS.active || 0);
+  const kTotal = accs.length ? accs.filter(a=>a.env_id).length : Number(poolS.total || 0);
   $('#monSum').innerHTML =
-      kpi('账号可用', `${kReady}`, kReady ? 'ok' : 'err')
+      kpi('账号可用', `${kReady}/${kTotal}`, kReady ? 'ok' : 'err')
     + kpi('并行任务', `${run.length}/${d.workers || 1}`, run.length ? 'warn' : '')
     + kpi('排队', d.queued || 0, d.queued ? 'warn' : '')
     + kpi('今日成功', hist.today_done || 0, 'ok')
