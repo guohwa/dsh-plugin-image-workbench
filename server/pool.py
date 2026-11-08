@@ -510,6 +510,8 @@ class PoolManager:
         self.queue: asyncio.Queue[str] = asyncio.Queue()
         self.running: dict[str, dict] = {}
         self._workers: list[asyncio.Task] = []
+        # 正在执行的单个任务：手动停止时只取消它，不杀 worker，队列才能继续接新活
+        self._job_tasks: dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
         self._check_task: asyncio.Task | None = None
         self._acct_task: asyncio.Task | None = None
@@ -546,7 +548,8 @@ class PoolManager:
     def _persist(self) -> None:
         """把「还没结束」的任务写进磁盘。写完原子替换，进程被杀也不会写出半个文件。"""
         try:
-            live = [j for j in self.jobs.values() if j.get("status") not in ("done", "error")]
+            live = [j for j in self.jobs.values()
+                    if j.get("status") not in ("done", "error", "cancelled")]
             STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
             tmp = STATE_FILE.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(live, ensure_ascii=False), encoding="utf-8")
@@ -1021,6 +1024,50 @@ class PoolManager:
         self._persist()
         return job["id"]
 
+    async def cancel_all(self, reason: str = "已手动停止") -> dict:
+        '''停止当前生图任务：清空排队、中断在途请求、阻止换号重试。
+
+        已出图和已写入历史的任务不受影响；被停止的任务不写历史、不落盘，
+        重启后也不会被 _restore 捞回。
+        '''
+        stopped: list[str] = []
+        dropped = 0
+        while True:
+            try:
+                jid = self.queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            job = self.jobs.get(jid)
+            if job and job.get("status") in ("queued", "running"):
+                job.update({"status": "cancelled", "error": reason,
+                            "will_retry": 0, "finished": int(time.time())})
+                stopped.append(jid)
+                dropped += 1
+            self.queue.task_done()
+        # 先改状态再 cancel：_run_job 的 finally 才不会写历史或安排重试
+        running = []
+        for jid, task in list(self._job_tasks.items()):
+            job = self.jobs.get(jid)
+            if job:
+                job.update({"status": "cancelled", "error": reason, "will_retry": 0})
+            running.append(jid)
+            stopped.append(jid)
+            if not task.done():
+                task.cancel()
+        # 换号重试等待中的任务没有执行体，也要一并停掉
+        for jid, job in self.jobs.items():
+            if job.get("status") in ("queued", "running") and jid not in stopped:
+                job.update({"status": "cancelled", "error": reason,
+                            "will_retry": 0, "finished": int(time.time())})
+                stopped.append(jid)
+        self.running.clear()
+        self._job_tasks.clear()
+        self._persist()
+        log(f"手动停止生图：中断执行中 {len(running)} 个 / 丢弃排队 {dropped} 个")
+        return {"ok": True, "stopped": len(stopped), "running": len(running),
+                "queued": dropped,
+                "message": f"已停止 {len(stopped)} 个任务（执行中 {len(running)}、排队 {dropped}）"}
+
     def _finish(self, job: dict) -> None:
         job.setdefault("finished", int(time.time()))
         if self.on_finish:
@@ -1035,10 +1082,18 @@ class PoolManager:
             job_id = await self.queue.get()
             try:
                 job = self.jobs.get(job_id)
-                if not job:
+                if not job or job.get("status") == "cancelled":
                     continue
                 acc = await self._claim()
-                await self._run_job(job, acc, wid)
+                task = asyncio.create_task(self._run_job(job, acc, wid))
+                self._job_tasks[job_id] = task
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    # 单个任务被手动停止：worker 继续取下一条，不能让整个 worker 死掉
+                    log(f"job {job_id}: 已手动停止")
+                finally:
+                    self._job_tasks.pop(job_id, None)
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # worker 绝不能死
@@ -1064,7 +1119,10 @@ class PoolManager:
         t_call = time.time()
         try:
             try:
-                job["result"] = await self._execute(acc, job)
+                result = await self._execute(acc, job)
+                if job.get("status") == "cancelled":
+                    return
+                job["result"] = result
                 job["status"] = "done"
                 acc["uses"] += 1
                 acc["fails"] = 0
@@ -1082,6 +1140,8 @@ class PoolManager:
                     + (f" by {mask_email(email)}" if email else "")
                     + (f" after {job['auto_retry']} retry" if job.get("auto_retry") else ""))
             except Exception as e:
+                if job.get("status") == "cancelled":
+                    return
                 err = mask(f"{type(e).__name__}: {e}")[:300]
                 acc["fails"] += 1
                 acc["last_error_at"] = time.time()
@@ -1111,6 +1171,8 @@ class PoolManager:
             self._persist()
 
     def _schedule_retry(self, job: dict, err: str) -> None:
+        if job.get("status") == "cancelled":
+            return
         n = int(job.get("auto_retry") or 0)
         if n >= RETRY_MAX:
             job["status"] = "error"

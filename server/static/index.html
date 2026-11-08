@@ -49,6 +49,8 @@
   .btn.primary{background:linear-gradient(135deg,var(--primary),var(--pink));color:#fff;
     box-shadow:0 6px 16px rgba(106,90,224,.28)}
   .btn.ghost{background:#fff;border:1px solid var(--line);color:var(--ink-2)}
+  .btn.stop{background:#fff;border:1px solid #f2c6c6;color:var(--err)}
+  .btn.stop:hover:not(:disabled){background:#fff2f2}
   .btn:disabled{opacity:.55;cursor:not-allowed}
   .btn.full{width:100%;margin-top:10px}
   .section-title{display:flex;align-items:center;gap:8px;margin:12px 0 6px;font-size:11px;color:var(--ink-2)}
@@ -590,6 +592,7 @@
       title="清掉选题、标题、正文、分镜清单、补充要求和参考图；图型 / 风格 / 主题色变成不限。画幅、情绪、留白、出图模式保留">一键清空</button>
     <button class="btn" id="composeAll" type="button">生成提示词</button>
     <button class="btn primary" id="genImage" type="button">批量出图</button>
+    <button class="btn stop" id="stopGen" type="button" title="停止当前正在出图与排队中的任务" disabled>停止生图</button>
     <button class="btn ghost" id="randomCombo" type="button">随机组合</button>
     <span class="ha-sep"></span>
     <button class="btn ghost mini" id="openHistory" type="button">历史记录</button>
@@ -928,6 +931,7 @@
     <div class="dlg-head">
       <h3>运行监控 <span id="monUpdated"></span></h3>
       <span class="spacer"></span>
+      <button class="btn stop mini" id="monStop" type="button" title="停止当前生图与排队中的任务" disabled>停止当前任务</button>
       <button class="btn ghost mini" id="monRefresh" type="button">刷新绑定</button>
       <button class="btn ghost mini" id="monReset" type="button">重置状态</button>
       <button class="btn mini" id="monCheck" type="button">检测全部账号</button>
@@ -2101,6 +2105,7 @@ function openViewer(){
 
 /* 同一时间只允许一个批次在等图：手动点「批量出图」和刷新后的自动续接互斥 */
 let _batchRunning = false;
+let _stopRequested = false;   // 点「停止生图」后置位，批量提交与轮询循环见到就退出
 
 /* ---------- 空手点「批量出图」：先随机给一套示例，别让人猜图是按什么出的 ----------
    以前这里什么都不问，直接按当前组合拼一条没有标题没有正文的提示词出图，
@@ -2191,6 +2196,7 @@ function fillDemoSample(){
 async function runImage(){
   if (!redoGuard()) return;
   if (_batchRunning){ toast('上一批还在出图，等它跑完再点'); return; }
+  _stopRequested = false;
   // 什么都没有就直接点：先补一套随机示例，否则出的图没有依据
   const demoIdea = isBlankStart() ? fillDemoSample() : null;
   let items = state.items.map(it=>({...it}));
@@ -2209,6 +2215,8 @@ async function runImage(){
   const btn = $('#genImage');
   btn.disabled = true;
   _batchRunning = true;
+  const _sg = $('#stopGen'); if (_sg) _sg.disabled = false;
+  const _ms = $('#monStop'); if (_ms) _ms.disabled = false;
   state.results = []; state.idx = 0;
   // 一次批量出图 = 一个任务，历史里按它折叠成一组
   const taskId = 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -2240,6 +2248,7 @@ async function runImage(){
     const redo = state.redo;
     let seq = 0;
     for (const it of items){
+      if (_stopRequested) throw new Error('已停止生图');
       const topic = (it.title || it.body || '配图').slice(0, 60);
       const prompt = await redoPrompt(it, redo, it.prompt);
       const r = await fetch('/api/generate', {method:'POST', headers:{'Content-Type':'application/json'},
@@ -2258,7 +2267,8 @@ async function runImage(){
     await pollBatch(ids, topics, statusEl);
     if (state.results.length) clearRedo(true);
   }catch(e){
-    statusEl.className = 'status err'; statusEl.textContent = e.message;
+    statusEl.className = 'status err';
+    statusEl.textContent = _stopRequested ? '已停止生图' : e.message;
   }finally{
     btn.disabled = false;
     _batchRunning = false;
@@ -2277,6 +2287,11 @@ async function pollBatch(ids, topics, statusEl){
   // 失败会自动重试（20s + 60s 两档），预算按「基础 6 分钟 + 重试 5 分钟」给
   const maxTicks = 300 * ids.length;
   for (let tick=0; tick<maxTicks && pending.size; tick++){
+    if (_stopRequested){
+      statusEl.className = 'status err'; statusEl.textContent = '已停止生图';
+      clearBatch();
+      return;
+    }
     await new Promise(r=>setTimeout(r, 2000));
     let runningAccount = '';
     for (const i of [...pending]){
@@ -2298,6 +2313,10 @@ async function pollBatch(ids, topics, statusEl){
       }
       gone.delete(i);
       if (d.status === 'running'){ runningAccount = d.account || ''; continue; }
+      if (d.status === 'cancelled'){
+        pending.delete(i); failed++; lastErr = '已手动停止出图';
+        continue;
+      }
       if (d.status !== 'done' && d.status !== 'error'){
         // 失败后后端会换号重试（15s / 40s / 90s 三档），这期间状态是 queued，
         // 不能当失败处理，否则任务就断在这一张上了
@@ -2386,6 +2405,7 @@ async function resumeBatch(){
   // 超过 2 小时的批次不自动接：图早进历史了，硬接只会白等
   if (Date.now() - (b.t || 0) > 2 * 3600 * 1000){ clearBatch(); return; }
   if (_batchRunning) return;
+  _stopRequested = false;
   _batchRunning = true;
   const statusEl = $('#imageStatus');
   const btn = $('#genImage');
@@ -2408,6 +2428,8 @@ async function refreshPool(){
     const d = await (await fetch('/api/pool')).json();
     const mode = (d.pool && d.pool.mode) || (d.accounts.some(a=>a.env_id) ? 'pool' : 'single');
     const run = (d.running || []).length;
+    const _sg2 = $('#stopGen');
+    if (_sg2) _sg2.disabled = !(run || d.queued || _batchRunning);
     if (mode === 'single'){
       const online = !!(d.pool && d.pool.online);
       const name = (d.pool && d.pool.name) || '接口';
@@ -3627,6 +3649,30 @@ async function openHistory(){
   await loadTasks(1);
 }
 
+/* ---------- 停止当前生图任务 ---------- */
+async function stopAllJobs(){
+  if (!confirm('确定停止当前生图任务？\n正在出图的请求会被中断，已完成的图片不受影响。')) return;
+  _stopRequested = true;                 // 批量提交 / 轮询循环见到立即退出
+  const sg = $('#stopGen'), ms = $('#monStop');
+  if (sg) sg.disabled = true;
+  if (ms) ms.disabled = true;
+  try{
+    const r = await fetch('/api/generate/stop', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'
+    });
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.message || ('HTTP ' + r.status));
+    clearBatch();                        // 清断点，刷新页面不会自动接上被停掉的批次
+    const st = $('#imageStatus');
+    if (st){ st.className = 'status err'; st.textContent = d.message || '已停止生图'; }
+    toast(d.message || '已停止当前生图任务', {type:'info', title:'已停止'});
+    refreshPool();
+    if ($('#monitorDlg').open) refreshMonitor();
+  }catch(e){
+    toast('停止失败：' + e.message, {type:'err', title:'停止生图'});
+  }
+}
+
 /* ================= 运行监控 ================= */
 const ST_LABEL = {ready:'可用', busy:'出图中', limited:'限流', unhealthy:'已下线', unbound:'未绑定', pending:'待验证', error:'异常'};
 let monTimer = null;
@@ -3651,6 +3697,8 @@ function renderMonitor(d){
   const run = d.running || [];
   const hist = d.history || {};
   state._monActive = !!d.running_now;     // 有图在跑才 3 秒一刷，空闲 12 秒
+  const _ms2 = $('#monStop');
+  if (_ms2) _ms2.disabled = !(run.length || d.queued);
   // 明细拉不到时（换接口后 admin-key 对不上）用号池自报的可用数，别显示成 0/0
   const poolS = d.pool || {};
   const kReady = accs.length ? d.ready : Number(poolS.active || 0);
@@ -4278,6 +4326,8 @@ $('#draftsClose').onclick = ()=> $('#draftsDlg').close();
 $('#draftNew').onclick = ()=>{ $('#draftsDlg').close(); saveDraft(true); };
 
 $('#openMonitor').onclick = openMonitor;
+$('#stopGen').onclick = stopAllJobs;
+$('#monStop').onclick = stopAllJobs;
 $('#monClose').onclick = closeMonitor;
 $('#monitorDlg').addEventListener('close', ()=>{ clearTimeout(monTimer); monTimer = null; });
 $('#monRefresh').onclick = async ()=>{

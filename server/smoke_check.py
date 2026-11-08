@@ -51,6 +51,19 @@ for mod, names in [
 ok('PoolManager._execute', callable(getattr(pool.PoolManager, '_execute', None)))
 ok('PoolManager.snapshot', callable(getattr(pool.PoolManager, 'snapshot', None)))
 ok('PoolManager.check_all', callable(getattr(pool.PoolManager, 'check_all', None)))
+ok('PoolManager.cancel_all', callable(getattr(pool.PoolManager, 'cancel_all', None)))
+ok('app.api_generate_stop', hasattr(app, 'api_generate_stop'))
+ok('POST /api/generate/stop 已注册',
+   any(getattr(r, 'path', '') == '/api/generate/stop'
+       and 'POST' in getattr(r, 'methods', set()) for r in app.app.routes))
+_src_pool = (ROOT / 'pool.py').read_text(encoding='utf-8')
+_src_html = (ROOT / 'static' / 'index.html').read_text(encoding='utf-8')
+ok('已停止状态不落盘', 'not in ("done", "error", "cancelled")' in _src_pool)
+ok('取消后不再换号重试', 'if job.get("status") == "cancelled":' in _src_pool)
+ok('前端两个停止按钮齐全', 'id="stopGen"' in _src_html and 'id="monStop"' in _src_html)
+ok('前端停止链路完整',
+   all(x in _src_html for x in ('async function stopAllJobs', '/api/generate/stop',
+                                'clearBatch();', "d.status === 'cancelled'")))
 ok('access 无 fcntl 依赖', not hasattr(access, 'fcntl'))
 ok('工作台目录可用', (ROOT / 'app.py').is_file())
 ok('AUTH 为空(本地全放行)', app.AUTH is None)

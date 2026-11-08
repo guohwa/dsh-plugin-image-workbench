@@ -710,6 +710,12 @@ async def api_generate(req: GenRequest):
     return {"job_id": job["id"], "status": job["status"]}
 
 
+@app.post("/api/generate/stop")
+async def api_generate_stop():
+    '''停止当前生图任务：中断在途请求、清空排队、阻止换号重试。'''
+    return JSONResponse(await POOL.cancel_all())
+
+
 @app.post("/api/zip")
 async def api_zip(req: ZipRequest):
     """把一批 job 的图片按展示顺序打成 zip；重启后从历史回退，仍是原图。"""
