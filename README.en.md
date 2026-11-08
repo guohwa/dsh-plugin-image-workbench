@@ -72,20 +72,25 @@ The account-pool process lifecycle is managed by `server/pool_service.py`; the D
 
 ## Installation
 
+### Install from DSH (recommended)
+
+Open "Plugins -> Add Plugin", enter the repository URL, choose the source matching your network, click Install, then restart DSH:
+
+```text
+https://github.com/guohwa/dsh-plugin-image-workbench
+```
+
+### Install from source
+
+For development or migration from an older version:
+
 ```bash
 git clone https://github.com/guohwa/dsh-plugin-image-workbench.git
 cd dsh-plugin-image-workbench
 node install.mjs
 ```
 
-The installer performs the following operations:
-
-- backs up and updates `dependencies` and `dsh.profile.bundles` in `~/.dsh/profiles/desktop/package.json`;
-- syncs `pnpm-lock.yaml` and creates a directory junction to the plugin inside the profile's `node_modules`;
-- syncs `server/` as the runtime backend code copy;
-- removes the registration entry of the legacy standalone account-pool plugin from the load list, modifying configuration only and preserving its data directory.
-
-The installer is idempotent; repeated runs do not duplicate registration entries. DSH bundles are loaded at application startup, so DSH must be restarted after installation for the sidebar entry to appear. The profile references the plugin through a directory junction; rerun the installer after relocating the plugin directory.
+`install.mjs` registers the profile, syncs backend code and removes the legacy standalone pool plugin from the load list. It is idempotent; restart DSH afterwards.
 
 Open "Bluxe手绘工坊 · 生图工作台" from the sidebar, or navigate directly to `http://127.0.0.1:8092/`.
 

@@ -72,20 +72,25 @@ flowchart LR
 
 ## 安装
 
+### 在 DSH 中安装（推荐）
+
+打开「插件 → 添加插件」，填入仓库地址，来源按网络环境选择，点击安装后重启 DSH：
+
+```text
+https://github.com/guohwa/dsh-plugin-image-workbench
+```
+
+### 从源码安装
+
+适用于开发环境或从旧版本迁移：
+
 ```bash
 git clone https://github.com/guohwa/dsh-plugin-image-workbench.git
 cd dsh-plugin-image-workbench
 node install.mjs
 ```
 
-安装器执行以下操作：
-
-- 备份并更新 `~/.dsh/profiles/desktop/package.json` 中的 `dependencies` 与 `dsh.profile.bundles`；
-- 同步 `pnpm-lock.yaml`，并在 profile 的 `node_modules` 下建立指向插件目录的目录联接；
-- 将 `server/` 同步为运行时后端代码副本；
-- 清除早期版本独立账号池插件在加载清单中的注册项，仅修改配置，不删除其数据目录。
-
-安装器具备幂等性，重复执行不会重复写入注册项。DSH 的 bundle 在应用启动时加载，安装完成后需重启 DSH 使侧栏入口生效。插件目录通过目录联接被 profile 引用，变更插件路径后需重新执行安装器。
+`install.mjs` 注册 profile、同步后端代码并清理旧版独立号池插件的加载项，可重复执行；完成后重启 DSH。
 
 侧栏入口为「Bluxe手绘工坊 · 生图工作台」，亦可直接访问 `http://127.0.0.1:8092/`。
 
