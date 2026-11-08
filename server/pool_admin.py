@@ -493,14 +493,28 @@ async def _mark_zero_quota(tgt: dict, submitted: list[str], client) -> int:
 
 
 # ---------- 导入 ----------
-# JSON 导入时要原样带过去的账号资料。web 类型的号没有 refresh_token，
+# 账号资料要原样带过去。web 类型的号没有 OpenAI refresh_token，
 # access_token 过期后靠 password 重新登录；以前只把 token 抠出来提交，
 # 号池里就会多一批「密码为空」的号，几天后 token 一过期就全变死号。
+#
+# 特别小心 mail_refresh_token：市面上「首登料」的发料格式是
+#   邮箱----邮箱密码----邮箱Client ID----邮箱Refresh Token----AT
+# 第 4 段是微软 MSA 的邮箱刷新令牌（M.C5xx...0.U.MsaArtifacts...），给接码用的，
+# 不是 OpenAI 的 OAuth refresh_token。号池的 refresh_token 只会被 POST 到
+# auth.openai.com/oauth/token，把邮箱令牌填进去必然刷新失败，还会触发
+# 自动密码重登和 keepalive 定时刷新。所以邮箱料一律用 mail_* 独立字段留档，
+# 号池会原样保存未知字段（account_service._normalize_account 是 dict(item)），
+# 重启 / 导出时资料都还在，同时不会被当成 OpenAI 令牌使用。
 IMPORT_FIELDS = (
     "access_token", "accessToken", "email", "password", "totp_secret",
     "source_type", "type", "user_id", "proxy", "default_model_slug",
     "refresh_token", "id_token", "session_token",
+    "mail_client_id", "mail_refresh_token",
 )
+# 微软 MSA 邮箱刷新令牌，形如 M.C535_SN1.0.U.MsaArtifacts.xxxxx
+MAIL_TOKEN_RE = re.compile(r"^M\.[A-Za-z0-9_-]+\.[0-9]+\.U\.", re.I)
+# 发料文件末尾常带一行中文说明（含「发货格式」），不能算成没认出来的账号
+MATERIAL_NOTE_RE = re.compile(r"发货格式|质保|售后|不会用|适用于", re.I)
 
 
 def _clean_import_item(it: dict) -> dict | None:
@@ -513,16 +527,44 @@ def _clean_import_item(it: dict) -> dict | None:
         v = it.get(k)
         if v is None or v == "" or k in ("access_token", "accessToken"):
             continue
+        # 有人把邮箱 Refresh Token 填到 refresh_token 字段时，改归档别误伤号池
+        if k == "refresh_token" and isinstance(v, str) and MAIL_TOKEN_RE.match(v.strip()):
+            out.setdefault("mail_refresh_token", v)
+            continue
         out[k] = v if isinstance(v, (str, int, float, bool)) else str(v)
+    return out
+
+
+def _parse_dash_row(line: str) -> dict | None:
+    """解析发料行：邮箱----密码----[邮箱Client ID----邮箱Refresh Token]----AT。
+
+    先整行锁定 JWT，再切前面的资料：JWT 签名本身可能含连续横线，按
+    分隔符直接 split 整行会把一个 token 劈成两半（真实发料里就有一行这样），
+    那条账号就会退化成「只有 token、没有邮箱密码」。
+    只认第一段是邮箱的行；中间资料按位置留档，段数不明时不硬猜字段语义。
+    """
+    m = TOKEN_RE.search(line)
+    if m is None:
+        return None
+    head = line[:m.start()].strip()
+    parts = [p.strip() for p in re.split(r"-{4,}", head) if p.strip()]
+    if len(parts) < 2 or "@" not in parts[0]:
+        return None
+    out: dict = {"access_token": m.group(0), "email": parts[0],
+                 "password": parts[1], "source_type": "web"}
+    if len(parts) == 4:
+        out["mail_client_id"] = parts[2]
+        out["mail_refresh_token"] = parts[3]
     return out
 
 
 def parse_import(text: str) -> tuple[list[str], list[dict], int]:
     """解析粘贴内容，返回 (裸 token 列表, 完整账号对象, 没认出来的行数)。
 
-    支持三种常见格式（txt / json / csv 上传后走同一条解析）：
+    支持四种常见格式（txt / json / csv 上传后走同一条解析）：
     - 每行一个 token（最常见）
     - 号池 / 第三方工具导出的 JSON：数组、{accounts:[...]}、或单个对象
+    - 五段式首登料（邮箱----密码----Client ID----邮箱RT----AT）：整条资料一起入池
     - 老式导出行（邮箱,密码,token / 邮箱----密码----token）：按行扫 JWT
     """
     # Windows 记事本存的 UTF-8 txt 常带 BOM，不清掉会把整段 JSON 判成纯文本
@@ -567,16 +609,24 @@ def parse_import(text: str) -> tuple[list[str], list[dict], int]:
         line = line.strip()
         if not line:
             continue
+        one = _parse_dash_row(line)
+        if one is not None:
+            items.append(one)
+            continue
         found = TOKEN_RE.findall(line)
         if found:
             tokens.extend(found)
+        elif MATERIAL_NOTE_RE.search(line) and not TOKEN_RE.search(line):
+            continue      # 发料文件末尾的中文说明 / 格式示例行
         elif re.match(r"^\s*(email|user|account|access_token|token)\b", line, re.I) \
                 and re.search(r"[,;\t|]", line):
             continue      # CSV / TSV 的表头行，不算没认出的账号
         else:
             bad += 1
-    tokens = list(dict.fromkeys(tokens))
-    if bad and not tokens:
+    items = list({d["access_token"]: d for d in items}.values())
+    have = {d["access_token"] for d in items}
+    tokens = [t for t in dict.fromkeys(tokens) if t not in have]
+    if bad and not tokens and not items:
         bad = max(1, bad)
     return tokens, items, bad
 
@@ -616,7 +666,9 @@ async def import_accounts(text: str) -> dict:
         tokens = tokens[:max(0, MAX_IMPORT - len(items))]
         note = f"一次最多导 {MAX_IMPORT} 个，已取前 {len(items) + len(tokens)} 个"
     # 号池的 POST /api/accounts 同时收 accounts（完整对象）和 tokens（裸 token）。
-    # JSON 粘贴走前者，密码 / 2FA / 来源类型都能留下；裸 token 只能走后者。
+    # 五段式发料 / JSON 粘贴走前者，邮箱密码、2FA、来源类型和邮箱料都能留下；
+    # 裸 token 只能走后者。号池对已存在的账号是「合并更新」，重导同一份文件
+    # 还能把以前漏掉的密码补回去，不必删库重来。
     body: dict = {}
     if items:
         body["accounts"] = items
@@ -634,7 +686,7 @@ async def import_accounts(text: str) -> dict:
         j = {}
     _remember(all_tokens)
     if items:
-        note = (note + " · " if note else "") + f"{len(items)} 个账号连密码和来源一起导入"
+        note = (note + " · " if note else "") + f"{len(items)} 个账号连邮箱密码和来源一起导入"
     added = int(j.get("added") or 0)
     skipped = int(j.get("skipped") or 0)
     refreshed = int(j.get("refreshed") or 0)

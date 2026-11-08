@@ -115,6 +115,7 @@ Import accounts under "Endpoint & Pool -> Local Pool". Click the file selector o
 | Format | Details |
 | --- | --- |
 | JSON export | `{"accounts":[...]}`, an array, or a single object. Retains email, password and related account material for automatic re-login after token expiry; recommended |
+| Five-field bulk format | `email----password----client_id----mail_refresh_token----access_token`. The mailbox client ID and mailbox refresh token are stored with the account as reference data and are never used as the pool's OpenAI `refresh_token` |
 | Plain-text tokens | One `access_token` per line (`eyJ`-prefixed strings) |
 | Legacy export lines | `email,password,token` or `email----password----token` |
 

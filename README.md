@@ -115,6 +115,7 @@ node install.mjs
 | 格式 | 说明 |
 | --- | --- |
 | JSON 导出 | `{"accounts":[...]}`、数组或单个对象。保留邮箱、密码等账号资料，便于 token 失效后重新登录，推荐使用该格式 |
+| 五段式发料 | `email----password----client_id----mail_refresh_token----access_token`。邮箱 Client ID 与邮箱刷新令牌随账号留档，不会被当作号池的 `refresh_token` 使用 |
 | 纯文本 token | 每行一个 `access_token`（`eyJ` 开头的长字符串） |
 | 传统导出行 | `email,password,token` 或 `email----password----token` |
 

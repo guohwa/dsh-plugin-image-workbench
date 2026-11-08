@@ -36,7 +36,8 @@ for mod, names in [
             'size_for_ratio', 'pool_home', 'pool_admin_key']),
     # 号池面板：导入账号 / 删号 / 签发 Key 全靠这几个入口，缺一个面板就是死的
     (pool_admin, ['panel', 'import_accounts', 'delete_accounts', 'set_status',
-                  'ensure_key', 'parse_tokens', 'target']),
+                  'ensure_key', 'parse_tokens', 'parse_import', '_parse_dash_row',
+                  'IMPORT_FIELDS', 'target']),
     # 工作台自带号池：进程生命周期全在这里，不再有独立号池插件
     (pool_service, ['status', 'start', 'stop', 'restart', 'bootstrap',
                     'ensure_admin_key', 'set_auto_start', 'start_watchdog', 'view']),
@@ -207,6 +208,47 @@ try:
     _ct, _, _cb = pool_admin.parse_import(_csv)
     ok('导入解析：CSV 表头跳过、CRLF 兼容',
        _ct == [_tk, _tk2] and _cb == 0, f'{len(_ct)} 条 / bad={_cb}')
+    # 五段式「首登料」：邮箱----密码----邮箱Client ID----邮箱Refresh Token----AT
+    # 第 4 段是微软 MSA 邮箱令牌，绝不能被当成号池的 refresh_token 提交。
+    _mail_rt = ('M.C535_SN1.0.U.MsaArtifacts.-CgyvaETosvszterVMMhyTAqQdRDx0FMPDuNxRjzP'
+                '!mpzzeyPlYSeqOkMN9W0m9aWwvjO5DZtLl6jb3dKlIP7PHuCRV7$')
+    _cid = '9e5f94bc-e8a4-4e73-b8be-63364c364c29d753'
+    _five = 'a@b.com----pw1----' + _cid + '----' + _mail_rt + '----' + _tk
+    _note = '不会用的别买，发货格式：邮箱----邮箱密码----邮箱Client ID----邮箱Refresh Token----AT'
+    _t5, _i5, _b5 = pool_admin.parse_import(_five + '\n' + _note)
+    _one = _i5[0] if _i5 else {}
+    ok('导入解析：五段式发料保留完整资料',
+       _t5 == [] and len(_i5) == 1 and _b5 == 0
+       and _one.get('email') == 'a@b.com' and _one.get('password') == 'pw1'
+       and _one.get('mail_client_id') == _cid
+       and _one.get('mail_refresh_token') == _mail_rt
+       and _one.get('access_token') == _tk and _one.get('source_type') == 'web',
+       f'items={len(_i5)} bad={_b5} keys={sorted(_one)}')
+    ok('导入解析：邮箱 Refresh Token 不写成号池 refresh_token',
+       'refresh_token' not in _one and _one.get('mail_refresh_token') == _mail_rt)
+    ok('导入解析：发料说明行不算坏行', _b5 == 0, f'bad={_b5}')
+    _t3, _i3, _ = pool_admin.parse_import('c@d.com----pw2----' + _tk2)
+    ok('导入解析：三段式发料也带邮箱密码',
+       _t3 == [] and len(_i3) == 1 and _i3[0].get('password') == 'pw2'
+       and _i3[0].get('access_token') == _tk2)
+    _guarded = pool_admin.parse_import(
+        json.dumps([{'access_token': _tk, 'refresh_token': _mail_rt}]))[1][0]
+    ok('导入解析：误填到 refresh_token 的邮箱料自动归档',
+       'refresh_token' not in _guarded and _guarded.get('mail_refresh_token') == _mail_rt)
+    # 真实发料里出现过 JWT 签名含连续横线的行，按分隔符硬切会把资料劈丢
+    _tk_dash = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ6In0.abc----def12345'
+    _dash_row = 'e@f.com----pw3----' + _cid + '----' + _mail_rt + '----' + _tk_dash
+    _td, _idd, _bd = pool_admin.parse_import(_dash_row)
+    ok('导入解析：JWT 内含连续横线也不丢资料',
+       _td == [] and len(_idd) == 1 and _bd == 0
+       and _idd[0].get('access_token') == _tk_dash
+       and _idd[0].get('password') == 'pw3'
+       and _idd[0].get('mail_refresh_token') == _mail_rt,
+       f'items={len(_idd)} bad={_bd}')
+    _mt, _mi, _mb = pool_admin.parse_import(_five + '\n' + _tk2)
+    ok('导入解析：五段式与裸 token 混贴不重复',
+       _mt == [_tk2] and len(_mi) == 1 and _mb == 0,
+       f'raw={len(_mt)} obj={len(_mi)} bad={_mb}')
 except Exception as e:
     ok('导入解析可用', False, str(e)[:120])
 
