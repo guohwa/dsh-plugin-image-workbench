@@ -224,6 +224,121 @@ def health(port: int) -> dict:
         return {"online": False, "message": "号池端口连不上：" + pool_mod.mask(e)[:80]}
 
 
+# ---------- 出口代理零配置自动探测 ----------
+# 常见本机出口代理候选（端口 + 首选协议），按出现频率排序。
+_LOCAL_PROXY_SPECS = [
+    ("socks5", 1080),   # Shadowsocks / 本机 SOCKS5 最常见
+    ("http",   7890),   # Clash HTTP
+    ("http",   7891),   # Clash HTTP 备选
+    ("http",   8118),   # privoxy
+    ("socks5", 1087),   # 部分 SS 客户端
+    ("http",   1087),
+]
+
+
+def _env_egress_proxy() -> str:
+    """用户环境显式设了出口代理就直接用，优先级最高。"""
+    for k in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy",
+              "HTTP_PROXY", "http_proxy"):
+        v = (os.environ.get(k) or "").strip()
+        if v:
+            return v
+    return ""
+
+
+def _local_proxy_candidates() -> list[str]:
+    """本机常见代理端口在监听的，按首选协议生成候选 URL。"""
+    out = []
+    for scheme, port in _LOCAL_PROXY_SPECS:
+        if probe(port, 0.4):
+            out.append(f"{scheme}://127.0.0.1:{port}")
+    return out
+
+
+def _pool_proxy_get(home: Path, admin: str, port: int):
+    """读号池当前 proxy_url；读取失败返回 None（不确定状态：不探测也不清除）。"""
+    try:
+        with httpx.Client(timeout=httpx.Timeout(12), trust_env=False) as c:
+            r = c.get(f"http://127.0.0.1:{port}/api/proxy/runtime",
+                      headers={"Authorization": "Bearer " + admin})
+        if r.status_code == 200:
+            rt = (r.json() or {}).get("runtime") or {}
+            return str(rt.get("proxy_url") or "")
+    except Exception:
+        pass
+    return None
+
+
+def _pool_proxy_set(home: Path, admin: str, port: int, url: str) -> bool:
+    body = {"enabled": True, "egress_mode": "single_proxy",
+            "proxy_url": url, "resource_proxy_url": url}
+    try:
+        with httpx.Client(timeout=httpx.Timeout(20), trust_env=False) as c:
+            r = c.post(f"http://127.0.0.1:{port}/api/proxy/runtime",
+                       json=body, headers={"Authorization": "Bearer " + admin})
+        return r.status_code in (200, 201, 204)
+    except Exception:
+        return False
+
+
+def _pool_proxy_test(home: Path, admin: str, port: int) -> bool:
+    try:
+        with httpx.Client(timeout=httpx.Timeout(30), trust_env=False) as c:
+            r = c.post(f"http://127.0.0.1:{port}/api/proxy/test",
+                       json={"url": ""}, headers={"Authorization": "Bearer " + admin})
+        if r.status_code != 200:
+            return False
+        res = (r.json() or {}).get("result") or {}
+        return bool(res.get("ok"))
+    except Exception:
+        return False
+
+
+def auto_detect_proxy(home: Path, port: int) -> dict:
+    """号池上线后做一次零配置出口代理探测，命中即持久化，否则保持直连。
+
+    只在当前号池 proxy_url 为空（None=读不到、已有值=尊重用户）时才探测，
+    所以不会覆盖用户显式设置，也不会在每次重启重复探测已持久化的结果。
+    """
+    home = Path(home)
+    admin = ensure_admin_key(home)
+    if not admin:
+        return {"ok": False, "reason": "no_admin"}
+    cur = _pool_proxy_get(home, admin, port)
+    if cur is None:
+        return {"ok": True, "skipped": True, "reason": "read_failed"}
+    if cur:
+        return {"ok": True, "skipped": True, "reason": "already_set", "proxy_url": cur}
+    cands: list[str] = []
+    envp = _env_egress_proxy()
+    if envp:
+        cands.append(envp)
+    cands += _local_proxy_candidates()
+    if not cands:
+        log("出口代理自动探测：无候选（无本地代理端口、无 env 代理），保持直连")
+        return {"ok": True, "skipped": True, "reason": "no_candidate"}
+    for url in cands:
+        try:
+            if not _pool_proxy_set(home, admin, port, url):
+                continue
+            time.sleep(0.3)
+            if _pool_proxy_test(home, admin, port):
+                st = _read_state(home)
+                st["proxy_auto_url"] = url
+                _write_state(home, st)
+                log("出口代理自动探测命中并持久化：" + url)
+                return {"ok": True, "proxy_url": url, "auto": True}
+        except Exception as e:
+            log("出口代理候选 " + url + " 验证失败：" + pool_mod.mask(e)[:120])
+    # 候选都不通：确保回到直连，不残留错误代理
+    try:
+        _pool_proxy_set(home, admin, port, "")
+    except Exception:
+        pass
+    log("出口代理自动探测：候选均不通，保持直连")
+    return {"ok": True, "proxy_url": "", "auto": False}
+
+
 def status(cfg: dict | None = None) -> dict:
     """面板与 DSH 外壳共用的状态快照（不写文件、不启动进程）。"""
     v = view(cfg)
@@ -539,6 +654,11 @@ def start(force: bool = False) -> dict:
         if probe(port) and not force:
             msg = "号池已在运行，无需重复启动"
             _record("start", True, msg)
+            # 号池已在跑（如后端重启但号池没掉）：补一次零配置代理探测
+            try:
+                auto_detect_proxy(home, port)
+            except Exception as e:
+                log("出口代理自动探测异常：" + pool_mod.mask(e)[:120])
             return {"ok": True, "message": msg, "already": True}
         if force and probe(port):
             stop(mark_user_stop=False)
@@ -618,6 +738,11 @@ def start(force: bool = False) -> dict:
                 msg = f"号池已启动：127.0.0.1:{port}（PID {p.pid}）"
                 _record("start", True, msg)
                 log(msg)
+                # 号池上线后零配置探测出口代理（仅当前为空时），不阻塞前台返回
+                try:
+                    auto_detect_proxy(home, port)
+                except Exception as e:
+                    log("出口代理自动探测异常（不影响号池运行）：" + pool_mod.mask(e)[:120])
                 _notify_started()
                 return {"ok": True, "message": msg, "pid": p.pid}
             if p.poll() is not None:

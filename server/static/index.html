@@ -2725,7 +2725,13 @@ async function loadPoolProxy(){
     const rt = d.runtime || {};
     $('#pProxy').value = rt.proxy_url || '';
     const en = rt.enabled ? '开' : '关';
-    $('#pProxyTag').textContent = rt.proxy_url ? ('代理 ' + en) : '直连';
+    // 自动探测出来的代理，徽标明确标注，且仍可手动改
+    const isAuto = d.proxy_auto_url && rt.proxy_url && rt.proxy_url === d.proxy_auto_url;
+    if (rt.proxy_url){
+      $('#pProxyTag').textContent = isAuto ? ('自动探测：' + rt.proxy_url + '（可改）') : ('代理 ' + en);
+    } else {
+      $('#pProxyTag').textContent = '直连';
+    }
     $('#pProxyMsg').textContent = '';
   }catch(e){ /* 面板照常，代理框留空即可 */ }
 }

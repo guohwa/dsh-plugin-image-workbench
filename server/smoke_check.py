@@ -132,6 +132,14 @@ try:
 except Exception as e:
     ok('号池 snapshot 可解析', False, str(e)[:120])
 
+# 出口代理 GET 应回传 proxy_auto_url 字段（零配置自动探测标记）
+try:
+    pr = client.get('/api/pool/proxy').json()
+    ok('GET /api/pool/proxy 回传 proxy_auto_url 字段',
+       'proxy_auto_url' in pr, f"auto={pr.get('proxy_auto_url') or '—'}")
+except Exception as e:
+    ok('GET /api/pool/proxy 可解析', False, str(e)[:120])
+
 # 「接口与号池」面板：账号导入 / 删号全靠它，字段缺一个前端就是空白
 try:
     pn = client.get('/api/pool/panel').json()

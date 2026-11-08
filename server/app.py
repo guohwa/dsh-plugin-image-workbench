@@ -451,7 +451,14 @@ async def api_pool_key(body: dict | None = None):
 @app.get("/api/pool/proxy")
 async def api_pool_proxy():
     """读取本机号池的出口代理配置（admin 透传，浏览器不碰 key）。"""
-    return JSONResponse(await pool_admin.get_pool_proxy())
+    res = await pool_admin.get_pool_proxy()
+    # 顺带回传工作台侧记录的「自动探测」标记，让前端区分手动/自动
+    try:
+        home = pool_service.view()["home"]
+        res["proxy_auto_url"] = pool_service._read_state(home).get("proxy_auto_url") or ""
+    except Exception:
+        res["proxy_auto_url"] = ""
+    return JSONResponse(res)
 
 
 @app.post("/api/pool/proxy")
