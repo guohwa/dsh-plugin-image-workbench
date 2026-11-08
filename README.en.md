@@ -110,7 +110,7 @@ A fresh pool contains no accounts. Complete one of the following configurations 
 
 ### Option A: Use the built-in account pool
 
-Import accounts under "Endpoint & Pool -> Local Pool". Upload `.txt`, `.json`, `.csv`, `.tsv` or `.log` files (multi-select and drag-and-drop supported), or paste the content directly, then run the import and check.
+Import accounts under "Endpoint & Pool -> Local Pool". Click the file selector or drop `.txt`, `.json`, `.csv`, `.tsv` or `.log` files into it (multi-select supported), or paste the content directly, then click the import button.
 
 | Format | Details |
 | --- | --- |
