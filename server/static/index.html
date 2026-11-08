@@ -490,11 +490,11 @@
   .cfg-foot .spacer{flex:1}
   .cfg-foot #cfgResult{flex:1;min-width:0}
   #tabPool{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 14px;
-    flex:0 1 auto;min-height:0;height:clamp(545px,calc(100vh - 250px),660px);overflow:hidden}
-  .pool-col{display:flex;flex-direction:column;gap:9px;min-height:0}
+    flex:0 1 auto;min-height:0;height:clamp(552px,calc(100vh - 250px),660px);overflow:hidden}
+  .pool-col{display:flex;flex-direction:column;gap:8px;min-height:0}
   .pool-left{overflow:auto;padding-right:4px}
   .pool-right{overflow:hidden}
-  #tabPool .pool-left #pImport{flex:1 1 auto;min-height:103px}
+  #tabPool .pool-left #pImport{flex:1 1 auto;min-height:84px}
   #tabPool[hidden]{display:none}
   .pstate{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#faf9ff;border:1px solid var(--line);
     border-radius:10px;padding:8px 11px;font-size:12px}
@@ -512,6 +512,11 @@
     padding:4px 9px;font-size:12px;color:#2b2646;overflow:hidden;text-overflow:ellipsis;
     white-space:nowrap;user-select:all}
   .phint{margin:0;font-size:11px;color:var(--ink-3);line-height:1.6}
+  .ptip{display:flex;align-items:flex-start;gap:6px;background:#f5f1ff;border:1px solid #e6ddfb;
+    border-radius:9px;padding:6px 9px;font-size:11px;line-height:1.45;color:#5b4a86}
+  .ptip > span:first-child{flex:0 0 auto;line-height:1.35}
+  .ptip a{color:var(--primary);text-decoration:none;border-bottom:1px dotted currentColor}
+  .ptip a:hover{border-bottom-style:solid}
   #pHome{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .psec{display:flex;align-items:baseline;gap:8px;margin-top:4px}
   .psec b{font-size:12px}
@@ -1031,6 +1036,7 @@
           <p class="phint" id="pHome"></p>
         </div>
         <div class="psec"><b>导入账号</b></div>
+        <div class="ptip"><span>💡</span><span>提示：可以上 <a href="https://priceai.cc/" target="_blank" rel="noopener noreferrer">https://priceai.cc/</a> 买几分钱的普号（一般 3-5 毛钱可以买 10 个）。购买后直接上传或粘贴在下方文本框，点击「导入并授权入池」即可。</span></div>
         <div class="prow">
           <input id="pFile" type="file" multiple hidden accept=".txt,.json,.csv,.tsv,.log,text/plain,application/json">
           <button class="btn ghost mini" type="button" id="pPick">选择文件</button>
@@ -1040,7 +1046,7 @@
         </div>
         <textarea id="pImport" rows="4" placeholder="每行一个 access_token，或粘贴导出的账号 JSON&#10;支持 txt / json / csv，可直接拖文件进来"></textarea>
         <div class="prow">
-          <button class="btn primary" type="button" id="pImportBtn">导入并检测</button>
+          <button class="btn primary" type="button" id="pImportBtn">导入并授权入池</button>
           <span class="pmeta" id="pImportMsg"></span>
         </div>
       </div>
@@ -2717,7 +2723,7 @@ async function poolReadFiles(files){
   $('#pFileName').title = list.map(f => f.name).join('、');
   const m = $('#pImportMsg');
   m.style.color = 'var(--ink-3)';
-  m.textContent = chunks.length ? '已读取，点「导入并检测」' : '文件里没有内容';
+  m.textContent = chunks.length ? '已读取，点「导入并授权入池」' : '文件里没有内容';
 }
 $('#pPick').onclick = ()=> $('#pFile').click();
 $('#pFile').onchange = async e => { await poolReadFiles(e.target.files); e.target.value = ''; };
