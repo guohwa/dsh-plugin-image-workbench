@@ -138,6 +138,8 @@ node install.mjs
 
 如需替换为真实样例图，把 `.webp` 文件按 `catalog` 引用的路径放入 `server/repo_images/`（如 `individual/FA/FA-001.webp`）即自动生效，无需改代码、无需重启。
 
+**一键拉取真实样图**：风格/版式/配色的真实预览图来自上游 [`yang0/handraw-style`](https://github.com/yang0/handraw-style) 仓库。安装脚本会在安装后自动尝试拉取（`server/scripts/fetch_style_images.py`，best-effort，网络不通则跳过）；也可在画廊弹窗点「下载风格样例图」手动触发。拉取成功后画廊即显示真实样图，无需改代码。
+
 ### 方式 B：使用第三方接口
 
 在「接口与号池 → 出图接口」中填写 Base URL、API Key 与模型名，保存后执行连通性测试。该方式无需启动内置账号池。

@@ -155,6 +155,26 @@ async def img_with_fallback(full_path: str):
     )
     return Response(content=svg.encode("utf-8"), media_type="image/svg+xml",
                     headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.post("/api/previews/fetch")
+async def api_previews_fetch():
+    """从上游 handraw-style 仓库拉取真实风格样图到 repo_images/（后台执行，网络失败静默跳过）。"""
+    def _run():
+        import subprocess
+        script = LAB / "scripts" / "fetch_style_images.py"
+        if not script.is_file():
+            return {"ok": False, "error": "fetch script missing"}
+        try:
+            r = subprocess.run([sys.executable, str(script)],
+                               capture_output=True, text=True, timeout=600)
+            return {"ok": r.returncode == 0, "returncode": r.returncode,
+                    "stdout": (r.stdout or "")[-800:], "stderr": (r.stderr or "")[-800:]}
+        except Exception as e:
+            return {"ok": False, "error": str(e)[:200]}
+    return JSONResponse(await run_in_threadpool(_run))
+
+
 app.mount("/refs", StaticFiles(directory=str(REFS_DIR)), name="refs")
 
 

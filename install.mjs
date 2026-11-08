@@ -153,6 +153,22 @@ function syncServer() {
   console.log('已同步工作台后端代码 -> server/（' + copied + ' 个文件，不含账号/图片/配置）。');
 }
 
+// 安装后尽力拉取真实风格样图（best-effort，失败静默跳过，不影响安装）
+function fetchStyleImages() {
+  const script = path.join(PLUGIN_DIR, 'server', 'scripts', 'fetch_style_images.py');
+  if (!fs.existsSync(script)) return;
+  const venvPy = path.join(PLUGIN_DIR, 'server', '.venv', 'Scripts', 'python.exe');
+  const py = fs.existsSync(venvPy) ? venvPy : (process.env.PYTHON || 'python3');
+  try {
+    const r = require('child_process').spawnSync(py, [script], { timeout: 600000, stdio: 'ignore' });
+    console.log(r.status === 0
+      ? '已拉取真实风格样图。'
+      : '风格样图拉取跳过（网络不可用，运行时点「下载风格样例图」可补）。');
+  } catch (e) {
+    console.log('风格样图拉取跳过（' + e.message + '）。');
+  }
+}
+
 if (!uninstall) {
   syncServer();
   if (fs.existsSync(LINK_PATH)) {
@@ -164,6 +180,9 @@ if (!uninstall) {
   const ok = fs.existsSync(path.join(LINK_PATH, 'host.js')) && fs.existsSync(path.join(LINK_PATH, 'client.js'));
   console.log(ok ? '插件文件校验通过。' : '警告：联接内未找到 host.js / client.js。');
   console.log('工作台后端与内置号池由 host.js / pool_service.py 在 DSH 启动时拉起。');
+  // 安装后尽力拉取真实风格样图（上游 handraw-style 仓库）。网络不可用则静默跳过，
+  // 前端自动回退到 SVG 占位，不影响安装。成功后会话里画廊即显示真图。
+  fetchStyleImages();
   console.log('请重启 DeepSeek Harness 使 bundle 生效（旧号池插件届时会从侧栏消失）。');
 } else {
   console.log('已从 profile 配置摘除插件；node_modules 里的目录联接保留，不影响 DSH。');

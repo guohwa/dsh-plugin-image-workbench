@@ -863,6 +863,7 @@
       <h3 id="pickerTitle">全部风格</h3>
       <span class="spacer"></span>
       <button class="btn ghost mini" id="pickerClose" type="button">关闭</button>
+      <button class="btn ghost mini" id="pickerFetch" type="button" title="从上游仓库拉取真实风格样图（首次需联网，拉完画廊即显示真图）">下载风格样例图</button>
     </div>
     <div class="chips" id="pickerChips"></div>
     <input id="pickerFilter" placeholder="搜索编号 / 名称" style="font-size:12px;padding:7px 10px;margin-bottom:8px">
@@ -1306,6 +1307,29 @@ function openPicker(kind){
   $('#pickerGrid').classList.toggle('color-grid', kind === 'color');
   renderPicker();
   $('#pickerDlg').showModal();
+}
+
+$('#pickerFetch').onclick = async () => {
+  const btn = $('#pickerFetch');
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = '拉取中…';
+  try {
+    const d = await (await fetch('/api/previews/fetch', {method: 'POST'})).json();
+    if (d.ok){ toast('样例图已拉取，正在刷新画廊', 'ok'); refreshPreviews(); }
+    else toast('拉取失败：' + (d.error || (d.stderr || '').slice(0, 80) || '网络不可用'), 'err');
+  } catch (e){ toast('拉取失败：' + e.message, 'err'); }
+  finally { btn.disabled = false; btn.textContent = old; }
+};
+
+// 拉取真实样图后，强制刷新画廊里所有图片（带 cache-bust），命中新文件
+function refreshPreviews(){
+  document.querySelectorAll('#pickerGrid img').forEach(im => {
+    try {
+      const u = new URL(im.src, location.href);
+      u.searchParams.set('_t', Date.now());
+      im.src = u.pathname + u.search;
+    } catch (_) {}
+  });
 }
 
 function renderPicker(){
@@ -2458,9 +2482,10 @@ async function refreshPool(){
       $('#poolDot').className = 'dot' + (ready ? '' : ' off');
       if (hasAcc){
         const bad = d.accounts.filter(a=>a.status==='unhealthy').map(a=>a.masked);
-        $('#poolDetail').textContent = `已绑定 ${total}/${d.total} 个账号`
-          + (bad.length ? ` · 下线：${bad.join('、')}` : '')
-          + (d.fails_today ? ` · 今日失败 ${d.fails_today} 次（已换号重试）` : '');
+        const parts = [];
+        if (bad.length) parts.push(`下线：${bad.join('、')}`);
+        if (d.fails_today) parts.push(`今日失败 ${d.fails_today} 次（已换号重试）`);
+        $('#poolDetail').textContent = parts.length ? parts.join(' · ') : '账号全部在线';
       } else {
         $('#poolDetail').textContent = d.accounts_error || '账号明细加载中…';
       }
@@ -3772,9 +3797,8 @@ function renderMonitor(d){
     if (a.env_id && a.last_used && (!lastUsedAcc || a.last_used > lastUsedAcc.last_used)) lastUsedAcc = a;
   }
   $('#monAccHint').textContent = accs.length
-    ? `已绑定 ${d.bound}/${d.total} 个环境`
-      + (lastUsedAcc ? ` · 上次用 #${lastUsedAcc.env_id}，下次顺延` : '')
-    // 空表不能当成「0 个账号」：换接口后 admin-key 对不上就是这个样子，得说清原因
+    ? (lastUsedAcc ? `上次用 #${lastUsedAcc.env_id}，下次顺延` : '账号轮转中')
+      // 空表不能当成「0 个账号」：换接口后 admin-key 对不上就是这个样子，得说清原因
     : (d.accounts_error || (d.pool && d.pool.mode === 'single'
         ? '当前是通用接口模式，没有账号明细'
         : '账号明细加载中…'));
