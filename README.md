@@ -211,18 +211,14 @@ node install.mjs --uninstall
 
 ## 许可与第三方代码
 
-本仓库自研代码采用 [MIT License](./LICENSE)。
+本仓库自研代码采用 [MIT License](./LICENSE)。内置账号池的服务端代码来自以下上游项目：
 
-内置账号池的服务端代码并非本仓库原创，其来源层级如下：
+| 层级 | 项目 |
+| --- | --- |
+| 后端上游 | [basketikun/chatgpt2api](https://github.com/basketikun/chatgpt2api)（`VERSION` = 1.8.0） |
+| DSH 插件封装 | [yang0/chatgpt2api-dsh](https://github.com/yang0/chatgpt2api-dsh) |
+| 本仓库 | `vendor/chatgpt2api/`，仅后端源码快照 |
 
-| 层级 | 项目 | 说明 |
-| --- | --- | --- |
-| 后端上游 | [basketikun/chatgpt2api](https://github.com/basketikun/chatgpt2api) | ChatGPT2API 号池服务端。其 `VERSION` 文件为 `1.8.0`，即本仓库快照所记录的版本号 |
-| DSH 插件封装 | [yang0/chatgpt2api-dsh](https://github.com/yang0/chatgpt2api-dsh) | 将上述后端打包为 DSH 插件，插件自身使用独立版本号 |
-| 本仓库快照 | `vendor/chatgpt2api/` | 仅包含后端 Python 源码、静态资源与依赖锁文件，不含 DSH 插件外壳、账号数据或密钥 |
+快照依 MIT 分发，Copyright (c) 2026 kunkun，许可证原文见 `vendor/chatgpt2api/source/LICENSE`；含轮询游标持久化与限流账号排除两处补丁，不含账号、密钥与代理配置。
 
-`vendor/chatgpt2api/SOURCE.json` 中的 `version: 1.8.0` 取自快照内的 `source/VERSION`，用于标识后端源码版本，不代表本插件版本；`source/pyproject.toml` 中的包元数据版本号与之不同。快照依上游 MIT License 分发，Copyright (c) 2026 kunkun，许可证原文见 `vendor/chatgpt2api/source/LICENSE`。
-
-快照包含本工作台所需的两处补丁：轮询游标持久化与限流账号排除。快照仅提供可运行的源码，不包含账号、密钥或代理配置。再次分发时须保留 `vendor/` 目录内的版权声明。
-
-> 上游项目声明为对第三方网站接口的逆向研究，并对其使用范围设有额外限制。使用者应自行阅读上游项目的许可证与免责声明，并自行确认所导入账号的来源及合规性。本仓库仅分发源码，不提供账号，亦不对上游项目的可用性或合规性作出保证。
+上游项目对其使用范围另有声明，请自行阅读。本仓库不提供账号。

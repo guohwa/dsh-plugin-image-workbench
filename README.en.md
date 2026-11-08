@@ -211,18 +211,14 @@ The pool uses strict round-robin account selection and excludes rate-limited acc
 
 ## License and third-party code
 
-Original code in this repository is distributed under the [MIT License](./LICENSE).
+Original code in this repository is distributed under the [MIT License](./LICENSE). The bundled account-pool server comes from these upstream projects:
 
-The account-pool server code bundled in `vendor/` is not original to this repository. Its provenance is as follows:
+| Layer | Project |
+| --- | --- |
+| Upstream backend | [basketikun/chatgpt2api](https://github.com/basketikun/chatgpt2api) (`VERSION` = 1.8.0) |
+| DSH plugin wrapper | [yang0/chatgpt2api-dsh](https://github.com/yang0/chatgpt2api-dsh) |
+| This repository | `vendor/chatgpt2api/`, backend source snapshot only |
 
-| Layer | Project | Details |
-| --- | --- | --- |
-| Upstream backend | [basketikun/chatgpt2api](https://github.com/basketikun/chatgpt2api) | ChatGPT2API account-pool server. Its `VERSION` file reads `1.8.0`, which is the version recorded by this snapshot |
-| DSH plugin wrapper | [yang0/chatgpt2api-dsh](https://github.com/yang0/chatgpt2api-dsh) | Packages the backend as a DSH plugin; the plugin carries its own version number |
-| Snapshot in this repository | `vendor/chatgpt2api/` | Backend Python source, static assets and lockfiles only; no DSH plugin shell, account data or keys |
+The snapshot is distributed under MIT, Copyright (c) 2026 kunkun; see `vendor/chatgpt2api/source/LICENSE`. It includes two patches (persistent round-robin cursor, exclusion of rate-limited accounts) and contains no accounts, keys or proxy settings.
 
-The `version: 1.8.0` entry in `vendor/chatgpt2api/SOURCE.json` is read from `source/VERSION` inside the snapshot and identifies the backend source version, not this plugin's version. The package metadata version in `source/pyproject.toml` differs. The snapshot is distributed under the upstream MIT License, Copyright (c) 2026 kunkun; the full text is in `vendor/chatgpt2api/source/LICENSE`.
-
-The snapshot retains two patches required by this workbench: persistent round-robin cursor and exclusion of rate-limited accounts. It provides runnable source only, without accounts, keys or proxy settings. Preserve the copyright notices inside `vendor/` when redistributing.
-
-> The upstream project describes itself as reverse engineering of third-party web interfaces and imposes additional restrictions on its use. Users should read the upstream license and disclaimer themselves and verify the origin and compliance of any accounts they import. This repository distributes source code only, ships no accounts, and makes no warranty regarding the availability or compliance of the upstream project.
+The upstream project states additional restrictions on use; read them there. This repository ships no accounts.
