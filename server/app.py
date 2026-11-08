@@ -6,6 +6,7 @@ import asyncio
 import base64
 import io
 import json
+import hashlib
 import os
 import re
 import secrets
@@ -124,7 +125,36 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Handraw Workbench", lifespan=lifespan)
-app.mount("/img", StaticFiles(directory=str(REPO_IMAGES)), name="img")
+@app.get("/img/{full_path:path}")
+async def img_with_fallback(full_path: str):
+    """风格/版式预览图路由（带兜底占位）。
+
+    repo_images/ 里的样例图不进 git（避免仓库膨胀），新安装时目录为空会全部 404、
+    画廊破图。这里做兜底：文件存在原样返回；不存在则现场生成一张 SVG 占位图
+    （渐变 + 风格编号），保证任何安装都显示整齐、可用，且不引入任何二进制资源。
+    真要放高清样例图时，直接丢进 repo_images/ 即自动生效，无需改代码。
+    """
+    target = (REPO_IMAGES / full_path).resolve()
+    root = str(REPO_IMAGES.resolve())
+    # 目录穿越防护：只允许访问 repo_images 之内
+    if str(target).startswith(root + os.sep) and target.is_file():
+        return FileResponse(str(target), headers={"Cache-Control": "public, max-age=604800"})
+    # 文件缺失 → 生成 SVG 占位图
+    label = Path(full_path).stem
+    h = hashlib.md5(full_path.encode("utf-8")).hexdigest()
+    c1, c2 = h[:6], h[6:12]
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">'
+        '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
+        f'<stop offset="0" stop-color="#{c1}"/><stop offset="1" stop-color="#{c2}"/>'
+        "</linearGradient></defs>"
+        f'<rect width="240" height="160" fill="url(#g)"/>'
+        f'<text x="120" y="88" font-family="-apple-system,Segoe UI,sans-serif" font-size="22" '
+        f'fill="#ffffff" text-anchor="middle" opacity="0.95">{label}</text>'
+        "</svg>"
+    )
+    return Response(content=svg.encode("utf-8"), media_type="image/svg+xml",
+                    headers={"Cache-Control": "public, max-age=86400"})
 app.mount("/refs", StaticFiles(directory=str(REFS_DIR)), name="refs")
 
 
