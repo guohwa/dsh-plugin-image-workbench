@@ -3780,7 +3780,14 @@ function renderMonitor(d){
   }
 
   const tb = $('#monAccBody'); tb.innerHTML = '';
-  accs.forEach(a=>{
+  // 跟号池管理页一致：异常/限流等不可用的号沉到列表末尾，别挤在前面干扰查看与生成
+  const _accBad = s => ['limited', 'error', 'unhealthy', 'unbound', 'pending'].includes(s);
+  const _accOrder = [...accs].sort((a, b) => {
+    const ba = _accBad(a.status) ? 1 : 0, bb = _accBad(b.status) ? 1 : 0;
+    if (ba !== bb) return ba - bb;
+    return (a.env_id || 1e9) - (b.env_id || 1e9);
+  });
+  _accOrder.forEach(a=>{
     const tr = document.createElement('tr');
     if (a.status === 'busy') tr.className = 'on-air';
     // 备注列改成放号池的剩余额度：正常号写「剩 N 次」，用满的写「额度已用满」，
