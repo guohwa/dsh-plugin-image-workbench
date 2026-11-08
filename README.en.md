@@ -34,7 +34,7 @@ The backend also operates without DSH. By default, open `http://127.0.0.1:8092/`
 | Aspect ratios | `1:1`, `3:4`, `2:3`, `9:16`, `4:3`, `3:2`, `16:9`, plus `2.35:1` for WeChat cover images. When no native upstream size exists, the image is generated at the widest supported size and center-cropped locally |
 | Result management | Generation history, drafts, single-image redo, ZIP download, thumbnail and preview derivatives, completion notifications |
 | Monitoring | Total, available and quota figures for accounts, per-account failure ledger and queue state |
-| Endpoint and account pool | Copy the endpoint URL and local API key; start, stop and restart the pool with configurable auto-restart; import, disable and delete accounts; rotate keys |
+| Endpoint and account pool | Copy the endpoint URL and local API key; start, stop and restart the pool with configurable auto-restart; import accounts (manually removed ones are skipped), disable and delete accounts, rotate keys |
 | Customization | Workbench title, output directory, endpoint name, model, response format and monitoring mode |
 
 ## Architecture

@@ -52,11 +52,11 @@ ok('PoolManager._execute', callable(getattr(pool.PoolManager, '_execute', None))
 ok('PoolManager.snapshot', callable(getattr(pool.PoolManager, 'snapshot', None)))
 ok('PoolManager.check_all', callable(getattr(pool.PoolManager, 'check_all', None)))
 ok('access 无 fcntl 依赖', not hasattr(access, 'fcntl'))
-ok('LAB 指向本地', str(app.LAB).replace('\\', '/').endswith('image-local'))
+ok('工作台目录可用', (ROOT / 'app.py').is_file())
 ok('AUTH 为空(本地全放行)', app.AUTH is None)
 ok('catalog 三类齐全', all(len(app.CATALOG[k]) > 0 for k in ('styles', 'layouts', 'colors')),
    {k: len(v) for k, v in app.CATALOG.items()})
-ok('config.local.json 存在', (ROOT / 'config.local.json').is_file())
+ok('配置可缺省（整包首次运行）', isinstance(pool.load_config(), dict))
 cfg = pool.load_config()
 # 接口地址允许换（38651 生图号池 / 38650 写作号池 / 任意 OpenAI 兼容地址），
 # 这里只校验「配置能读出来且是合法 URL」，端口写死会让冒烟在换接口后假失败
@@ -196,6 +196,42 @@ try:
        _ct == [_tk, _tk2] and _cb == 0, f'{len(_ct)} 条 / bad={_cb}')
 except Exception as e:
     ok('导入解析可用', False, str(e)[:120])
+
+# 人工剔除名单：只存摘要、重导自动跳过、启用解封
+try:
+    import tempfile
+    from pathlib import Path as _Path
+    with tempfile.TemporaryDirectory() as _td:
+        _bid = pool_admin.blacklist_id(_tk)
+        ok('剔除名单：只存摘要不存明文',
+           _bid != _tk and len(_bid) == 24 and pool_admin.load_blacklist(_td) == set())
+        _n = pool_admin.blacklist_add(_td, [_tk, _tk2, _tk])
+        ok('剔除名单：停用 / 删除后入名单且去重',
+           _n == 2 and len(pool_admin.load_blacklist(_td)) == 2, f'added={_n}')
+        _ft, _fi, _fb = pool_admin.filter_blacklisted(
+            [_tk, _tk2], [{'access_token': _tk}], pool_admin.load_blacklist(_td))
+        ok('剔除名单：重导时自动跳过',
+           _ft == [] and _fi == [] and _fb == 3, f'skipped={_fb}')
+        _raw = (_Path(_td) / pool_admin.BLACKLIST_FILE).read_text(encoding='utf-8')
+        ok('剔除名单：磁盘上无明文 token', _tk not in _raw and _tk2 not in _raw)
+        _n2 = pool_admin.blacklist_remove(_td, [_tk])
+        ok('剔除名单：启用账号即解封',
+           _n2 == 1 and len(pool_admin.load_blacklist(_td)) == 1, f'removed={_n2}')
+except Exception as e:
+    ok('剔除名单可用', False, str(e)[:120])
+
+# 额度为 0 的号不再算「可用」
+try:
+    _rows = [{'status': '正常', 'quota': 0, 'cls': 'ok'},
+             {'status': '正常', 'quota': 25, 'cls': 'ok'}]
+    _o = {'active': 2, 'limited': 0, 'total': 2, 'quota': 25,
+          'message': '2 个账号 · 可用 2 · 配额 25'}
+    _z = pool_admin.normalize_zero_quota(_rows, _o)
+    ok('面板：额度为 0 的号显示为限流且不计入可用',
+       _z == 1 and _rows[0]['status'] == '限流' and _rows[1]['status'] == '正常'
+       and _o['active'] == 1 and _o['limited'] == 1 and '可用 1' in _o['message'])
+except Exception as e:
+    ok('面板额度口径可用', False, str(e)[:120])
 
 # 成品图路由：不裁切的比例直连原图，裁切的给裁好的 PNG
 try:

@@ -28,6 +28,7 @@ accounts.json
 accounts.db
 user-api-keys.json
 admin-key
+import-blacklist.json
 config.local.json
 config.json
 .env

@@ -2728,6 +2728,8 @@ $('#pImportBtn').onclick = async ()=>{
     const parts = [];
     if (d.added) parts.push(`新增 ${d.added} 个`);
     if (d.skipped) parts.push(`号池里已有，跳过 ${d.skipped} 个`);
+    if (d.blacklisted) parts.push(`剔除名单跳过 ${d.blacklisted} 个`);
+    if (d.limited) parts.push(`${d.limited} 个无额度已标限流`);
     if (d.refreshed) parts.push(`校验通过 ${d.refreshed} 个`);
     if (d.errors && d.errors.length) parts.push(`失败 ${d.errors.length} 个（${d.errors.slice(0, 2).join('；')}）`);
     if (d.bad) parts.push(`${d.bad} 行没认出 token`);

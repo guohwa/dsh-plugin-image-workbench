@@ -251,10 +251,11 @@ async def panel(cfg: dict | None = None) -> dict:
         "message": "",
         "total": 0, "active": 0, "limited": 0, "disabled": 0, "quota": 0,
         "api_key": "", "api_key_masked": "", "api_key_id": "", "keys": [],
-        "accounts": [], "accounts_error": "",
+        "accounts": [], "accounts_error": "", "blacklist_total": 0,
         # 工作台自带号池：进程是否在线、能否启动 / 停止、运行时是否就绪
         "service": pool_service.status(cfg),
     }
+    out["blacklist_total"] = len(load_blacklist(tgt["home"]))
     if not tgt["local"]:
         out["message"] = "当前接口不是本机号池（Base URL 不是 127.0.0.1，或找不到 admin-key）"
         return out
@@ -335,6 +336,8 @@ async def panel(cfg: dict | None = None) -> dict:
                 "last_used": _fmt_ts(pool_mod._parse_dt(a.get("last_used_at"))),
                 "error": str(a.get("last_refresh_error") or "")[:120],
             })
+        # quota=0 却挂「正常」的号不算可用：显示与页头统计一起纠正
+        normalize_zero_quota(rows, out)
         rows.sort(key=lambda x: (x["cls"] != "ok", -x["quota"], x["email"]))
         out["accounts"] = rows
         out["disabled"] = disabled
@@ -370,6 +373,123 @@ async def panel(cfg: dict | None = None) -> dict:
     out["api_key"] = cur
     out["api_key_masked"] = mask_key(cur)
     return out
+
+
+# ---------- 人工剔除名单 ----------
+# 删除 / 停用过的 token 记一份摘要，再导入同一份 txt 时自动跳过。
+# 只存 sha256 前 24 位，明文 token 不落盘；文件随号池数据目录走，换池互不干扰。
+BLACKLIST_FILE = "import-blacklist.json"
+
+
+def blacklist_id(token: str) -> str:
+    return hashlib.sha256(str(token or "").encode("utf-8")).hexdigest()[:24]
+
+
+def _blacklist_path(home: str | Path) -> Path:
+    return Path(home) / BLACKLIST_FILE
+
+
+def load_blacklist(home: str | Path) -> set[str]:
+    try:
+        d = json.loads(_blacklist_path(home).read_text(encoding="utf-8"))
+        ids = d.get("ids") if isinstance(d, dict) else d
+        return {str(x) for x in (ids or []) if isinstance(x, str) and x}
+    except Exception:
+        return set()
+
+
+def _save_blacklist(home: str | Path, ids: set[str]) -> None:
+    p = _blacklist_path(home)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps({"version": 1, "ids": sorted(ids)},
+                                  ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        os.replace(tmp, p)
+    except Exception as e:
+        pool_mod.log(f"剔除名单写入失败：{pool_mod.mask(e)[:120]}")
+
+
+def blacklist_add(home, tokens) -> int:
+    ids = load_blacklist(home)
+    before = len(ids)
+    ids.update(blacklist_id(t) for t in tokens if t)
+    if len(ids) != before:
+        _save_blacklist(home, ids)
+    return len(ids) - before
+
+
+def blacklist_remove(home, tokens) -> int:
+    ids = load_blacklist(home)
+    before = len(ids)
+    ids.difference_update(blacklist_id(t) for t in tokens if t)
+    if len(ids) != before:
+        _save_blacklist(home, ids)
+    return before - len(ids)
+
+
+def filter_blacklisted(tokens: list[str], items: list[dict], blacklist: set[str]):
+    """导入前过滤人工剔除过的 token，返回 (tokens, items, 跳过数)。"""
+    if not blacklist:
+        return tokens, items, 0
+    kept_t = [t for t in tokens if blacklist_id(t) not in blacklist]
+    kept_i = [d for d in items
+              if blacklist_id(d.get("access_token") or "") not in blacklist]
+    return kept_t, kept_i, (len(tokens) - len(kept_t)) + (len(items) - len(kept_i))
+
+
+def normalize_zero_quota(rows: list[dict], out: dict) -> int:
+    """号池把 quota=0 的新号写成「正常」，这里纠正显示与统计，不误导成可用。"""
+    n = 0
+    for r in rows:
+        if r.get("status") == "正常" and int(r.get("quota") or 0) == 0:
+            r["status"] = "限流"
+            r["cls"] = _STATUS_CLS.get("限流", "warn")
+            n += 1
+    if n:
+        out["active"] = max(0, int(out.get("active") or 0) - n)
+        out["limited"] = int(out.get("limited") or 0) + n
+        out["message"] = (f'{int(out.get("total") or 0)} 个账号 · 可用 {out["active"]}'
+                          f' · 配额 {int(out.get("quota") or 0)}')
+    return n
+
+
+async def _mark_zero_quota(tgt: dict, submitted: list[str], client) -> int:
+    """把本次新增里额度为 0 的号从「正常」改成「限流」。
+
+    只在号池明确完成额度校验后调用；quota>0 或已有刷新错误的号一律不动，
+    避免把还能用的号锁死。改失败不影响导入结果。
+    """
+    if not submitted:
+        return 0
+    try:
+        r = await _req("GET", tgt, "api/accounts", timeout=15, client=client)
+        if r.status_code != 200:
+            return 0
+        items = (r.json() or {}).get("items") or []
+    except Exception:
+        return 0
+    want = set(submitted)
+    todo = [str(a.get("access_token") or "") for a in items
+            if isinstance(a, dict)
+            and str(a.get("access_token") or "") in want
+            and str(a.get("status") or "正常") == "正常"
+            and int(a.get("quota") or 0) == 0
+            and not str(a.get("last_refresh_error") or "").strip()]
+    if not todo:
+        return 0
+
+    async def one(tok: str) -> bool:
+        try:
+            rr = await _req("POST", tgt, "api/accounts/update",
+                            {"access_token": tok, "status": "限流"},
+                            timeout=15, client=client)
+            return rr.status_code < 400
+        except Exception:
+            return False
+
+    res = await asyncio.gather(*(one(t) for t in todo[:MAX_IMPORT]))
+    return sum(1 for x in res if x)
 
 
 # ---------- 导入 ----------
@@ -473,8 +593,16 @@ async def import_accounts(text: str) -> dict:
     if not tgt["local"]:
         return {"ok": False, "message": "当前接口不是本机号池，无法导入账号"}
     tokens, items, bad = parse_import(text)
+    # 人工停用 / 删除过的号不允许靠重导同一份文件复活
+    blacklisted = 0
+    if tokens or items:
+        tokens, items, blacklisted = filter_blacklisted(
+            tokens, items, load_blacklist(tgt["home"]))
     all_tokens = list(dict.fromkeys([*tokens, *[d["access_token"] for d in items]]))
     if not all_tokens:
+        if blacklisted:
+            return {"ok": False, "blacklisted": blacklisted,
+                    "message": f"{blacklisted} 个账号都在剔除名单里；先在列表里启用即可解封"}
         # 邮箱 / 密码 / 2FA 料（email----password----secret）里没有 token，
         # 本号池版本不会用它现场登录换 token，别让用户以为导入成功了。
         material = bool(re.search(r"[\w.+-]+@[\w.-]+\s*[-]{3,4}\s*\S", text))
@@ -511,8 +639,18 @@ async def import_accounts(text: str) -> dict:
     skipped = int(j.get("skipped") or 0)
     refreshed = int(j.get("refreshed") or 0)
     errors = [str(e)[:160] for e in (j.get("errors") or [])][:6]
+    # 号池报告「已完成校验」且确实有新增，才把额度为 0 的新号从「正常」改成「限流」
+    limited = 0
+    if added > 0 and refreshed > 0:
+        try:
+            limited = await _mark_zero_quota(tgt, all_tokens, await _client())
+        except Exception:
+            limited = 0
     return {"ok": True, "count": len(all_tokens), "added": added, "skipped": skipped,
-            "refreshed": refreshed, "errors": errors, "bad": bad, "note": note}
+            "refreshed": refreshed, "limited": limited, "errors": errors,
+            "blacklisted": blacklisted,
+            "blacklist_total": len(load_blacklist(tgt["home"])),
+            "bad": bad, "note": note}
 
 
 # ---------- 删除 / 停用 ----------
@@ -546,8 +684,9 @@ async def delete_accounts(ids: list[str]) -> dict:
         removed = 0
     for i in ids:
         _TOKENS.pop(str(i), None)
-    pool_mod.log(f"号池删除账号 {removed} 个")
-    return {"ok": True, "removed": removed, "missing": missing}
+    bl = blacklist_add(tgt["home"], tokens)
+    pool_mod.log(f"号池删除账号 {removed} 个，剔除名单 +{bl}")
+    return {"ok": True, "removed": removed, "missing": missing, "blacklisted": bl}
 
 
 async def set_status(ids: list[str], disabled: bool) -> dict:
@@ -568,4 +707,8 @@ async def set_status(ids: list[str], disabled: bool) -> dict:
         if r.status_code >= 400:
             return {"ok": False, "message": f"号池拒绝修改：{_err_text(r)}"}
         done += 1
-    return {"ok": True, "changed": done, "status": status, "missing": missing}
+    # 停用即入剔除名单（以后重导也回不来），启用即解封
+    bl = (blacklist_add(tgt["home"], tokens) if disabled
+          else blacklist_remove(tgt["home"], tokens))
+    return {"ok": True, "changed": done, "status": status, "missing": missing,
+            "blacklisted": bl}
