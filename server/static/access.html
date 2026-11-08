@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>申请访问 · 手绘工坊号池工作台</title>
+<style>
+  :root{
+    --bg:#f5f3fb; --panel:#ffffff; --ink:#1f1b2e; --ink-2:#5b5573; --ink-3:#8b86a3;
+    --line:#e8e4f5; --primary:#6a5ae0; --primary-2:#8b7cf6; --pink:#ff6b9a;
+    --ok:#12b886; --err:#e03131; --chip:#f1eefe;
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  body{margin:0;min-height:100vh;color:var(--ink);
+    font:14px/1.7 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:radial-gradient(1100px 620px at 12% -12%,#e6dfff 0%,transparent 62%),
+               radial-gradient(900px 560px at 100% 0%,#ffe7f0 0%,transparent 58%),
+               var(--bg);
+    display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{width:100%;max-width:420px;background:var(--panel);border:1px solid var(--line);
+    border-radius:20px;box-shadow:0 18px 60px rgba(80,60,160,.13);padding:30px 28px 24px}
+  .brand{display:inline-flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.6px;
+    color:var(--primary);background:var(--chip);border:1px solid #ddd6fb;border-radius:20px;
+    padding:5px 12px;margin-bottom:18px}
+  .brand i{width:7px;height:7px;border-radius:50%;background:var(--primary);display:block}
+  h1{font-size:22px;margin:0 0 6px;letter-spacing:.5px}
+  .lead{font-size:12.5px;color:var(--ink-2);margin:0 0 22px;line-height:1.8}
+  .lead b{color:var(--ink);font-weight:600}
+  .steps{display:flex;gap:6px;margin:0 0 20px}
+  .steps span{flex:1;height:4px;border-radius:4px;background:var(--line)}
+  .steps span.on{background:linear-gradient(90deg,var(--primary),var(--pink))}
+  label{display:block;font-size:11.5px;color:var(--ink-2);margin:0 0 7px;font-weight:600}
+  input{width:100%;border:1px solid var(--line);border-radius:11px;background:#fbfaff;
+    padding:12px 13px;font:inherit;color:var(--ink);outline:none;transition:.15s}
+  input:focus{border-color:var(--primary-2);background:#fff;box-shadow:0 0 0 3px rgba(139,124,246,.14)}
+  input.code{font-size:22px;letter-spacing:9px;text-align:center;font-weight:600;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .btn{width:100%;border:0;border-radius:11px;padding:12px 14px;font:inherit;font-weight:600;
+    cursor:pointer;margin-top:14px;transition:.15s;background:#f1eefe;color:var(--primary)}
+  .btn:hover{filter:brightness(.97)}
+  .btn.primary{background:linear-gradient(135deg,var(--primary),var(--pink));color:#fff;
+    box-shadow:0 8px 20px rgba(106,90,224,.26)}
+  .btn.ghost{background:#fff;border:1px solid var(--line);color:var(--ink-2);font-weight:500}
+  .btn:disabled{opacity:.55;cursor:not-allowed}
+  .msg{margin-top:14px;font-size:12px;line-height:1.7;border-radius:10px;padding:0;min-height:0}
+  .msg:not(:empty){padding:10px 12px;border:1px solid var(--line);background:#faf9ff;color:var(--ink-2)}
+  .msg.err{border-color:#ffd6d6;background:#fff5f5;color:#c92a2a}
+  .msg.ok{border-color:#c3f0dd;background:#f2fcf8;color:#087f5b}
+  .notice{background:#f2fcf8;border:1px solid #c3f0dd;color:#087f5b;border-radius:11px;
+    padding:11px 13px;font-size:12px;line-height:1.75;margin:0 0 18px}
+  .foot{margin-top:22px;padding-top:16px;border-top:1px solid var(--line);
+    display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--ink-3)}
+  .foot a{color:var(--ink-3);text-decoration:none;cursor:pointer;border-bottom:1px dashed var(--line)}
+  .foot a:hover{color:var(--primary)}
+  .admin{margin-top:16px;padding:14px;border:1px solid var(--line);border-radius:12px;background:#fbfaff}
+  .admin p{margin:0 0 10px;font-size:11.5px;color:var(--ink-2);line-height:1.7}
+  .hint{font-size:11px;color:var(--ink-3);margin:12px 0 0;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand"><i></i>手绘工坊 · 号池工作台</div>
+  <h1>申请访问</h1>
+  <p class="lead">工作台仅供受邀使用。填写你的邮箱点<b>申请访问</b>，管理员会把验证码回复到这个邮箱。收到后回到本页填入邮箱和验证码即可进入。</p>
+  <div class="steps"><span id="s1" class="on"></span><span id="s2"></span></div>
+
+  <div id="step1">
+    <label for="email">申请邮箱</label>
+    <input id="email" type="email" maxlength="254" autocomplete="email" spellcheck="false" placeholder="name@example.com">
+    <button id="reqBtn" class="btn primary" type="button">申请访问</button>
+    <p class="hint">请填能收信的邮箱，管理员会把验证码回复到这里。</p>
+  </div>
+
+  <div id="step2" hidden>
+    <div class="notice" id="notice">申请已提交，验证码会回复到你填的邮箱。</div>
+    <label for="email2">申请时用的邮箱</label>
+    <input id="email2" type="email" maxlength="254" autocomplete="email" spellcheck="false">
+    <label for="code" style="margin-top:14px">验证码</label>
+    <input id="code" class="code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="000000">
+    <button id="verBtn" class="btn primary" type="button">进入工作台</button>
+    <button id="backBtn" class="btn ghost" type="button">换一个邮箱重新申请</button>
+  </div>
+
+  <div id="msg" class="msg" role="status"></div>
+
+  <div class="foot">
+    <span>验证码 24 小时有效 · 一次性 · 与邮箱绑定</span>
+    <a id="adminToggle" type="button">管理员入口</a>
+  </div>
+  <div id="adminBox" class="admin" hidden>
+    <p>管理员可凭主口令直接进入，不需要申请验证码。主口令只保存在服务器上，请勿写进共享文档。</p>
+    <label for="master">主口令</label>
+    <input id="master" type="password" autocomplete="current-password" placeholder="输入主口令">
+    <button id="masterBtn" class="btn" type="button">进入工作台</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  var $ = function(id){ return document.getElementById(id); };
+  var msg = $('msg');
+  function say(t, cls){
+    msg.textContent = t || '';
+    msg.className = 'msg' + (cls ? ' ' + cls : '');
+  }
+  function busy(btn, on){
+    if(on){
+      if(!btn.dataset.label) btn.dataset.label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '处理中…';
+    }else{
+      btn.disabled = false;
+      btn.textContent = btn.dataset.label || btn.textContent;
+    }
+  }
+  function post(url, data){
+    return fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+                       body:JSON.stringify(data)}).then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(d){
+        return {status:r.status, data:d};
+      });
+    });
+  }
+
+  function showStep(n){
+    $('step1').hidden = (n !== 1);
+    $('step2').hidden = (n !== 2);
+    $('s2').className = (n === 2 ? 'on' : '');
+    say('');
+  }
+
+  $('reqBtn').addEventListener('click', function(){
+    var u = $('email').value.trim().toLowerCase();
+    if(!u){ say('请先填申请邮箱', 'err'); return; }
+    var badMail = !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(u) || u.indexOf('..') >= 0 || u.charAt(0) === '.';
+    if(badMail){ say('请填有效的邮箱地址', 'err'); return; }
+    var btn = this; busy(btn, true);
+    post('/api/access/request', {email:u}).then(function(res){
+      busy(btn, false);
+      if(!res.data.ok){ say(res.data.msg || '提交失败，请稍后重试', 'err'); return; }
+      sessionStorage.setItem('wb_access_email', u);
+      $('email2').value = u;
+      showStep(2);
+      $('notice').textContent = res.data.reused
+        ? '该邮箱已有一份待审核的申请，请联系管理员索取之前发出的验证码。'
+        : '申请已提交，管理员会把验证码回复到这个邮箱，填入下方即可进入。';
+      $('code').focus();
+    }).catch(function(){ busy(btn, false); say('网络异常，请稍后重试', 'err'); });
+  });
+
+  $('verBtn').addEventListener('click', function(){
+    var u = $('email2').value.trim().toLowerCase();
+    var c = $('code').value.trim();
+    if(!u){ say('请填申请时用的邮箱', 'err'); return; }
+    if(!/^\d{6}$/.test(c)){ say('验证码是 6 位数字', 'err'); return; }
+    var btn = this; busy(btn, true);
+    post('/api/access/verify', {email:u, code:c}).then(function(res){
+      busy(btn, false);
+      if(!res.data.ok){ say(res.data.msg || '验证失败', 'err'); return; }
+      sessionStorage.removeItem('wb_access_email');
+      location.href = '/';
+    }).catch(function(){ busy(btn, false); say('网络异常，请稍后重试', 'err'); });
+  });
+
+  $('backBtn').addEventListener('click', function(){
+    sessionStorage.removeItem('wb_access_email');
+    $('code').value = '';
+    showStep(1);
+    $('email').focus();
+  });
+
+  $('adminToggle').addEventListener('click', function(){
+    $('adminBox').hidden = !$('adminBox').hidden;
+    if(!$('adminBox').hidden) $('master').focus();
+  });
+
+  $('masterBtn').addEventListener('click', function(){
+    var p = $('master').value;
+    if(!p){ say('请输入主口令', 'err'); return; }
+    var btn = this; busy(btn, true);
+    post('/api/access/master', {password:p}).then(function(res){
+      busy(btn, false);
+      if(!res.data.ok){ say(res.data.msg || '验证失败', 'err'); return; }
+      location.href = '/';
+    }).catch(function(){ busy(btn, false); say('网络异常，请稍后重试', 'err'); });
+  });
+
+  $('email').addEventListener('keydown', function(e){ if(e.key === 'Enter') $('reqBtn').click(); });
+  $('code').addEventListener('keydown', function(e){ if(e.key === 'Enter') $('verBtn').click(); });
+  $('master').addEventListener('keydown', function(e){ if(e.key === 'Enter') $('masterBtn').click(); });
+  $('code').addEventListener('input', function(){ this.value = this.value.replace(/\D/g,'').slice(0,6); });
+
+  var saved = sessionStorage.getItem('wb_access_email');
+  if(saved){ $('email').value = saved; $('email2').value = saved; showStep(2); $('code').focus(); }
+  if(new URLSearchParams(location.search).get('expired') === '1'){
+    say('登录状态已失效，请重新申请验证码', 'err');
+  }
+})();
+</script>
+</body>
+</html>

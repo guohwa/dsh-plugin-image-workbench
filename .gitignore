@@ -1,0 +1,43 @@
+# 开发备份
+*.bak_*
+*.orig
+*.rej
+
+# 本地生成的图片 / 参考图 / 缩略图（绝不入库）
+images/
+refs/
+thumbs/
+output/
+out/
+
+# 生成历史 / 草稿 / 任务数据（绝不入库）
+history.json
+history.db
+drafts.json
+app.db
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.jsonl
+
+# 号池账号数据与本地密钥（绝不入库）
+data/
+accounts.json
+accounts.db
+user-api-keys.json
+admin-key
+config.local.json
+config.json
+.env
+.env.*
+!.env.example
+*.log
+
+# 运行环境
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db

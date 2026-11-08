@@ -1,0 +1,4304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bluxe手绘工坊 · 生图工作台</title>
+<style>
+  :root{
+    --bg:#f5f3fb; --panel:#ffffff; --ink:#1f1b2e; --ink-2:#5b5573; --ink-3:#8b86a3;
+    --line:#e8e4f5; --primary:#6a5ae0; --primary-2:#8b7cf6; --pink:#ff6b9a;
+    --ok:#12b886; --warn:#f59f00; --err:#e03131; --chip:#f1eefe;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:13px/1.6 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;}
+  header{display:flex;align-items:center;gap:12px;padding:12px 18px;background:#fff;
+    border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+  header h1{font-size:15px;margin:0 0 2px;letter-spacing:.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  header .sub{font-size:11px;color:var(--ink-3)}
+  header .gh-link{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:500;
+    letter-spacing:0;line-height:1.6;color:#1f9d6b;background:#e8f6ef;border:1px solid #bfe8d4;
+    text-decoration:none;white-space:nowrap;transition:background .15s,color .15s}
+  header .gh-link:hover{background:#d7efe2;color:#17845a}
+  .pool-chip{display:flex;align-items:center;gap:8px;background:var(--chip);margin-left:8px;
+    color:var(--primary);border:1px solid #ddd6fb;border-radius:20px;padding:5px 12px;font-size:12px}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+  .dot.off{background:var(--err)}
+  main{display:grid;grid-template-columns:20% minmax(0,1fr) 440px;gap:14px;padding:14px;align-items:start}
+  @media (max-width:1280px){main{grid-template-columns:280px minmax(0,1fr);}.panel.right{grid-column:1/-1}}
+  @media (max-width:860px){main{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;
+    box-shadow:0 6px 22px rgba(80,60,160,.05);padding:14px}
+  .panel h2{font-size:13px;margin:0 0 2px;display:flex;align-items:center;gap:6px}
+  .panel .hint{font-size:11px;color:var(--ink-3);margin:0 0 10px}
+  /* 自动暂存状态：跟在提示语右边，不占额外高度 */
+  .panel .hint.save-hint{display:flex;gap:8px;align-items:baseline;justify-content:space-between}
+  .save-state{flex:none;font-size:11px;color:var(--ink-3);white-space:nowrap;cursor:pointer}
+  .save-state.ok{color:var(--ok)}
+  .save-state.saving{color:var(--warn)}
+  .save-state.err{color:var(--err)}
+  label{display:block;font-size:11px;color:var(--ink-2);margin:10px 0 5px}
+  textarea,input,select{width:100%;border:1px solid var(--line);border-radius:10px;background:#fbfaff;
+    padding:9px 11px;font:inherit;color:var(--ink);outline:none;resize:vertical}
+  textarea:focus,input:focus,select:focus{border-color:var(--primary-2);background:#fff}
+  .row{display:flex;gap:8px;align-items:center}
+  .btn{border:0;border-radius:10px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer;
+    background:#f1eefe;color:var(--primary);transition:.15s;white-space:nowrap}
+  .btn:hover{filter:brightness(.97)}
+  .btn.primary{background:linear-gradient(135deg,var(--primary),var(--pink));color:#fff;
+    box-shadow:0 6px 16px rgba(106,90,224,.28)}
+  .btn.ghost{background:#fff;border:1px solid var(--line);color:var(--ink-2)}
+  .btn:disabled{opacity:.55;cursor:not-allowed}
+  .btn.full{width:100%;margin-top:10px}
+  .section-title{display:flex;align-items:center;gap:8px;margin:12px 0 6px;font-size:11px;color:var(--ink-2)}
+  .section-title b{color:var(--ink);font-size:12px}
+  .section-title .tag{margin-left:auto;color:var(--ink-3);font-weight:400}
+  .scroller{max-height:188px;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:8px;background:#fdfcff}
+  .scroller::-webkit-scrollbar{width:8px}
+  .scroller::-webkit-scrollbar-thumb{background:#ded8f4;border-radius:8px}
+  .grid-styles{display:grid;grid-template-columns:repeat(auto-fill,minmax(136px,1fr));gap:10px}
+  .tile{border:2px solid transparent;background:#fff;border-radius:12px;padding:4px;cursor:pointer;
+    display:flex;flex-direction:column;gap:4px;transition:.12s;overflow:hidden}
+  .tile:hover{border-color:#cfc6f7;transform:translateY(-1px)}
+  .tile.sel{border-color:var(--primary);box-shadow:0 0 0 3px rgba(106,90,224,.15)}
+  /* 选择弹窗里当前生效的那一张固定排第一，右上角挂个「当前」小标 */
+  #pickerGrid .tile{position:relative}
+  #pickerGrid .tile .cur{position:absolute;right:7px;top:7px;background:var(--primary);color:#fff;
+    font-style:normal;font-size:10px;line-height:1.5;border-radius:6px;padding:0 5px;
+    box-shadow:0 2px 6px rgba(76,58,180,.35)}
+  .tile img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#f6f5fb;display:block}
+  .tile span{font-size:11.5px;color:var(--ink-2);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* 图型 / 风格 / 主题色 + 参考图：用 flex 排，宁可让参考图换到下一行铺满，
+     也不把前三张卡挤成 155px —— 挤到那个宽度，缩略图和「更换」会叠在一起 */
+  .pick-row{display:flex;flex-wrap:wrap;gap:12px;margin:10px 0 2px}
+  .pick-row .pick-card{flex:1 1 210px;min-width:0;max-width:360px}
+  /* 参考图单独占一行时铺满整行，看起来才像一块上传区，不是半截卡片 */
+  #cardRef{flex:1 1 190px;max-width:none}
+  .pick-card{position:relative;border:1px solid var(--line);border-radius:12px;padding:10px 12px 11px;
+    background:#fff;box-shadow:0 2px 10px rgba(80,60,160,.04);transition:.15s}
+  .pick-card.on{border-color:#e6ddff;box-shadow:0 3px 14px rgba(106,90,224,.09)}
+  .pick-card [hidden]{display:none!important}
+  .pk-head{display:flex;align-items:center;gap:7px;margin-bottom:9px}
+  .pk-head .pk-ic{display:flex;color:var(--primary)}
+  .pk-head .pk-ic svg{width:15px;height:15px}
+  .pk-head b{font-size:12.5px;font-weight:600;color:var(--ink);letter-spacing:.2px}
+  .pk-head .pk-opt{margin-left:auto;font-size:11px;color:var(--ink-3)}
+  /* 空态：虚线按钮 */
+  .pk-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;width:100%;
+    border:1px dashed #d7d0ef;border-radius:10px;background:#fcfbff;color:var(--ink-2);
+    padding:16px 10px;cursor:pointer;font:inherit;transition:.15s;min-height:76px}
+  .pk-btn:hover{border-color:var(--primary-2);background:#f8f6ff;color:var(--primary)}
+  .pk-btn svg{width:19px;height:19px}
+  .pk-btn .t{font-size:12px;font-weight:600;display:flex;align-items:baseline;gap:4px}
+  .pk-btn .t em{font-style:normal;font-weight:400;font-size:11px;color:var(--ink-3)}
+  .pk-btn:hover .t em{color:var(--primary-2)}
+  /* 已选态：缩略图 + 编号/名称 + 更换 + 清除 */
+  .pk-body{display:flex;align-items:center;gap:10px;min-height:76px;padding:2px 0}
+  .pk-thumb{flex:0 0 auto;width:56px;height:56px;border-radius:9px;overflow:hidden;background:#f6f5fb;
+    border:1px solid var(--line);display:flex;align-items:center;justify-content:center}
+  .pk-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .pk-thumb .ph{font-size:10px;color:var(--ink-3)}
+  .pk-meta{flex:1;min-width:0;overflow:hidden;display:flex;flex-direction:column;gap:3px}
+  .pk-id{font-size:11px;color:#7b74a0;letter-spacing:.4px;font-variant-numeric:tabular-nums}
+  .pk-name{font-size:12.5px;font-weight:600;color:var(--ink);line-height:1.34;word-break:break-word;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .pk-acts{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:7px}
+  .pk-change{border:1px solid var(--line);background:#fff;color:var(--ink-2);border-radius:7px;
+    font:inherit;font-size:11px;padding:3px 9px;cursor:pointer;transition:.12s;white-space:nowrap}
+  .pk-change:hover{color:var(--primary);border-color:#cfc6f7;background:#faf8ff}
+  .pk-clear{border:0;background:transparent;color:#b9b3cc;font-size:15px;line-height:1;cursor:pointer;padding:0 3px}
+  .pk-clear:hover{color:var(--err)}
+  @media (max-width:860px){.pick-row .pick-card{flex:1 1 100%;max-width:none}}
+  /* 参考图：拖进来高亮，缩略图按比例完整显示（裁掉边就看不出是同一张了） */
+  #cardRef.drag{border-color:var(--primary);background:#f8f6ff;
+    box-shadow:0 0 0 3px rgba(106,90,224,.12)}
+  #cardRef .pk-thumb{background:#fff}
+  #cardRef .pk-thumb img{object-fit:contain}
+  #cardRef .pk-opt{color:var(--ink-3)}
+  /* 参数区 / 分镜清单 */
+  .params{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .plabel{font-size:11px;color:var(--ink-3);flex:0 0 auto}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:#fff}
+  .seg button{border:0;background:#fff;color:var(--ink-2);font:inherit;font-size:11.5px;padding:5px 9px;cursor:pointer}
+  .seg button+button{border-left:1px solid var(--line)}
+  .seg button.on{background:var(--primary);color:#fff}
+  .cbx{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--ink-2);cursor:pointer}
+  .cbx input{width:auto;margin:0;accent-color:var(--primary)}
+  .stepbar{display:flex;align-items:center;gap:8px;margin:16px 0 7px}
+  .stepbar b{font-size:12.5px}
+  .stepbar .hint{margin:0}
+  .stepbar .tag{font-size:11px;color:var(--ink-3)}
+  .spacer{flex:1}
+  .step-no{width:18px;height:18px;border-radius:50%;background:var(--primary);color:#fff;
+    font-size:11px;display:flex;align-items:center;justify-content:center;font-weight:600;flex:0 0 auto}
+  .instr{border:1px solid var(--line);border-radius:10px;background:#fbfaff;padding:9px 11px;
+    font-size:11.5px;line-height:1.65;color:var(--ink-2);word-break:break-word}
+  .instr:focus{outline:none;border-color:var(--primary-2);background:#fff}
+  .items{display:flex;flex-direction:column;gap:9px}
+  .item{border:1px solid var(--line);border-radius:12px;padding:9px 10px;background:#fff;
+    box-shadow:0 2px 8px rgba(80,60,160,.03)}
+  .it-top{display:flex;align-items:center;gap:8px}
+  .it-no{flex:0 0 auto;font-size:11px;font-weight:500;color:var(--ink-3);background:#f4f2fb;
+    border-radius:6px;padding:2px 6px;font-variant-numeric:tabular-nums;letter-spacing:.3px}
+  .it-title{flex:1;padding:6px 9px;font-size:12.5px;font-weight:600}
+  .it-del{flex:0 0 auto;border:0;background:transparent;color:var(--ink-3);font-size:16px;
+    line-height:1;cursor:pointer;padding:2px 6px;border-radius:6px}
+  .it-del:hover{color:var(--err);background:#fff2f2}
+  .it-body{margin-top:7px;font-size:12px;line-height:1.65;min-height:38px;max-height:62px;
+    resize:none;overflow-y:hidden;scrollbar-width:thin}
+  .it-body::-webkit-scrollbar{width:6px}
+  .it-body::-webkit-scrollbar-thumb{background:#dcd6ee;border-radius:3px}
+  .it-body::-webkit-scrollbar-track{background:transparent}
+  .it-scene{margin-top:7px;font-size:11.5px;padding:6px 9px;background:#fbfaff;color:#4a4463}
+  .it-scene::placeholder{color:#a9a3c0}
+  .it-pw{margin-top:7px;border-top:1px dashed var(--line);padding-top:7px}
+  .it-ph{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-3);margin-bottom:5px}
+  .it-ph span{flex:1}
+  .mini{border:1px solid var(--line);background:#fff;color:var(--ink-2);border-radius:7px;
+    font:inherit;font-size:11px;padding:2px 8px;cursor:pointer}
+  .mini:hover{color:var(--primary);border-color:#cfc6f7}
+  /* 出图按钮用主题色描边，和复制/重拼区分：这是真会烧额度的动作 */
+  .it-gen{color:var(--primary);border-color:#cfc6f7;font-weight:600;flex:0 0 auto}
+  .it-gen:hover{background:#f6f2ff}
+  .it-gen:disabled{opacity:.5;cursor:wait}
+  .it-prompt{font-size:11.5px;line-height:1.62;color:#4a4463;background:#fbfaff;min-height:132px;
+    max-height:460px;overflow:auto}
+  /* 还没写提示词时矮一点，写上去再自动撑开 */
+  .it-pw.blank .it-prompt{min-height:64px;height:64px}
+  .empty-items{border:1px dashed #d7d0ef;border-radius:10px;padding:14px 12px;text-align:center;
+    font-size:11.5px;color:var(--ink-3);line-height:1.75}
+  .chips{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px}
+  .chip{font-size:11px;border:1px solid var(--line);background:#fff;color:var(--ink-2);border-radius:14px;
+    padding:2px 9px;cursor:pointer}
+  .chip.on{background:var(--primary);border-color:var(--primary);color:#fff}
+  .chip .n{display:inline-block;margin-left:4px;padding:0 5px;border-radius:8px;background:#f0ecfb;
+    color:var(--ink-3);font-size:10px}
+  .chip.on .n{background:rgba(255,255,255,.24);color:#fff}
+  /* 情绪标签单独放大一档：这排是高频点击项，11px 太小点不准。
+     用等分网格铺满一行，容器宽度变化不会掉出孤儿标签 */
+  #moodChips{display:grid;grid-template-columns:repeat(14,minmax(0,1fr));gap:7px;margin:12px 0 2px}
+  #moodChips .chip{width:100%;text-align:center;font-size:15px;font-weight:500;
+    padding:10px 0;border-radius:20px;letter-spacing:.3px;transition:.14s}
+  #moodChips .chip:hover{border-color:#cfc6f7;color:var(--primary);background:#faf8ff}
+  #moodChips .chip.on{box-shadow:0 2px 8px rgba(106,90,224,.22)}
+  /* 面板窄了就折成两行 7 列，别把字挤到贴边 */
+  #studioPanel{container-type:inline-size}
+  @container (max-width:660px){#moodChips{grid-template-columns:repeat(7,minmax(0,1fr))}}
+  @media (max-width:768px){#moodChips{grid-template-columns:repeat(7,minmax(0,1fr))}}
+  /* 拍摄类型：预设照搬 handraw-style 的 10 个，点一下填进输入框 */
+  #shootChips{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin:10px 0 2px}
+  #shootChips .chip{width:100%;text-align:center;font-size:12.5px;padding:7px 0;border-radius:14px}
+  #shootChips .chip:hover{border-color:#cfc6f7;color:var(--primary);background:#faf8ff}
+  @container (max-width:660px){#shootChips{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  @media (max-width:768px){#shootChips{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  .panel.left #docTitle{font-size:14px;font-weight:600;padding:8px 10px}
+  .panel.left #docBody{min-height:240px;line-height:1.7}
+  .btn.mini{padding:5px 10px;font-size:11.5px}
+  dialog.picker{width:min(1240px,96vw)}
+  dialog.picker h3 span{font-weight:400;color:var(--ink-3);font-size:12px}
+  #pickerGrid{grid-template-columns:repeat(auto-fill,minmax(184px,1fr));gap:14px}
+  #pickerGrid .tile span{font-size:12.5px}
+  #pickerGrid.color-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
+  #pickerGrid.color-grid .tile{padding:8px;gap:6px}
+  #pickerGrid.color-grid .tile img{border-radius:50%;aspect-ratio:1}
+  .preview-card{border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff;min-height:150px}
+  .preview-card h3{margin:0 0 8px;font-size:14px;line-height:1.45}
+  .preview-card p{margin:0;white-space:pre-wrap;color:#3c3652;font-size:12.5px}
+  .empty{color:var(--ink-3);font-size:12px}
+  .md{margin-top:10px;font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:12px;
+    color:#4a4463;background:#fbfaff;border:1px dashed var(--line);border-radius:10px;padding:10px;
+    white-space:pre-wrap;max-height:160px;overflow:auto}
+  .phone{width:100%;max-width:400px;margin:0 auto;border-radius:22px;border:6px solid #efeafc;
+    background:#fff;box-shadow:0 14px 34px rgba(80,60,160,.14);overflow:hidden}
+  .phone .bar{height:26px;display:flex;align-items:center;justify-content:center;font-size:10px;color:#9a94b2;background:#fff}
+  /* 预览区正文可滚：长文不再被 -webkit-line-clamp 截断。
+     这里只用 ::-webkit-scrollbar（6px），不要加 scrollbar-width:thin ——
+     Chrome 会优先用它，thin 实际占 10px，比自绘的还宽 */
+  .phone .body{padding:0 12px 14px;max-height:min(72vh,760px);overflow-y:auto}
+  .phone .body::-webkit-scrollbar{width:6px}
+  .phone .body::-webkit-scrollbar-thumb{background:#ded5fb;border-radius:3px}
+  .phone .body::-webkit-scrollbar-track{background:transparent}
+  .cover-wrap{position:relative}
+  /* 切换箭头放在预览图下方，不叠在图上 */
+  .cover-nav-row{display:none;align-items:center;justify-content:center;gap:14px;margin-top:8px}
+  .cover-nav-row.show{display:flex}
+  .cover-nav{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:#fff;
+    color:var(--ink-2);font-size:17px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
+    padding:0;flex:0 0 auto}
+  .cover-nav:hover{color:var(--primary);border-color:#cfc6f7;background:#fbfaff}
+  .cover-nav:disabled{opacity:.35;cursor:not-allowed}
+  #coverCount{font-size:11px;color:var(--ink-2);min-width:34px;text-align:center}
+  .phone .cover{width:100%;aspect-ratio:var(--cover-ar,3 / 4);border-radius:10px;background:linear-gradient(135deg,#efeafd,#ffe9f1);
+    display:flex;align-items:center;justify-content:center;color:#a49dc0;font-size:11px;overflow:hidden}
+  .phone .cover img{width:100%;height:100%;object-fit:cover}
+  .phone h4{margin:10px 0 6px;font-size:12.5px;line-height:1.5}
+  .phone p{margin:0;font-size:11px;line-height:1.7;color:#4b4562;white-space:pre-wrap}
+  .phone .tags{margin-top:8px;font-size:10.5px;color:#6d63d4}
+  .status{margin-top:10px;font-size:11px;color:var(--ink-2);min-height:18px}
+  .status.run{color:var(--warn)} .status.ok{color:var(--ok)} .status.err{color:var(--err)}
+  .split{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
+  dialog{border:0;border-radius:14px;padding:0;width:min(680px,92vw);box-shadow:0 20px 50px rgba(40,20,100,.25)}
+  dialog::backdrop{background:rgba(35,25,70,.35)}
+  /* 弹窗期间锁住背景滚动，弹窗内滚到顶/底也不把滚动链传给下面的页面 */
+  html.modal-lock, html.modal-lock body{overflow:hidden;overscroll-behavior:contain}
+  dialog[open], dialog[open] *{overscroll-behavior:contain}
+  dialog .inner{padding:16px}
+  dialog h3{margin:0 0 8px;font-size:14px}
+  dialog pre{white-space:pre-wrap;background:#f7f5ff;border-radius:10px;padding:12px;font-size:12px;max-height:58vh;overflow:auto}
+  .toast{position:fixed;right:18px;bottom:18px;z-index:90;display:flex;align-items:flex-start;gap:9px;
+    background:#2b2646;color:#fff;border-radius:12px;padding:10px 14px 10px 11px;font-size:12px;
+    opacity:0;transform:translateY(8px);transition:.25s;pointer-events:none;max-width:380px;
+    box-shadow:0 12px 30px rgba(30,18,60,.28)}
+  .toast.show{opacity:1;transform:none;pointer-events:auto;cursor:pointer}
+  .toast::before{content:'';flex:0 0 auto;width:18px;height:18px;border-radius:50%;margin-top:1px;
+    display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;
+    background:rgba(255,255,255,.16);color:#fff}
+  .toast.ok::before{content:'✓';background:#2ea36a}
+  .toast.err::before{content:'!';background:#d8455f}
+  .toast.info::before{content:'i';background:#6a5ae0}
+  .toast:not(.ok):not(.err):not(.info)::before{display:none}
+  .toast .t-tx{min-width:0}
+  .toast b{display:block;font-size:12.5px;font-weight:600;line-height:1.45;margin-bottom:2px}
+  .toast b[hidden]{display:none}
+  .toast span{display:block;line-height:1.55;color:rgba(255,255,255,.82);word-break:break-word}
+  .pill{display:inline-flex;align-items:center;gap:6px;background:#f7f5ff;border:1px solid var(--line);
+    border-radius:12px;padding:3px 9px;font-size:11px;color:var(--ink-2)}
+  .footer-note{margin-top:12px;font-size:10.5px;color:var(--ink-3);line-height:1.6}
+  .strip-wrap{display:flex;align-items:center;gap:6px}
+  .strip{position:relative;flex:1;display:flex;gap:8px;overflow-x:auto;padding:6px 2px;min-height:100px;scroll-behavior:smooth}
+  .strip::-webkit-scrollbar{height:8px}
+  .strip::-webkit-scrollbar-thumb{background:#ded8f4;border-radius:8px}
+  .shot{flex:0 0 88px;border:2px solid transparent;border-radius:10px;padding:2px;background:#fff;
+    cursor:pointer;position:relative;transition:.12s}
+  .shot img{width:100%;height:92px;object-fit:cover;border-radius:8px;display:block;background:#f6f5fb;cursor:zoom-in}
+  .shot.on{border-color:var(--primary);box-shadow:0 0 0 3px rgba(106,90,224,.16)}
+  .shot .no{position:absolute;left:5px;top:5px;background:rgba(31,27,46,.62);color:#fff;
+    font-size:10px;border-radius:6px;padding:0 5px}
+  .dl-row{display:none;gap:8px;margin:10px 0}
+  .dl-row.show{display:flex}
+  .dl-row .btn{flex:1 1 0;min-width:0}
+  .dl-row .btn:disabled{opacity:.5;cursor:wait}
+  .nav-btn{flex:0 0 28px;height:58px;border-radius:9px;border:1px solid var(--line);background:#fff;
+    color:var(--ink-2);cursor:pointer;font-size:15px;line-height:1}
+  .nav-btn:hover{color:var(--primary);border-color:#cfc6f7}
+  .nav-btn:disabled{opacity:.4;cursor:not-allowed}
+  #cover img{width:100%;height:100%;object-fit:cover;cursor:zoom-in}
+  /* 必须 fit-content，不能写 auto：auto 会盖掉 UA 的 width:fit-content，
+     弹窗被拉伸到 max-width（96vw），图就变成贴左边了 */
+  dialog.viewer{width:fit-content;max-width:96vw;background:transparent;box-shadow:none;overflow:visible}
+  dialog.viewer::backdrop{background:rgba(18,12,38,.8)}
+  /* 标题比图宽时弹窗按标题撑开，图自己水平居中，不至于又贴左 */
+  dialog.viewer img{max-width:94vw;max-height:86vh;border-radius:14px;display:block;margin:0 auto}
+  /* 按钮放到图片外侧，不压在画面上：三列 flex，中间是图 */
+  /* overflow:hidden 让放大后的图只在画框内走动，不会糊住底部说明和翻页按钮 */
+  .viewer-stage{display:flex;align-items:center;justify-content:center;gap:18px;overflow:hidden;border-radius:14px}
+  /* 图片给两侧按钮让出位置，避免按钮顶出屏幕；只有一张图（按钮隐藏）时不缩图 */
+  dialog.viewer .viewer-stage img{max-width:94vw;margin:0}
+  .viewer-stage:has(.viewer-nav:not([hidden])) img{max-width:calc(94vw - 150px)}
+  /* 左右切图：圆形按钮，只有一张图时隐藏 */
+  .viewer-nav{flex:0 0 auto;width:48px;height:48px;border-radius:50%;
+    border:1px solid rgba(255,255,255,.5);cursor:pointer;color:#fff;padding:0;position:relative;z-index:2;
+    background:rgba(16,11,32,.78);backdrop-filter:blur(8px);box-shadow:0 6px 18px rgba(0,0,0,.45);
+    display:flex;align-items:center;justify-content:center;transition:background .15s,transform .12s}
+  .viewer-nav:hover{background:rgba(31,157,107,.92);border-color:rgba(255,255,255,.7)}
+  .viewer-nav:active{transform:scale(.94)}
+  .viewer-nav[hidden]{display:none}
+  @media (max-width:640px){
+    .viewer-stage{gap:6px}
+    .viewer-nav{width:34px;height:34px}
+    .viewer-nav svg{width:18px;height:18px}
+    .viewer-stage:has(.viewer-nav:not([hidden])) img{max-width:calc(96vw - 88px)}
+  }
+  .viewer-cap{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:10px;color:#fff;font-size:12px;
+    position:relative;z-index:3}
+  /* 大图：滚轮放大缩小，放大后可以拖着看；缩小回 1 倍自动回正 */
+  dialog.viewer img{cursor:zoom-in;will-change:transform;user-select:none;-webkit-user-drag:none}
+  dialog.viewer.zoomed img{cursor:grab}
+  dialog.viewer.zoomed img.dragging{cursor:grabbing}
+  #viewZoom{color:#9fe8c6;font-size:11.5px;font-variant-numeric:tabular-nums;min-width:34px;text-align:center}
+  .viewer-cap button, .viewer-cap a.dl{border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.12);
+    color:#fff;border-radius:9px;padding:5px 12px;cursor:pointer;font:inherit;text-decoration:none}
+  /* 顶栏入口 */
+  /* 顶栏操作区：出图三连放到右上角跟着页面走，不用滚到底部去点 */
+  .head-acts{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:nowrap}
+  .head-acts .btn{padding:8px 13px;font-size:12.5px}
+  .head-acts .btn.mini{padding:6px 11px;font-size:11.5px}
+  .head-acts .status{margin:0;max-width:220px;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;font-size:11.5px;line-height:1.3}
+  .head-acts .ha-sep{width:1px;height:20px;background:var(--line);margin:0 3px;flex:none}
+  /* 空间不够时让操作区独占第二行，别把标题和号池挤变形 */
+  @media (max-width:1240px){
+    header{flex-wrap:wrap;row-gap:8px}
+    .head-acts{order:3;flex:1 0 100%;flex-wrap:wrap;justify-content:flex-start}
+    .pool-chip{margin-left:auto}
+  }
+  /* 宽弹窗 */
+  dialog.wide{width:min(1120px,95vw);max-height:calc(100vh - 32px);overflow:auto}
+  /* 历史弹窗：高度固定，头部/列表/分页各占各的，列表自己滚，整个弹窗不滚。
+     高度写死是为了展开任务时框不跟着蹦，眼睛不用重新找位置 */
+  #historyDlg{height:min(940px,calc(100vh - 40px));max-height:calc(100vh - 40px);overflow:hidden}
+  #historyDlg .inner{height:100%;display:flex;flex-direction:column;min-height:0}
+  #historyDlg .dlg-head{flex:none}
+  .dlg-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .dlg-head h3{margin:0;font-size:14px;display:flex;align-items:baseline;gap:8px}
+  .dlg-head h3 span{font-size:11px;color:var(--ink-3);font-weight:400}
+  .dlg-head .spacer{flex:1}
+  .dlg-head input{width:190px;padding:6px 10px;font-size:12px;flex:none}
+  /* 全局有 select{width:100%}，放头部会占满整行把其它控件挤下去 */
+  .dlg-head select{width:auto;flex:none;padding:6px 8px;font-size:12px}
+  /* 历史卡片 */
+  .hist-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(188px,1fr));gap:12px;
+    max-height:64vh;overflow:auto;padding:2px}
+  .hist-card{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden;
+    display:flex;flex-direction:column}
+  .hist-card .hc-thumb{position:relative;aspect-ratio:3/4;background:#f6f5fb;display:flex;
+    align-items:center;justify-content:center;overflow:hidden}
+  .hist-card .hc-thumb img{width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in}
+  .hist-card .hc-thumb.failed{color:var(--err);font-size:11px;padding:10px;text-align:center;line-height:1.6}
+  .hist-card .hc-thumb.text{color:var(--ink-2);font-size:11px;padding:11px;line-height:1.7;text-align:left;
+    align-items:flex-start;justify-content:flex-start;white-space:pre-wrap;overflow:hidden}
+  .hist-card .hc-body{padding:8px 9px 9px;display:flex;flex-direction:column;gap:4px;flex:1}
+  .hist-card b{font-size:12px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;
+    -webkit-box-orient:vertical;overflow:hidden}
+  .hist-card .hc-sub{font-size:10.5px;color:var(--ink-3);line-height:1.55}
+  .hist-card .hc-acts{display:flex;gap:5px;margin-top:auto;padding-top:6px}
+  .hist-card .hc-acts .mini{flex:1;text-align:center}
+  .hist-empty{padding:34px;text-align:center;color:var(--ink-3);font-size:12px}
+  .hist-empty[hidden]{display:none}
+  .hist-more{display:flex;justify-content:center;margin-top:10px}
+  .hist-more button{display:none}
+  .hist-more button.show{display:inline-block}
+  /* 历史：按任务折叠 */
+  /* 列表吃掉弹窗剩余高度，随窗口伸缩；不再用 64vh 卡死，展开态才有地方长 */
+  .task-list{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:2px}
+  /* 行不裁内容：原来 overflow:hidden 会把卡片底部 4px 切掉，按钮看着像被挡住 */
+  .task-row{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:visible}
+  .task-row.open{border-color:#d8cffb;box-shadow:0 3px 12px rgba(106,90,224,.07)}
+  .task-head{display:flex;align-items:center;gap:9px;padding:9px 11px;cursor:pointer;user-select:none;
+    border-radius:11px}
+  .task-row.open .task-head{border-radius:11px 11px 0 0}
+  .task-head:hover{background:#faf8ff}
+  .task-head .tw{width:11px;flex:none;color:var(--ink-3);font-size:10px;transition:transform .15s;display:inline-block}
+  .task-row.open .task-head .tw{transform:rotate(90deg)}
+  .task-head b{font-size:12.5px;line-height:1.45;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;max-width:44%;font-weight:600}
+  .task-head .tm{font-size:11px;color:var(--ink-3);white-space:nowrap}
+  .task-head .tm .okc{color:var(--ok)} .task-head .tm .errc{color:var(--err)}
+  .task-head .spacer{flex:1;min-width:6px}
+  .task-head .chipx{font-size:10.5px;color:var(--ink-3);border:1px solid var(--line);
+    border-radius:20px;padding:1px 7px;white-space:nowrap;background:#fbfaff}
+  .task-head .chipx.img{color:var(--primary);border-color:#ded5fb;background:#f7f4ff}
+  /* 任务行右侧两个动作：载入 / 删除。别让它们把标题挤没，标题那边靠 ellipsis 兜 */
+  .task-head .tacts{display:flex;gap:5px;flex:none;margin-left:2px}
+  .task-head .tacts .mini{padding:3px 8px;font-size:10.5px;line-height:1.45;white-space:nowrap}
+  .task-head .tacts .mini.del:hover{color:var(--err);border-color:#f2c6c6}
+  .task-body{border-top:1px dashed var(--line);padding:10px 10px 14px;background:#fcfbff;
+    border-radius:0 0 11px 11px}
+  .task-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:9px}
+  .task-grid .hist-card .hc-body{padding:6px 7px 7px;gap:2px}
+  .task-grid .hist-card b{font-size:11.5px;-webkit-line-clamp:2}
+  .task-grid .hist-card .hc-sub{font-size:10px}
+  .task-grid .hist-card .hc-acts{padding-top:5px;gap:4px}
+  .task-grid .hist-card .hc-acts .mini{padding:4px 6px;font-size:10.5px}
+  .task-empty{padding:14px;text-align:center;color:var(--ink-3);font-size:11.5px}
+  .pager{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:11.5px;color:var(--ink-3);flex:none}
+  .pager .spacer{flex:1}
+  .pager button{border:1px solid var(--line);background:#fff;color:var(--ink-2);border-radius:9px;
+    padding:5px 11px;font:inherit;font-size:11.5px;cursor:pointer}
+  .pager button:disabled{opacity:.4;cursor:default}
+  .pager select{padding:4px 7px;font-size:11.5px;border-radius:8px;border:1px solid var(--line);background:#fff}
+  /* 草稿箱 */
+  .draft-list{max-height:60vh;overflow:auto;display:flex;flex-direction:column;gap:7px}
+  .draft-row{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:11px;
+    background:#fff;padding:9px 11px}
+  .draft-row .dc{min-width:0;flex:1}
+  .draft-row b{display:block;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .draft-row .ds{display:block;font-size:10.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .draft-row .rn-input{width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;
+    border:1px solid var(--primary);border-radius:7px;padding:3px 7px;background:#fff;color:inherit}
+  .draft-row .dacts{display:flex;gap:5px;flex:none}
+  .draft-row .chipx{font-size:10px;color:var(--primary);border:1px solid #ded5fb;background:#f7f4ff;
+    border-radius:20px;padding:1px 7px;white-space:nowrap;flex:none}
+  .panel h2 .spacer{flex:1}
+  .panel h2 .btn.mini{padding:4px 9px;font-size:11px}
+  .panel h2 #draftCount{font-style:normal;color:var(--primary);font-weight:600}
+  /* 监控 */
+  .mon-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(122px,1fr));gap:8px;margin-bottom:6px}
+  .mon-kpi{border:1px solid var(--line);border-radius:11px;padding:9px 11px;background:#fbfaff}
+  .mon-kpi span{display:block;font-size:10.5px;color:var(--ink-3)}
+  .mon-kpi b{font-size:17px;letter-spacing:.4px}
+  .mon-kpi b.ok{color:var(--ok)} .mon-kpi b.warn{color:var(--warn)} .mon-kpi b.err{color:var(--err)}
+  .mon-sec{display:flex;align-items:center;gap:8px;margin:12px 0 6px;font-size:12px}
+  .mon-sec span{font-size:11px;color:var(--ink-3)}
+  .mon-sec .spacer{flex:1}
+  .mon-box{border:1px solid var(--line);border-radius:11px;overflow:auto;max-height:38vh;background:#fff}
+  table.mon{width:100%;border-collapse:collapse;font-size:11.5px}
+  table.mon th{position:sticky;top:0;background:#faf8ff;color:var(--ink-3);font-weight:500;
+    text-align:left;padding:7px 9px;white-space:nowrap;border-bottom:1px solid var(--line)}
+  table.mon td{padding:5px 9px;border-bottom:1px solid #f4f2fb;white-space:nowrap;color:var(--ink-2)}
+  table.mon td.err{color:var(--err);max-width:230px;overflow:hidden;text-overflow:ellipsis}
+  table.mon td.quota{color:var(--ink-2)}
+  table.mon td.quota.low{color:#b37207;font-weight:500}
+  table.mon tr.on-air td{background:#fffaf0}
+  table.mon tr.on-air td:first-child{box-shadow:inset 2px 0 0 #e9a13b}
+  .st{padding:1px 7px;border-radius:9px;font-size:10.5px;background:#f0ecfb;color:var(--ink-2)}
+  .st.ready{background:#e7f9f1;color:#0b8a63}
+  .st.busy{background:#fff5e0;color:#b37207}
+  .st.unhealthy,.st.error{background:#ffeaea;color:#c92a2a}
+  .st.unbound,.st.pending{background:#f1f0f5;color:#7b74a0}
+  .mon-jobs{display:flex;flex-direction:column;gap:6px}
+  .mon-job{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:9px;
+    padding:6px 9px;font-size:11.5px;background:#fff}
+  .mon-job .mj-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mon-job .mj-a{color:var(--ink-3);font-size:10.5px}
+  .mon-job.fail{border-color:#ffd9d9;background:#fffafa}
+  .mon-none{font-size:11.5px;color:var(--ink-3);padding:6px 2px}
+  /* 单张重做提示条：主色描边，和默认态明确区分 */
+  .redo-bar{display:flex;align-items:center;gap:8px;margin:0 0 10px;padding:9px 12px;
+    background:#f1eefe;border:1px solid #ddd6fb;border-left:3px solid var(--primary);
+    border-radius:10px;color:var(--primary);font-size:12px;line-height:1.5}
+  .redo-bar[hidden]{display:none!important}
+  .redo-bar .spacer{flex:1}
+  /* 随机示例提示条：这批东西是系统随手给的，得说清楚，别让人以为是自己写的 */
+  .demo-note{display:flex;align-items:flex-start;gap:8px;margin:0 0 10px;padding:9px 12px;
+    background:#fffaf0;border:1px solid #f3d9ad;border-left:3px solid var(--warn);
+    border-radius:10px;color:#8a5b00;font-size:12px;line-height:1.55}
+  .demo-note[hidden]{display:none!important}
+  .demo-note b{color:#b37207;font-weight:600}
+  .demo-note .dn-x{margin-left:auto;flex:none;border:0;background:transparent;color:#b37207;
+    cursor:pointer;font-size:15px;line-height:1;padding:2px 5px;border-radius:6px}
+  .demo-note .dn-x:hover{background:#f8e8cb}
+  /* ---------- 接口与号池弹窗 ---------- */
+  /* 号池页签比接口页长：整框高度封顶，标题/页签/底部按钮固定，只有内容区滚，
+     小窗口下也能一直看到「保存」 */
+  #configDlg{max-height:calc(100vh - 32px);overflow:hidden}
+  #configDlg .inner{display:flex;flex-direction:column;max-height:calc(100vh - 32px);min-height:0}
+  #configDlg .dlg-head,#configDlg .cfg-tabs,#configDlg .cfg-foot{flex:none}
+  #configDlg #tabIface{flex:1 1 auto;overflow:auto;min-height:0;padding-right:4px}
+  .cfg-tabs{display:flex;gap:6px;background:#f6f4fd;border:1px solid var(--line);border-radius:10px;padding:4px;margin:0 0 14px}
+  .cfg-tab{flex:1;border:0;background:transparent;border-radius:8px;padding:7px 10px;font:inherit;font-weight:600;
+    color:var(--ink-3);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:.15s}
+  .cfg-tab:hover{color:var(--primary)}
+  .cfg-tab.on{background:#fff;color:var(--primary);box-shadow:0 2px 8px rgba(80,60,160,.1)}
+  .cfg-tab i{font-style:normal;font-size:11px;font-weight:400;color:var(--ink-3);margin-left:4px}
+  .cfg-tab.on i{color:var(--primary)}
+  .cfg-foot{display:flex;gap:8px;align-items:center;margin-top:14px;border-top:1px solid #f0ecfa;padding-top:12px}
+  .cfg-foot[hidden]{display:none}
+  .cfg-foot .spacer{flex:1}
+  .cfg-foot #cfgResult{flex:1;min-width:0}
+  #tabPool{display:flex;flex-direction:column;gap:10px;flex:1 1 auto;overflow:auto;min-height:0;padding-right:4px}
+  #tabPool > *{flex:0 0 auto}          /* 别把账号列表压扁，宁可整页签滚 */
+  #tabPool[hidden]{display:none}
+  .pstate{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#faf9ff;border:1px solid var(--line);
+    border-radius:10px;padding:8px 11px;font-size:12px}
+  #pSvcMsg{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pstate b{font-size:12.5px}
+  .pstate .spacer{flex:1}
+  .pmeta{color:var(--ink-3);font-size:11.5px;line-height:1.55}
+  .pwarn{background:#fff7e6;border:1px solid #ffe0a3;color:#8a5a00;border-radius:10px;
+    padding:8px 11px;font-size:12px;line-height:1.6}
+  .pbox{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:#fdfcff;
+    display:flex;flex-direction:column;gap:7px}
+  .prow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .plabel{flex:0 0 56px;color:var(--ink-3);font-size:11.5px}
+  .prow code{flex:1;min-width:0;background:#f3f1fb;border:1px solid #e8e4f5;border-radius:7px;
+    padding:4px 9px;font-size:12px;color:#2b2646;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;user-select:all}
+  .phint{margin:0;font-size:11px;color:var(--ink-3);line-height:1.6}
+  #pHome{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .psec{display:flex;align-items:baseline;gap:8px;margin-top:4px}
+  .psec b{font-size:12px}
+  .psec .tag{font-size:11px;color:var(--ink-3)}
+  .pacc{border:1px solid var(--line);border-radius:12px;max-height:224px;overflow:auto;background:#fff}
+  .pacc-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid #f4f2fb;font-size:12px}
+  .pacc-row:last-child{border-bottom:0}
+  .pacc-mail{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pacc-num{width:58px;text-align:right;color:var(--ink-2);font-variant-numeric:tabular-nums;flex:0 0 auto}
+  .pacc-use{width:78px;text-align:right;color:var(--ink-3);font-size:11px;
+    font-variant-numeric:tabular-nums;flex:0 0 auto}
+  .pacc-act{display:flex;gap:2px;flex:0 0 auto}
+  .pacc-act button{border:0;background:transparent;color:var(--primary);font:inherit;font-size:11.5px;
+    cursor:pointer;padding:2px 5px;border-radius:6px}
+  .pacc-act button:hover{background:#f1eefe}
+  .pacc-act button.danger{color:var(--err)}
+  .pacc-empty{padding:16px;text-align:center;color:var(--ink-3);font-size:12px;line-height:1.7}
+  .pchip{flex:0 0 auto;font-size:11px;line-height:1.6;padding:0 7px;border-radius:20px;border:1px solid transparent}
+  .pchip.ok{color:#17845a;background:#e8f6ef;border-color:#bfe8d4}
+  .pchip.warn{color:#8a5a00;background:#fff7e6;border-color:#ffe0a3}
+  .pchip.err{color:#b02a2a;background:#fff0f0;border-color:#ffd0d0}
+  .pchip.off{color:var(--ink-3);background:#f2f2f5;border-color:#e4e4ea}
+</style>
+<script>
+/* 会话失效时统一回申请页，避免各业务 fetch 各自处理 401 */
+(function(){
+  var raw = window.fetch;
+  window.fetch = function(){
+    return raw.apply(this, arguments).then(function(r){
+      if(r.status === 401){ location.href = '/access?expired=1'; }
+      return r;
+    });
+  };
+})();
+</script>
+</head>
+<body>
+<header>
+  <div>
+    <h1><span id="appName">Bluxe手绘工坊 · 生图工作台</span><a class="gh-link" href="https://mp.weixin.qq.com/s/dQ48uZSEurgBD3py1YwPNQ"
+      target="_blank" rel="noopener noreferrer" title="微信公众号：Bluxe的AI办公笔记">#Bluxe的AI办公笔记</a></h1>
+    <div class="sub">选题和文案 → 拆分镜 → handraw-style 配图 → 生成提示词 → 批量出图 → 排版预览</div>
+  </div>
+  <div class="head-acts">
+    <span class="status" id="imageStatus"></span>
+    <button class="btn ghost mini" id="resetAll" type="button"
+      title="清掉选题、标题、正文、分镜清单、补充要求和参考图；图型 / 风格 / 主题色变成不限。画幅、情绪、留白、出图模式保留">一键清空</button>
+    <button class="btn" id="composeAll" type="button">生成提示词</button>
+    <button class="btn primary" id="genImage" type="button">批量出图</button>
+    <button class="btn ghost" id="randomCombo" type="button">随机组合</button>
+    <span class="ha-sep"></span>
+    <button class="btn ghost mini" id="openHistory" type="button">历史记录</button>
+    <button class="btn ghost mini" id="openMonitor" type="button">运行监控</button>
+    <button class="btn ghost mini" id="openConfig" type="button" title="出图接口、本地号池与账号导入">接口与号池</button>
+  </div>
+  <div class="pool-chip"><span class="dot" id="poolDot"></span><span id="poolText">号池连接中…</span></div>
+</header>
+
+<main>
+  <!-- 内容工坊 -->
+  <section class="panel left">
+    <h2>内容工坊 <span class="pill" id="modePill">小红书笔记</span>
+      <span class="spacer"></span>
+      <button class="btn ghost mini" id="saveDraft" type="button" title="内容会自动暂存；点这里是立刻存一次">暂存</button>
+      <button class="btn ghost mini" id="openDrafts" type="button">草稿 <em id="draftCount">0</em></button>
+    </h2>
+    <p class="hint save-hint"><span>文案不满意可让 AI 润色</span><span class="save-state" id="saveState" title="内容一改，1.5 秒没有新操作就自动存成草稿；切走页面也会立刻存一次。点这里可以马上保存"></span></p>
+
+    <label for="topic">选题 / 想写什么</label>
+    <textarea id="topic" rows="2" placeholder="例：秋天第一杯奶茶怎么点才不踩雷"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button class="btn primary" id="genText">AI 生成文章</button>
+      <span class="status" id="textStatus"></span>
+    </div>
+
+    <label for="docTitle">标题</label>
+    <input id="docTitle" placeholder="标题会出现在这里">
+
+    <div class="section-title"><b>正文</b><span class="tag" id="textAccount"></span></div>
+    <textarea id="docBody" rows="14" placeholder="正文会出现在这里，可直接编辑"></textarea>
+    <button class="btn primary full" id="splitToItems" type="button">拆成分镜 →</button>
+    <div class="row" style="margin-top:8px">
+      <button class="btn ghost" id="polishText">AI 润色</button>
+      <button class="btn ghost" id="copyText">复制</button>
+    </div>
+    <div class="status" id="splitStatus"></div>
+    <div class="md" id="docRaw" style="display:none"></div>
+  </section>
+
+  <!-- 配图工坊 -->
+  <section class="panel" id="studioPanel">
+    <h2>配图工坊 <span class="pill">handraw-style</span></h2>
+    <p class="hint">先定组合拿到出图指令，再逐条补说明，程序拼好提示词后一次出图。提示词可手改。</p>
+    <div class="demo-note" id="demoNote" hidden>
+      <span id="demoNoteText"></span>
+      <button class="dn-x" id="demoNoteX" type="button" title="知道了">×</button>
+    </div>
+
+    <div class="pick-row">
+      <div class="pick-card" id="cardLayout">
+        <div class="pk-head">
+          <span class="pk-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M10 10v10"/></svg></span>
+          <b>图型</b>
+          <span class="pk-opt" id="optLayout">可选 (170)</span>
+        </div>
+        <button class="pk-btn" id="emptyLayout" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M10 10v10"/></svg>
+          <span class="t">按图选择图型 <em id="cntLayout">(170)</em></span>
+        </button>
+        <div class="pk-body" id="bodyLayout" hidden>
+          <span class="pk-thumb"><img id="pimgLayout" alt="" loading="lazy"></span>
+          <span class="pk-meta">
+            <span class="pk-id" id="pidLayout">—</span>
+            <span class="pk-name" id="pnameLayout">—</span>
+          </span>
+          <span class="pk-acts">
+            <button class="pk-change" id="chgLayout" type="button">更换</button>
+            <button class="pk-clear" id="clrLayout" type="button" title="清除选择">×</button>
+          </span>
+        </div>
+      </div>
+
+      <div class="pick-card" id="cardStyle">
+        <div class="pk-head">
+          <span class="pk-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 100 18h1.4a2.6 2.6 0 000-5.2c-1.2 0-2-.8-2-1.9 0-1.1.9-1.9 2.1-1.9H18a3.5 3.5 0 003.5-3.5C21.5 5.6 17.2 3 12 3z"/><circle cx="7.8" cy="10.6" r="1"/><circle cx="12" cy="7.6" r="1"/><circle cx="16.4" cy="10.4" r="1"/></svg></span>
+          <b>风格</b>
+          <span class="pk-opt" id="optStyle">可选 (367)</span>
+        </div>
+        <button class="pk-btn" id="emptyStyle" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 100 18h1.4a2.6 2.6 0 000-5.2c-1.2 0-2-.8-2-1.9 0-1.1.9-1.9 2.1-1.9H18a3.5 3.5 0 003.5-3.5C21.5 5.6 17.2 3 12 3z"/><circle cx="7.8" cy="10.6" r="1"/><circle cx="12" cy="7.6" r="1"/><circle cx="16.4" cy="10.4" r="1"/></svg>
+          <span class="t">按图选择风格 <em id="cntStyle">(367)</em></span>
+        </button>
+        <div class="pk-body" id="bodyStyle" hidden>
+          <span class="pk-thumb"><img id="pimgStyle" alt="" loading="lazy"></span>
+          <span class="pk-meta">
+            <span class="pk-id" id="pidStyle">—</span>
+            <span class="pk-name" id="pnameStyle">—</span>
+          </span>
+          <span class="pk-acts">
+            <button class="pk-change" id="chgStyle" type="button">更换</button>
+            <button class="pk-clear" id="clrStyle" type="button" title="清除选择">×</button>
+          </span>
+        </div>
+      </div>
+
+      <div class="pick-card" id="cardColor">
+        <div class="pk-head">
+          <span class="pk-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5s6 6.4 6 10.2a6 6 0 11-12 0c0-3.8 6-10.2 6-10.2z"/></svg></span>
+          <b>主题色</b>
+          <span class="pk-opt" id="optColor">可选 (36)</span>
+        </div>
+        <button class="pk-btn" id="emptyColor" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5s6 6.4 6 10.2a6 6 0 11-12 0c0-3.8 6-10.2 6-10.2z"/></svg>
+          <span class="t">按图选择主题色 <em id="cntColor">(36)</em></span>
+        </button>
+        <div class="pk-body" id="bodyColor" hidden>
+          <span class="pk-thumb"><img id="pimgColor" alt="" loading="lazy"></span>
+          <span class="pk-meta">
+            <span class="pk-id" id="pidColor">—</span>
+            <span class="pk-name" id="pnameColor">—</span>
+          </span>
+          <span class="pk-acts">
+            <button class="pk-change" id="chgColor" type="button">更换</button>
+            <button class="pk-clear" id="clrColor" type="button" title="清除选择">×</button>
+          </span>
+        </div>
+      </div>
+
+      <div class="pick-card" id="cardRef">
+        <div class="pk-head">
+          <span class="pk-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.8" cy="9" r="1.6"/><path d="M21 15.5l-4.2-4.2L7 21"/></svg></span>
+          <b>参考图</b>
+          <span class="pk-opt">可选</span>
+        </div>
+        <button class="pk-btn" id="emptyRef" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0L8 8m4-4l4 4"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+          <span class="t">上传 / 拖入参考图</span>
+        </button>
+        <div class="pk-body" id="bodyRef" hidden>
+          <span class="pk-thumb"><img id="pimgRef" alt="参考图" loading="lazy"></span>
+          <span class="pk-meta">
+            <span class="pk-id" id="pidRef">参考图</span>
+            <span class="pk-name" id="pnameRef">—</span>
+          </span>
+          <span class="pk-acts">
+            <button class="pk-change" id="chgRef" type="button">更换</button>
+            <button class="pk-clear" id="clrRef" type="button" title="移除参考图">×</button>
+          </span>
+        </div>
+        <input type="file" id="refFile" accept="image/*" hidden>
+      </div>
+    </div>
+
+    <!-- 出图模式：图文＝图里排标题正文（原样不动）；摄影＝按拍摄类型出写真，图里不排文字 -->
+    <div class="params" id="omodeRow">
+      <span class="plabel">出图模式</span>
+      <div class="seg" id="omodeSeg">
+        <button type="button" data-omode="graphic-text" class="on">图文</button>
+        <button type="button" data-omode="photo">摄影</button>
+      </div>
+      <span class="hint" id="omodeHint" style="margin:0">图里排标题和正文文字</span>
+    </div>
+    <div id="shootWrap" hidden>
+      <div class="params" style="margin-top:8px">
+        <span class="plabel">拍摄类型</span>
+        <input id="shootType" placeholder="点下面的标签，或手写（如：情侣）" style="flex:1;min-width:160px;padding:6px 10px">
+      </div>
+      <div class="chips" id="shootChips"></div>
+    </div>
+
+    <div class="params">
+      <span class="plabel">画幅</span>
+      <select id="ratio" style="width:136px;padding:6px 9px">
+        <option value="3:4">3:4 竖版</option>
+        <option value="1:1">1:1 方图</option>
+        <option value="4:3">4:3 横版</option>
+        <option value="16:9">16:9 封面</option>
+        <option value="2.35:1">2.35:1 公众号封面</option>
+        <option value="9:16">9:16 全屏</option>
+      </select>
+      <span class="plabel">情绪</span>
+      <input id="mood" value="治愈、松弛、幽默" placeholder="治愈、幽默" style="flex:1;min-width:110px;padding:6px 10px">
+      <div class="seg" id="wsSeg">
+        <button type="button" data-ws="normal" class="on">留白正常</button>
+        <button type="button" data-ws="moderate">大量留白</button>
+        <button type="button" data-ws="high">极简</button>
+      </div>
+    </div>
+    <div class="chips" id="moodChips"></div>
+    <label class="cbx" style="margin-top:9px" id="fusionRow">
+      <input type="checkbox" id="fusion" checked>
+      <span>缩微摄影融合 · 角色小、场景真，同光源同空间（出图更有故事感）</span>
+    </label>
+
+    <div class="stepbar">
+      <span class="step-no">1</span><b>出图指令</b>
+      <span class="hint" id="instrHint" style="margin:0">组合一变就更新，可直接手改</span>
+      <span class="spacer"></span>
+      <button class="btn ghost mini" id="resetInstr" type="button" hidden>还原</button>
+      <button class="btn ghost mini" id="copyInstr" type="button">复制</button>
+    </div>
+    <div class="instr" id="instrOut" contenteditable="true" spellcheck="false" data-ph="图型 / 风格 / 主题色都可以不选，这里会写出这一轮靠什么出图，也能直接手改">图型 / 风格 / 主题色都可以不选，这里会写出这一轮靠什么出图</div>
+
+    <div class="stepbar">
+      <span class="step-no">2</span><b>分镜清单</b>
+      <span class="tag" id="itemCount">0 条</span>
+      <span class="tag" id="groupTag"></span>
+      <span class="spacer"></span>
+      <button class="btn ghost mini" id="copyAll" type="button">复制全部</button>
+      <button class="btn ghost mini" id="importItems" type="button">粘贴清单</button>
+      <button class="btn ghost mini" id="importPromptOuter" type="button" title="粘贴现成提示词，一段一条，标题正文留空直接生图">导入提示词</button>
+      <button class="btn ghost mini" id="addItem" type="button">＋ 加一条</button>
+    </div>
+    <div class="redo-bar" id="redoBar" hidden>
+      <span id="redoText"></span>
+      <span class="spacer"></span>
+      <button class="btn ghost mini" id="redoExit" type="button">退出重做</button>
+    </div>
+    <div class="items" id="itemList"></div>
+    <div class="empty-items" id="itemEmpty">把整份清单直接粘到这块区域，会自动识别成 N 张卡片，N 张就出 N 张图。<br>格式：<b>01｜先存后花</b> 换行写正文，下一条接着写 <b>02｜拿铁因子</b>。也可以点「＋ 加一条」手写。</div>
+
+    <label for="note" style="margin-top:12px">通用补充要求（可选，每条都生效）</label>
+    <textarea id="note" rows="2" placeholder="例：不要出现多余小字，标题留白多一点"></textarea>
+  </section>
+
+  <!-- 排版预览 -->
+  <aside class="panel right">
+    <h2>排版预览</h2>
+    <p class="hint">排版预览，实时查看发布之后移动端排版效果。</p>
+    <div class="phone">
+      <div class="bar" id="phoneBar">小红书 · 预览</div>
+      <div class="body">
+        <div class="cover-wrap">
+          <div class="cover" id="cover">等待生成配图</div>
+        </div>
+        <div class="cover-nav-row" id="coverNavRow">
+          <button class="cover-nav" id="coverPrev" type="button" title="上一张" hidden>‹</button>
+          <span id="coverCount"></span>
+          <button class="cover-nav" id="coverNext" type="button" title="下一张" hidden>›</button>
+        </div>
+        <h4 id="pTitle">标题会同步到这里</h4>
+        <p id="pBody">正文会同步到这里。</p>
+        <div class="tags" id="pTags"></div>
+      </div>
+    </div>
+    <div class="status" id="ratioNote" hidden></div>
+    <div class="status" id="viewerMeta">预览显示压缩图 · 单击看原图 · 滚轮放大</div>
+
+    <div class="status" id="poolDetail"></div>
+    <div class="dl-row" id="dlRow">
+      <a class="btn ghost" id="downloadBtn" href="#" download style="text-align:center;text-decoration:none">下载当前图片</a>
+      <button class="btn ghost" id="downloadAll" type="button" title="把本轮所有生成成功的图片按展示顺序打成一个 zip">下载全部图片</button>
+    </div>
+    <div class="footer-note">
+      号池 = 10 个 ChatGPT 账号（独立指纹环境）。多任务并行（按账号数自动排队），单账号 90 秒冷却，登录失效自动下线。
+    </div>
+  </aside>
+</main>
+
+<dialog id="importDlg">
+  <div class="inner">
+    <h3 id="importTitle">批量导入分镜</h3>
+    <p class="hint" id="importHint" style="margin:2px 0 8px">整段贴进来即可。每条以 <b>01｜先存后花</b> 开头，下一行写正文，遇到下一个编号自动断开。识别出几张就生成几张图。<br>贴的是现成提示词？点工具条的「<b>导入提示词</b>」。</p>
+    <textarea id="importText" rows="12" placeholder="01｜先存后花&#10;工资到账的第一件事，不是看余额，是先转走一笔到不绑任何支付工具的账户。&#10;02｜拿铁因子&#10;每天一杯奶茶、一个会员、一次顺手的小额支付，一年能悄悄流走五位数。"></textarea>
+    <div class="row" style="margin-top:10px">
+      <span class="hint" id="importCount" style="margin:0">粘贴后自动识别</span>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="importCancel" type="button">取消</button>
+      <button class="btn primary" id="importOk" type="button">导入</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="pickerDlg" class="picker">
+  <div class="inner">
+    <div class="dlg-head">
+      <h3 id="pickerTitle">全部风格</h3>
+      <span class="spacer"></span>
+      <button class="btn ghost mini" id="pickerClose" type="button">关闭</button>
+    </div>
+    <div class="chips" id="pickerChips"></div>
+    <input id="pickerFilter" placeholder="搜索编号 / 名称" style="font-size:12px;padding:7px 10px;margin-bottom:8px">
+    <div class="scroller" style="max-height:74vh"><div class="grid-styles" id="pickerGrid"></div></div>
+  </div>
+</dialog>
+
+<dialog id="viewDlg" class="viewer">
+  <div class="viewer-stage">
+    <button class="viewer-nav prev" id="viewPrev" type="button" aria-label="上一张" title="上一张（←）">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M15 4.5 7.5 12 15 19.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <img id="viewImg" alt="大图预览">
+    <button class="viewer-nav next" id="viewNext" type="button" aria-label="下一张" title="下一张（→）">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M9 4.5 16.5 12 9 19.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
+  <div class="viewer-cap">
+    <span id="viewCap"></span>
+    <span id="viewZoom" title="滚轮放大 / 缩小；放大后可按住拖动查看"></span>
+    <a class="dl" id="viewDl" href="#" download hidden>下载图片</a>
+    <button id="viewClose">关闭 (Esc)</button>
+  </div>
+</dialog>
+
+<dialog id="historyDlg" class="wide">
+  <div class="inner">
+    <div class="dlg-head">
+      <h3>生成历史 <span id="historyCount">0 个任务</span></h3>
+      <span class="spacer"></span>
+      <input id="historyFilter" placeholder="搜任务标题 / 分镜标题">
+      <select id="historyPageSize" title="每页显示多少个任务">
+        <option value="20" selected>每页 20</option>
+        <option value="50">每页 50</option>
+        <option value="100">每页 100</option>
+      </select>
+      <button class="btn ghost mini" id="historyRefresh" type="button">刷新</button>
+      <button class="btn ghost mini" id="historyClose" type="button">关闭</button>
+    </div>
+    <div class="task-list" id="taskList"></div>
+    <div class="hist-empty" id="historyEmpty" hidden>还没有生成记录。出图成功后会自动记在这里，可随时回看和下载。</div>
+    <div class="pager">
+      <span id="taskPageInfo">—</span>
+      <span class="spacer"></span>
+      <button id="taskPrev" type="button" disabled>上一页</button>
+      <button id="taskNext" type="button" disabled>下一页</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="draftsDlg">
+  <div class="inner">
+    <div class="dlg-head">
+      <h3>草稿箱 <span id="draftHint">暂存的内容存在服务器，换设备也能接着改 · 点重命名可自定义名称</span></h3>
+      <span class="spacer"></span>
+      <button class="btn ghost mini" id="draftNew" type="button">另存当前为新草稿</button>
+      <button class="btn ghost mini" id="draftsClose" type="button">关闭</button>
+    </div>
+    <div class="draft-list" id="draftList"></div>
+    <div class="hist-empty" id="draftEmpty" hidden>还没有暂存。左边写完点什么，点「暂存」就会出现在这里。</div>
+  </div>
+</dialog>
+
+<dialog id="monitorDlg" class="wide">
+  <div class="inner">
+    <div class="dlg-head">
+      <h3>运行监控 <span id="monUpdated"></span></h3>
+      <span class="spacer"></span>
+      <button class="btn ghost mini" id="monRefresh" type="button">刷新绑定</button>
+      <button class="btn ghost mini" id="monReset" type="button">重置状态</button>
+      <button class="btn mini" id="monCheck" type="button">检测全部账号</button>
+      <button class="btn ghost mini" id="monClose" type="button">关闭</button>
+    </div>
+    <div class="mon-sum" id="monSum"></div>
+    <div class="mon-sec"><b>账号状态</b><span id="monAccHint"></span><span class="spacer"></span><span id="monCheckHint"></span></div>
+    <div class="mon-box">
+      <table class="mon">
+        <thead><tr><th>账号</th><th>环境</th><th>状态</th><th>成功</th><th>失败</th><th>冷却</th><th>最近成功</th><th title="号池里这个号还剩多少次出图额度；有异常时接在后面">配额 / 备注</th></tr></thead>
+        <tbody id="monAccBody"></tbody>
+      </table>
+    </div>
+    <div class="mon-sec"><b>进行中 / 排队</b><span id="monJobHint"></span></div>
+    <div class="mon-jobs" id="monJobs"></div>
+    <div class="mon-sec"><b>今日失败账号</b><span id="monFailHint"></span></div>
+    <div class="mon-jobs" id="monFails"></div>
+    <div class="mon-sec"><b>最近失败</b></div>
+    <div class="mon-jobs" id="monErrors"></div>
+  </div>
+</dialog>
+
+<dialog id="configDlg" style="width:min(780px,94vw)">
+  <div class="inner">
+    <div class="dlg-head">
+      <h3>接口与号池 <span id="cfgEngine" style="font-weight:400;color:var(--ink-3);font-size:12px"></span></h3>
+      <span class="spacer"></span>
+      <button class="btn ghost mini" id="cfgClose" type="button">关闭</button>
+    </div>
+    <div class="cfg-tabs" role="tablist">
+      <button class="cfg-tab on" type="button" data-tab="iface" role="tab">出图接口</button>
+      <button class="cfg-tab" type="button" data-tab="pool" role="tab">本地号池<i id="poolTabTag"></i></button>
+    </div>
+
+    <div id="tabIface">
+    <p style="font-size:12px;color:var(--ink-3);margin:0 0 12px;line-height:1.6">
+      填任意 OpenAI 兼容接口即可出图。默认连本机生图号池；换第三方接口只要改 Base URL 与 API Key。API Key 留空表示沿用已保存的密钥，不会清掉。
+    </p>
+    <div style="display:grid;gap:10px">
+      <label style="display:block;font-size:12px;color:var(--ink-3)">工作台名称
+        <input id="cfgAppName" maxlength="40" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="例：Bluxe手绘工坊 · 生图工作台">
+        <span id="cfgAppNameHint" style="font-size:11px;color:var(--ink-3)">改完保存，页头标题和浏览器标签一起变；留空回到默认名。</span>
+      </label>
+      <label style="display:block;font-size:12px;color:var(--ink-3)">接口地址 Base URL
+        <input id="cfgBase" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="http://127.0.0.1:38651/v1">
+        <span style="font-size:11px;color:var(--ink-3)">填到根就行，漏写 /v1 会自动补上</span>
+      </label>
+      <label style="display:block;font-size:12px;color:var(--ink-3)">API Key
+        <input id="cfgKey" type="password" autocomplete="off" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="sk-...">
+        <span id="cfgKeyHint" style="font-size:11px;color:var(--ink-3)"></span>
+      </label>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <label style="display:block;font-size:12px;color:var(--ink-3);flex:1;min-width:150px">出图模型
+          <input id="cfgModelImage" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="gpt-image-2 / dall-e-3">
+        </label>
+        <label style="display:block;font-size:12px;color:var(--ink-3);flex:1;min-width:150px">文案模型
+          <input id="cfgModelText" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="auto 或 gpt-4o-mini">
+        </label>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-3);white-space:nowrap">
+        <input id="cfgEdits" type="checkbox" style="width:auto;flex:0 0 auto;margin:0">
+        <span>支持参考图（edits，/v1/images/edits）</span>
+      </div>
+      <div style="display:flex;gap:18px;align-items:center;font-size:12px;color:var(--ink-3);flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:6px;white-space:nowrap">返回格式
+          <select id="cfgFormat" style="padding:4px;border:1px solid #e4dff2;border-radius:6px"><option value="auto">自动</option><option value="b64_json">b64_json</option><option value="url">url</option></select>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;white-space:nowrap">参考图方式
+          <select id="cfgEditsStyle" style="padding:4px;border:1px solid #e4dff2;border-radius:6px"><option value="auto">自动</option><option value="json">JSON（号池）</option><option value="multipart">multipart（标准）</option><option value="off">关闭</option></select>
+        </div>
+      </div>
+      <div style="border-top:1px solid #f0ecfa;padding-top:10px">
+        <div style="font-size:12px;color:var(--ink-3);margin-bottom:4px">生成图片保存目录</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="cfgOutDir" style="flex:1;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="留空 = 工作台默认目录">
+          <button class="btn ghost mini" id="cfgOpenDir" type="button" style="flex:0 0 auto;white-space:nowrap">打开目录</button>
+        </div>
+        <span id="cfgOutHint" style="font-size:11px;color:var(--ink-3);line-height:1.6"></span>
+      </div>
+    </div>
+    </div>
+
+    <div id="tabPool" hidden>
+      <div class="pstate">
+        <span class="dot" id="pDot"></span>
+        <b id="pState">读取中…</b>
+        <span class="pmeta" id="pMeta"></span>
+        <span class="spacer"></span>
+        <button class="btn primary mini" id="pStart" type="button" hidden>启动号池</button>
+        <button class="btn ghost mini" id="pRestart" type="button" hidden>重启</button>
+        <button class="btn ghost mini" id="pStop" type="button" hidden>停止</button>
+        <button class="btn ghost mini" id="pReload" type="button">刷新</button>
+      </div>
+      <div class="prow" style="margin:6px 0 2px">
+        <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink-3);white-space:nowrap">
+          <input id="pAuto" type="checkbox" style="width:auto;margin:0"> 掉线自动拉起
+        </label>
+        <span class="pmeta" id="pSvcMsg"></span>
+      </div>
+      <div id="pWarn" class="pwarn" hidden></div>
+
+      <div class="pbox">
+        <div class="prow">
+          <span class="plabel">接口地址</span>
+          <code id="pBase">—</code>
+          <button class="btn ghost mini" type="button" data-copy="pBase">复制</button>
+        </div>
+        <div class="prow">
+          <span class="plabel">API Key</span>
+          <code id="pKey">—</code>
+          <button class="btn ghost mini" type="button" data-copy="pKey">复制</button>
+          <button class="btn ghost mini" type="button" id="pKeyNew">重新生成</button>
+        </div>
+        <p class="phint">这两项就是号池对外的接口：填进脚本、n8n 或别的 OpenAI 兼容客户端都能直接调。</p>
+        <div class="prow">
+          <button class="btn primary mini" type="button" id="pApply">用这个号池出图</button>
+          <span class="pmeta" id="pApplyHint"></span>
+        </div>
+        <p class="phint" id="pHome"></p>
+        <p class="phint">号池是工作台自带的：启动、掉线自动拉起、导入账号都在这里完成，不用另装号池插件。</p>
+      </div>
+
+      <div class="psec"><b>导入账号</b><span class="tag">额度用完了，把新号贴进来</span></div>
+      <textarea id="pImport" rows="3" placeholder="推荐：把号池导出的 JSON 整段粘进来（会连密码和账号资料一起带上，token 过期后能自动重登）。也可以每行一个 access_token（eyJ 开头的长串），但只贴 token 时账号资料留不下"></textarea>
+      <p class="phint">从 ChatGPT2API 导出的账号 JSON 直接用；只有裸 token 时，导入后请留意后续是否需要重新导入。</p>
+      <div class="prow" style="margin-top:8px">
+        <button class="btn" type="button" id="pImportBtn">导入并校验</button>
+        <span class="pmeta" id="pImportMsg"></span>
+      </div>
+
+      <div class="psec"><b>账号</b><span class="tag" id="pAccTag"></span></div>
+      <div id="pAccList" class="pacc"></div>
+    </div>
+
+    <div class="cfg-foot" id="cfgFoot">
+      <span id="cfgResult" style="font-size:12px;min-height:18px;line-height:1.5"></span>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="cfgTest" type="button">测试连接</button>
+      <button class="btn primary" id="cfgSave" type="button">保存</button>
+    </div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite">
+  <div class="t-tx"><b id="toastTitle" hidden></b><span id="toastMsg"></span></div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const state = {styles:[], layouts:[], colors:[], sel:{style:null, layout:null, color:null},
+  picker:{kind:'style', group:'全部'},
+  results:[], idx:0, instrCustom:null, redo:null, selTouched:false};
+
+/* 气泡：默认是轻提示；出图完成走 ok（带勾，停 5 秒），失败走 err。
+   页面在后台时不硬弹（反正看不见），先攒一条，切回来再补。 */
+const TOAST_MS = {ok: 5200, err: 5600, info: 3200};
+let _bgNotice = null;
+function toast(msg, opt){
+  const o = (typeof opt === 'string') ? {type: opt} : (opt || {});
+  if (document.hidden && !o.force){ _bgNotice = {msg, opt: o}; return; }
+  const t = $('#toast');
+  const title = $('#toastTitle');
+  title.textContent = o.title || '';
+  title.hidden = !o.title;
+  $('#toastMsg').textContent = msg || '';
+  t.className = 'toast' + (o.type ? ' ' + o.type : '');
+  void t.offsetWidth;            // 连着来两条也要重新走一遍入场动画
+  t.classList.add('show');
+  clearTimeout(t._h);
+  t._h = setTimeout(()=> t.classList.remove('show'), o.ms || TOAST_MS[o.type] || 3200);
+  t.onclick = ()=>{ clearTimeout(t._h); t.classList.remove('show'); if (o.click) o.click(); };
+}
+
+/* 用时：38 秒 / 4 分 12 秒 */
+function fmtDur(ms){
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return s + ' 秒';
+  const m = Math.floor(s / 60);
+  return m + ' 分 ' + String(s % 60).padStart(2, '0') + ' 秒';
+}
+function imgUrl(p){ return '/img/' + String(p||'').replace(/^images\//,''); }
+
+async function loadCatalog(){
+  const r = await fetch('/api/catalog'); const d = await r.json();
+  state.styles = d.styles; state.layouts = d.layouts; state.colors = d.colors;
+  $('#optLayout').textContent = `可选 (${state.layouts.length})`;
+  $('#optStyle').textContent  = `可选 (${state.styles.length})`;
+  $('#optColor').textContent  = `可选 (${state.colors.length})`;
+  $('#cntLayout').textContent = `(${state.layouts.length})`;
+  $('#cntStyle').textContent  = `(${state.styles.length})`;
+  $('#cntColor').textContent  = `(${state.colors.length})`;
+  // 默认选择一组有辨识度的组合
+  state.sel.style  = state.styles.find(s=>s.id==='FA-018')  || state.styles[0];
+  state.sel.color  = state.colors.find(c=>c.id==='C-26')    || state.colors[0];
+  state.sel.layout = state.layouts.find(l=>l.id==='SC-006') || state.layouts[0];
+  syncPicks();
+}
+
+/* 三张卡片：未选时是虚线入口，选中后就地反显缩略图 + 编号 + 名称 */
+const CARD_KINDS = [['layout','Layout'], ['style','Style'], ['color','Color']];
+
+function pickMeta(kind, it){
+  if (!it) return {id:'', name:''};
+  if (kind === 'layout') return {id: it.id, name: it.title || ''};
+  if (kind === 'style')  return {id: '#' + it.id, name: it.name_en || it.ref || ''};
+  return {id: it.id, name: it.name || ''};
+}
+
+function syncPicks(){
+  CARD_KINDS.forEach(([k, sfx])=>{
+    const it = state.sel[k];
+    const m = pickMeta(k, it);
+    $('#card'+sfx).classList.toggle('on', !!it);
+    $('#body'+sfx).hidden = !it;
+    $('#empty'+sfx).hidden = !!it;
+    if (!it) return;
+    $('#pid'+sfx).textContent = m.id;
+    $('#pname'+sfx).textContent = m.name || '—';
+    const img = $('#pimg'+sfx);
+    if (img.getAttribute('data-src') !== it.img){
+      img.setAttribute('data-src', it.img);
+      img.style.visibility = 'visible';
+      img.onerror = ()=>{ img.style.visibility = 'hidden'; };
+      img.src = imgUrl(it.img);
+    }
+    img.alt = m.name || m.id;
+  });
+  if (state.sel.color && state.sel.color.prompt){
+    $('#note').placeholder = '主题色：' + state.sel.color.name + '（可在下方写补充要求）';
+  }
+  syncInstr();
+  noteContentChanged();        // 换图型 / 风格 / 主题色也算内容改动
+}
+
+/* ---------- 参考图（可选）：上传 / 拖入 / 粘贴 ---------- */
+function syncRef(){
+  const r = state.ref;
+  $('#cardRef').classList.toggle('on', !!r);
+  $('#bodyRef').hidden = !r;
+  $('#emptyRef').hidden = !!r;
+  if (r){
+    $('#pimgRef').src = r.url;
+    $('#pnameRef').textContent = (r.w && r.h) ? (r.w + ' × ' + r.h) : '已上传';
+  }
+  syncInstr();
+  noteContentChanged();        // 加 / 换 / 清参考图也要进草稿
+}
+
+/* 压到 1400px 再传：原图动辄 5MB，号码池那边也要把它传进 ChatGPT，
+   太大只会拖慢出图。PNG 太大就退回 JPEG，手绘线条够看。 */
+function shrinkImage(file, max){
+  return new Promise((resolve, reject)=>{
+    const fr = new FileReader();
+    fr.onerror = ()=> reject(new Error('读取失败'));
+    fr.onload = ()=>{
+      const img = new Image();
+      img.onerror = ()=> reject(new Error('不是有效图片'));
+      img.onload = ()=>{
+        let w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        const k = Math.min(1, max / Math.max(w, h));
+        w = Math.max(1, Math.round(w * k)); h = Math.max(1, Math.round(h * k));
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        let url = c.toDataURL('image/png');
+        if (url.length > 3.4e6) url = c.toDataURL('image/jpeg', 0.9);
+        resolve(url);
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+
+async function uploadRef(file){
+  if (!file) return;
+  if (!/^image\//.test(file.type || '')){ toast('只能上传图片'); return; }
+  toast('参考图上传中…');
+  try{
+    const data = await shrinkImage(file, 1400);
+    const r = await fetch('/api/ref', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({data, name: file.name || ''})});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    state.ref = {id: d.id, url: d.url, w: d.w, h: d.h};
+    syncRef();
+    toast('参考图就绪：出图会以它的画风为基准，和图型/风格一起融合');
+  }catch(e){ toast('上传失败：' + e.message); }
+}
+
+function clearRef(){ state.ref = null; syncRef(); }
+
+function renderGroupChips(box, items, current, onPick){
+  box.innerHTML = '';
+  const groups = ['全部', ...new Set(items.map(s=>s.group_name))];
+  groups.forEach(g=>{
+    const n = g === '全部' ? items.length : items.filter(s=>s.group_name === g).length;
+    const b = document.createElement('button');
+    b.className = 'chip' + (g === current ? ' on' : '');
+    b.innerHTML = `${g}<span class="n">${n}</span>`;
+    b.onclick = ()=> onPick(g);
+    box.appendChild(b);
+  });
+}
+
+function pick(kind, item){
+  if (!item) return;
+  state.sel[kind] = item;
+  state.selTouched = true;
+  syncPicks();
+}
+
+function drawText(text){
+  /* 旧的 filter(Boolean) 会把 AI 返回里的空行全删光，
+     而 splitDoc 的「无编号按空行切块」正是靠空行分段，等于自己把分段信号抹掉了。
+     这里改成压缩连续空行为一个、保留段落结构。 */
+  const raw = String(text || '').replace(/\r/g, '').split('\n').map(x => x.trim());
+  const lines = [];
+  raw.forEach(l => {
+    if (!l){ if (lines.length && lines[lines.length - 1] !== '') lines.push(''); }
+    else lines.push(l);
+  });
+  while (lines.length && !lines[0]) lines.shift();
+  while (lines.length && !lines[lines.length - 1]) lines.pop();
+  const title = lines.shift() || '';
+  while (lines.length && !lines[0]) lines.shift();
+  const body = lines.join('\n');
+  $('#docTitle').value = title;
+  $('#docBody').value = body;
+  $('#docRaw').textContent = text;
+  syncPreview();
+}
+
+function syncPreview(){
+  const title = $('#docTitle').value.trim();
+  const body = $('#docBody').value;
+  $('#pTitle').textContent = title || '标题会同步到这里';
+  $('#pBody').textContent = (body.trim().slice(0, 4000) || '正文会同步到这里。');
+  $('#pTags').textContent = body.split('\n').filter(l=>l.includes('#')).join(' ');
+  noteContentChanged();          // 程序化改值（AI 生成 / 润色）不触发 input，这里补一脚
+}
+
+/* ---------- 弹出选择（主题色 / 风格 / 模板） ---------- */
+function pickerItems(kind){
+  return kind === 'style' ? state.styles : kind === 'layout' ? state.layouts : state.colors;
+}
+
+function openPicker(kind){
+  state.picker = {kind, group:'全部'};
+  const items = pickerItems(kind);
+  const label = kind === 'style' ? '全部风格' : kind === 'layout' ? '全部图型' : '全部主题色';
+  $('#pickerTitle').innerHTML = `${label} <span>共 ${items.length} 个</span>`;
+  $('#pickerFilter').value = '';
+  $('#pickerFilter').placeholder = kind === 'style' ? '搜索编号 / 名称 / 特征'
+    : kind === 'color' ? '搜索编号 / 颜色名' : '搜索编号 / 名称';
+  $('#pickerGrid').classList.toggle('color-grid', kind === 'color');
+  renderPicker();
+  $('#pickerDlg').showModal();
+}
+
+function renderPicker(){
+  const {kind, group} = state.picker;
+  const norm = pickerItems(kind).map(it=>({...it, group_name: it.group_name || it.group || '全部'}));
+  // 当前选中的那张提到第一位：点开就看见自己现在用的是哪一个，不用在几百个里翻
+  const selId = state.sel[kind] && state.sel[kind].id;
+  if (selId){
+    const at = norm.findIndex(it=> it.id === selId);
+    if (at > 0) norm.unshift(norm.splice(at, 1)[0]);
+  }
+  const q = $('#pickerFilter').value.trim().toLowerCase();
+  renderGroupChips($('#pickerChips'), norm, group, g=>{ state.picker.group = g; renderPicker(); });
+  const box = $('#pickerGrid'); box.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  norm.forEach(it=>{
+    if (group !== '全部' && it.group_name !== group) return;
+    const hay = `${it.id} ${it.name_en || ''} ${it.features || ''} ${it.name || ''} ${it.title || ''}`.toLowerCase();
+    if (q && !hay.includes(q)) return;
+    const isSel = !!(selId && selId === it.id);
+    const b = document.createElement('button');
+    b.className = 'tile' + (isSel ? ' sel' : '') + (kind === 'color' ? ' round' : '');
+    b.innerHTML = `<img loading="lazy" src="${imgUrl(it.img)}" alt="${it.id}"><span>${
+      kind === 'color' ? `${it.id} ${it.name || ''}` : it.id}</span>${isSel ? '<i class="cur">当前</i>' : ''}`;
+    b.onclick = ()=>{ pick(kind, it); $('#pickerDlg').close(); };
+    frag.appendChild(b);
+  });
+  box.appendChild(frag);
+}
+
+function payload(mode, topic){
+  return {
+    mode, topic: (topic ?? $('#topic').value).trim(),
+    group: state.group || $('#docTitle').value.trim() || undefined,
+    style_id: state.sel.style && state.sel.style.id,
+    layout_id: state.sel.layout && state.sel.layout.id,
+    color_id: state.sel.color && state.sel.color.id,
+    ratio: $('#ratio').value, note: $('#note').value.trim(),
+    ref_id: state.ref ? state.ref.id : null,
+    image_mode: state.omode || 'graphic-text',
+    shoot_type: state.omode === 'photo' ? ($('#shootType').value || '').trim() : ''
+  };
+}
+
+async function run(mode, statusEl){
+  const p = payload(mode);
+  if (!p.topic){ toast('先写一个选题'); $('#topic').focus(); return; }
+  statusEl.className = 'status run'; statusEl.textContent = '排队中…';
+  try{
+    const r = await fetch('/api/generate', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(p)});
+    if (!r.ok) throw new Error('提交失败 HTTP ' + r.status);
+    const {job_id} = await r.json();
+    poll(job_id, statusEl, mode);
+  }catch(e){ statusEl.className='status err'; statusEl.textContent = e.message; }
+}
+
+async function poll(id, statusEl, mode){
+  // 失败会自动换号重试（15s / 40s / 90s），四次尝试最坏接近 7 分钟，
+  // 轮询预算给到 15 分钟，别把还在重试的任务当成超时
+  for (let i=0;i<450;i++){
+    await new Promise(r=>setTimeout(r, 2000));
+    let d;
+    try { d = await (await fetch('/api/jobs/' + id)).json(); } catch { continue; }
+    if (d.status === 'queued'){
+      statusEl.textContent = d.auto_retry ? `换号重试中（第 ${d.auto_retry}/3 次）…` : '排队中…';
+      continue;
+    }
+    if (d.status === 'running'){ statusEl.textContent = '生成中 · ' + (d.account || ''); continue; }
+    if (d.status === 'done'){
+      statusEl.className = 'status ok';
+      statusEl.textContent = '完成 · ' + (d.account || '');
+      if (mode !== 'image'){ drawText(d.result.text || ''); $('#textAccount').textContent = d.account || ''; }
+      else {
+        // job id 唯一，URL 天然不会撞缓存；去掉 ?t= 时间戳，浏览器才能复用派生图
+        const raw = d.image_url;
+        const prev = d.preview_url || ('/api/history/' + id + '/preview');
+        setCover(prev, raw);
+        const dl = $('#downloadBtn'); dl.href = downloadHref({id}, raw); dl.style.display='block';
+        $('#imageStatus').textContent = '完成 · ' + (d.account || '');
+        setPoolDetail('本轮账号 ' + (d.account || '未知') + ' · ' + (d.result.width||'?') + '×' + (d.result.height||'?'));
+      }
+      const isText = mode !== 'image';
+      toast(isText ? '文案已生成，可直接复制到编辑器' : '配图已生成，右侧就是成品',
+            {type: 'ok', title: isText ? '任务完成' : '出图完成'});
+      return;
+    }
+    if (d.status === 'error'){
+      const who = [...new Set((d.attempts || []).map(a=>a.account).filter(Boolean))];
+      statusEl.className = 'status err';
+      statusEl.textContent = '失败：' + (d.error || '未知错误');
+      toast(who.length ? `换过 ${who.length} 个号：${who.join('、')}` : '生成失败：' + (d.error || ''),
+            {type: 'err', title: '任务失败', ms: 6500});
+      return;
+    }
+  }
+  statusEl.className = 'status err'; statusEl.textContent = '超时未完成';
+}
+
+async function polishText(){
+  const title = $('#docTitle').value.trim();
+  const body = $('#docBody').value.trim();
+  if (!title && !body){ toast('先写标题或正文'); $('#docTitle').focus(); return; }
+  const statusEl = $('#textStatus');
+  statusEl.className = 'status run'; statusEl.textContent = '排队中…';
+  try{
+    const r = await fetch('/api/generate', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        mode:'polish', topic: title || body.slice(0, 60), title, body,
+        style_id: null, layout_id: null, color_id: null, ratio: '3:4', note: null
+      })});
+    if (!r.ok) throw new Error('提交失败 HTTP ' + r.status);
+    const {job_id} = await r.json();
+    poll(job_id, statusEl, 'polish');
+  }catch(e){
+    statusEl.className = 'status err'; statusEl.textContent = e.message;
+  }
+}
+
+/* ---------- 分镜清单 & 提示词组装 ---------- */
+const MOOD_PRESETS = ['治愈','童趣','松弛','幽默','诗意','浪漫','活力','微丧','孤独','紧张','庄严','荒诞','神秘','激烈'];
+/* 默认组合：情绪「治愈、松弛、幽默」，缩微摄影融合在图文 / 摄影两种模式下都勾上。
+   HTML 上的 value / checked 就是默认值，专门防忘记；复选框始终可取消。
+   用户手动动过融合复选框后，用 sessionStorage 在当前标签页记住他的选择：
+   刷新不再强制勾回去，关掉标签页重新打开才回到默认勾上。 */
+const DEFAULT_MOOD = '治愈、松弛、幽默';
+function applyDefaults(){
+  $('#mood').value = DEFAULT_MOOD;
+  $('#fusion').checked = true;
+  try{ sessionStorage.removeItem('wb_fusion_user'); }catch(e){}
+}
+/* 拍摄类型：照搬 handraw-style/gallery/tutorials.html 摄影模式的 10 个预设，不另写 */
+const SHOOT_PRESETS = ['情侣','婚纱','个人写真','亲子全家福','古风汉服','新中式','复古港风','Cosplay','旅行抓拍','职场肖像'];
+/* 封面条识别：优先看对象上的 cover 标记；老记录没有标记，
+   靠「标题以 00 开头」或「提示词以主视觉要求开头」兜底（历史载入、导入回贴都用得上） */
+const COVER_LEAD = '这张是整组的主视觉大图：标题文字是画面绝对主角，占画面一半以上，构图饱满醒目，装饰元素直接呼应标题的意思，除标题外不要出现成段文字。';
+function isCoverItem(it){
+  if (!it) return false;
+  if (it.cover) return true;
+  if (/^00[\s.．、,，:：｜|]/.test((it.title || '').trim())) return true;
+  return !!(it.prompt || '').startsWith(COVER_LEAD);
+}
+/* 主视觉前缀只属于图文：摄影模式图里不排文字，加上会互相打架 */
+function leadFor(it){
+  return state.omode === 'photo' ? '' : (isCoverItem(it) ? COVER_LEAD : '');
+}
+/* 条目编号：封面固定 00；正文优先取标题里自带的（01 02…），没有才按位置数 */
+function itemNo(it, i){
+  if (isCoverItem(it)) return '00';
+  const m = (it.title || '').trim().match(/^0?\d{1,2}(?=[\s.．、,，:：｜|]|$)/);
+  if (m) return m[0].padStart(2, '0');
+  const off = state.items[0] && isCoverItem(state.items[0]) ? 0 : 1;
+  return String(Math.max(1, i + off)).padStart(2, '0');
+}
+state.items = [];
+state.ref = null;          // 参考图：{id, url, w, h}，可选
+state.ws = 'normal';
+state.group = '';
+state.mode = 'image';
+/* 出图模式：graphic-text 图文（默认，行为与以前一致）/ photo 摄影 */
+state.omode = 'graphic-text';
+/* 记住当前正在编辑哪份草稿，以及它的「身份键」（选题，空则用标题）。
+   暂存时比对身份键：同一篇继续改就更新那份，换了选题就另存新的，
+   避免把上一篇草稿悄悄覆盖掉（选题变了还写回旧 id 是最坑的一种）。 */
+try{
+  state.draftId = localStorage.getItem('wb_draft_id') || null;
+  state.draftKey = localStorage.getItem('wb_draft_key') || '';
+}catch(e){ state.draftId = null; state.draftKey = ''; }
+state.tasks = {page:1, limit:20, pages:1, total:0, items:[], q:''};
+
+function moods(){
+  return ($('#mood').value || '').split(/[、,，\/\s]+/).map(s=>s.trim()).filter(Boolean);
+}
+
+function renderMoodChips(){
+  const cur = new Set(moods());
+  const box = $('#moodChips'); box.innerHTML = '';
+  MOOD_PRESETS.forEach(m=>{
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (cur.has(m) ? ' on' : '');
+    b.textContent = m;
+    b.onclick = ()=>{
+      const set = new Set(moods());
+      set.has(m) ? set.delete(m) : set.add(m);
+      $('#mood').value = [...set].join('、');
+      renderMoodChips(); syncInstr();
+    };
+    box.appendChild(b);
+  });
+}
+
+/* 拍摄类型：点标签填进输入框，再点一次取消；手写字和标签互相覆盖，同一个值 */
+function renderShootChips(){
+  const box = $('#shootChips');
+  if (!box) return;
+  const cur = ($('#shootType').value || '').trim();
+  box.innerHTML = '';
+  SHOOT_PRESETS.forEach(s=>{
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (cur === s ? ' on' : '');
+    b.textContent = s;
+    b.onclick = ()=>{
+      $('#shootType').value = cur === s ? '' : s;
+      renderShootChips(); syncInstr();
+    };
+    box.appendChild(b);
+  });
+}
+
+/* 图文 / 摄影切换：只动显隐，不改任何已有输入，切回图文就是原样 */
+function syncOmode(){
+  const photo = state.omode === 'photo';
+  document.querySelectorAll('#omodeSeg button').forEach(b=>{
+    b.classList.toggle('on', b.dataset.omode === state.omode);
+  });
+  $('#shootWrap').hidden = !photo;
+  const hint = $('#omodeHint');
+  if (hint) hint.textContent = photo ? '按拍摄类型出写真：画里不排文字，也不套图型版式' : '图里排标题和正文文字';
+  // 缩微摄影融合两种模式都可用，不再随摄影模式隐藏
+  const fr = $('#fusionRow');
+  if (fr) fr.hidden = false;
+  noteContentChanged();        // 出图模式也是草稿的一部分，改了要存
+}
+
+function buildInstr(){
+  const bits = [state.omode === 'photo' ? '摄影写真模式' : '图文模式'];
+  if (state.ref) bits.push('参考图：已上传');
+  if (state.sel.layout && state.omode !== 'photo') bits.push('图型：' + state.sel.layout.id);
+  if (state.sel.style) bits.push('风格：' + state.sel.style.id);
+  if (state.sel.color) bits.push('主题色：' + state.sel.color.id);
+  // 三张卡都可以不选：说清楚这时出图靠什么（有参考图就跟参考图，没有就不限）
+  if (!state.sel.layout && !state.sel.style && !state.sel.color){
+    bits.push(state.ref ? '图型 / 风格 / 主题色：跟参考图' : '图型 / 风格 / 主题色：不限');
+  }
+  const r = $('#ratio').value; if (r) bits.push('画幅比例：' + r);
+  const m = moods(); if (m.length) bits.push('情绪：' + m.join('、'));
+  if (state.omode === 'photo'){
+    const s = ($('#shootType').value || '').trim();
+    if (s) bits.push('拍摄类型：' + s);
+  }
+  if ($('#fusion').checked) bits.push('缩微摄影融合');
+  if (state.ws === 'moderate') bits.push('留白：大量');
+  else if (state.ws === 'high') bits.push('留白：极简');
+  return bits.join('，');
+}
+
+function syncInstr(){
+  const el = $('#instrOut');
+  if (state.instrCustom !== null){
+    el.textContent = state.instrCustom;
+  }else{
+    el.textContent = buildInstr() || '图型 / 风格 / 主题色都可以不选，这里会写出这一轮靠什么出图，也能直接手改';
+  }
+  instrUi();
+}
+
+/* 画幅一变，右侧手机预览的封面框跟着换比例：2.35:1 是横幅，预览还按 3:4 显示
+   就看不出裁完到底是什么样。公众号首图的尺寸口径也在这里说明白。 */
+const RATIO_META = {
+  '2.35:1': {ar: 2.35, bar: '微信公众号 · 首图 900×383',
+             note: '公众号首图按 2.35:1 出（等比 900×383）。发布后分享小图 1:1 由微信从首图自动裁，不用单独出图。'},
+};
+function syncRatioUi(){
+  const v = $('#ratio').value || '3:4';
+  const meta = RATIO_META[v] || null;
+  let ar = 3 / 4;
+  if (meta) ar = meta.ar;
+  else if (v.includes(':')){
+    const [a, b] = v.split(':').map(parseFloat);
+    if (a > 0 && b > 0) ar = a / b;
+  }
+  const cover = $('#cover');
+  if (cover) cover.style.aspectRatio = ar;
+  const bar = $('#phoneBar');
+  if (bar) bar.textContent = meta ? meta.bar : '小红书 · 预览';
+  const note = $('#ratioNote');
+  if (note){ note.hidden = !meta; note.textContent = meta ? meta.note : ''; }
+}
+
+/* 下载一律走成品：2.35:1 由服务端裁好再给，直接拿 /files 原图会是没裁的 3:2 */
+function downloadHref(rec, fallback){
+  if (rec && rec.id) return '/api/history/' + rec.id + '/download';
+  return fallback || '#';
+}
+
+/* '2.35:1' → '2.35 / 1'：历史卡片按当时的画幅留框，横幅图不会被 3:4 框 cover 成一条 */
+function arCss(v){
+  const s = String(v || '');
+  if (!s.includes(':')) return '';
+  const [a, b] = s.split(':').map(parseFloat);
+  return (a > 0 && b > 0) ? a + ' / ' + b : '';
+}
+
+/* 手改状态下，组合变化不覆盖用户输入；点「还原」回到自动拼接 */
+function instrUi(){
+  const hint = $('#instrHint'), rs = $('#resetInstr');
+  const custom = state.instrCustom !== null;
+  if (hint) hint.textContent = custom ? '已手改 · 组合变化不覆盖' : '组合一变就更新，可直接手改';
+  if (rs) rs.hidden = !custom;
+}
+
+function composeBody(items){
+  return {
+    style_id: state.sel.style ? state.sel.style.id : null,
+    layout_id: state.sel.layout ? state.sel.layout.id : null,
+    color_id: state.sel.color ? state.sel.color.id : null,
+    ratio: $('#ratio').value,
+    mood: $('#mood').value,
+    fusion: $('#fusion').checked,
+    whitespace: state.ws,
+    note: $('#note').value.trim(),
+    ref: !!state.ref,
+    image_mode: state.omode || 'graphic-text',
+    shoot_type: state.omode === 'photo' ? ($('#shootType').value || '').trim() : '',
+    instruction: (state.instrCustom || '').trim(),
+    allow_blank: true,
+    items: items.map(it=>({title: it.title || '', body: it.body || '', scene: it.scene || ''}))
+  };
+}
+
+async function postCompose(items){
+  const r = await fetch('/api/compose', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(composeBody(items))});
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+function addItem(title, body, scene){
+  state.items.push({title: title || '', body: body || '', scene: scene || '', prompt: ''});
+  renderItems();
+  const rows = document.querySelectorAll('.item');
+  const last = rows[rows.length - 1];
+  if (last && !title) last.querySelector('.it-title').focus();
+}
+
+/* 提示词框随内容长高，别让用户滚动才能看全 */
+function autoGrow(el, max){
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight + 2, max || 460) + 'px';
+}
+
+/* 正文框：一行就一行高，最多两行，再多就自己滚动 */
+const BODY_MAX = 62;
+function fitBody(el){
+  if (!el) return;
+  /* 先把高度压到 0 才能量出真实内容高度：textarea 的 scrollHeight 永远不小于
+     自身高度，不清 min-height 就永远读到两行（rows=2 的默认高度）。 */
+  el.style.minHeight = '0';
+  el.style.height = '0px';
+  const h = el.scrollHeight + 2;
+  el.style.height = Math.min(h, BODY_MAX) + 'px';
+  el.style.overflowY = h > BODY_MAX ? 'auto' : 'hidden';
+}
+
+function renderItems(){
+  const box = $('#itemList'); box.innerHTML = '';
+  const total = state.items.length;
+  state.items.forEach((it, i)=>{
+    const el = document.createElement('div');
+    el.className = 'item';
+    el.dataset.i = i;
+    const no = itemNo(it, i);
+    const tag = no + '/' + String(total).padStart(2, '0');
+    const cover = isCoverItem(it);
+    el.innerHTML = '<div class="it-top">'
+      + '<span class="it-no"' + (/^\d{1,2}[\s.．、,，:：-]/.test((it.title || '').trim()) ? ' hidden' : '') + '>'
+      + no + '</span>'
+      + '<input class="it-title" placeholder="标题，如：先存后花">'
+      + '<button class="mini it-gen" type="button" title="只出这一张，先看看效果">出图</button>'
+      + '<button class="it-del" type="button" title="删除这条">×</button>'
+      + '</div>'
+      + '<textarea class="it-body" rows="2" placeholder="这张图要说什么：画面里的人或物、动作、细节，以及图里要出现的那句话"></textarea>'
+      + '<input class="it-scene" placeholder="中层小辅助图（可选）：涂鸦小人把一枚硬币投进小猪储蓄罐，旁边一张工资条">'
+      + '<div class="it-pw' + (it.prompt ? '' : ' blank') + '">'
+      + '<div class="it-ph"><span>' + (cover ? '主图 ' : '卡片 ') + tag + ' · '
+      + (it.prompt ? '提示词（可手改，出图就用这一版）' : '提示词（留空自动拼，写了就用你这份）')
+      + '</span>'
+      + '<button type="button" class="mini it-copy">复制</button>'
+      + '<button type="button" class="mini it-re">重拼</button></div>'
+      + '<textarea class="it-prompt" rows="6" placeholder="可直接手写详细提示词：画面内容、人物动作、版式、配色、要出现的文字都写清楚。写了就不再自动拼，点批量出图原样使用。"></textarea>'
+      + '</div>';
+    const tEl = el.querySelector('.it-title');
+    const bEl = el.querySelector('.it-body');
+    const sEl = el.querySelector('.it-scene');
+    const pEl = el.querySelector('.it-prompt');
+    tEl.value = it.title; bEl.value = it.body; sEl.value = it.scene || '';
+    pEl.value = it.prompt || '';
+    tEl.oninput = ()=>{ state.items[i].title = tEl.value; };
+    bEl.oninput = ()=>{ state.items[i].body = bEl.value; fitBody(bEl); };
+    sEl.oninput = ()=>{ state.items[i].scene = sEl.value; };
+    pEl.oninput = ()=>{ state.items[i].prompt = pEl.value; autoGrow(pEl); };
+    el.querySelector('.it-del').onclick = ()=>{
+      state.items.splice(i, 1);
+      renderItems();
+    };
+    el.querySelector('.it-copy').onclick = ()=> copyText(state.items[i].prompt, '提示词已复制');
+    el.querySelector('.it-re').onclick = ()=> recomposeOne(i);
+    el.querySelector('.it-gen').onclick = ()=> runOne(i);
+    box.appendChild(el);
+    if (it.prompt) autoGrow(pEl);
+    fitBody(bEl);
+  });
+  $('#itemEmpty').style.display = state.items.length ? 'none' : 'block';
+  $('#itemCount').textContent = state.items.length + ' 条';
+  saveSessionSoon();
+}
+
+async function recomposeOne(i){
+  const it = state.items[i];
+  if (!it) return;
+  if ((it.prompt || '').trim() && !confirm('第 ' + (i + 1) + ' 条已有提示词（可能是你手写的），重拼会整条覆盖，继续？')) return;
+  try{
+    const d = await postCompose([it]);
+    state.items[i].prompt = leadFor(it) + d.items[0].prompt;
+    renderItems();
+    toast('第 ' + (i + 1) + ' 条已重拼');
+  }catch(e){ toast('重拼失败：' + e.message); }
+}
+
+/* 单条出图：只想先看一张效果时用。结果替换预览里同一序号那张旧图。
+   单张重做模式下这次出图会原位替换历史任务里的那一张，不新增历史记录。 */
+async function runOne(i){
+  if (!redoGuard()) return;
+  const it = state.items[i];
+  if (!it) return;
+  let prompt = (it.prompt || '').trim();
+  if (!prompt){
+    try{
+      const d = await postCompose([it]);
+      prompt = leadFor(it) + d.items[0].prompt;
+      state.items[i].prompt = prompt;
+      renderItems();
+    }catch(e){ toast('拼提示词失败：' + e.message); return; }
+  }
+  const redo = state.redo;
+  prompt = await redoPrompt(it, redo, prompt);
+  const statusEl = $('#imageStatus');
+  statusEl.className = 'status run';
+  statusEl.textContent = '第 ' + (i + 1) + ' 张准备出图…';
+  const taskId = 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const topic = (it.title || it.body || '配图').slice(0, 60);
+  try{
+    const r = await fetch('/api/generate', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({...payload('image', topic), task_id: taskId, seq: i,
+        doc_body: $('#docBody').value, title: it.title, body: it.body, prompt,
+        ...redoExtra(redo)})});
+    if (!r.ok) throw new Error('提交失败 HTTP ' + r.status);
+    const {job_id} = await r.json();
+    const ok = await pollOne(job_id, i, topic, statusEl);
+    statusEl.className = ok ? 'status ok' : 'status err';
+    if (ok) clearRedo(true);
+  }catch(e){
+    statusEl.className = 'status err'; statusEl.textContent = e.message;
+  }
+}
+
+async function pollOne(id, i, topic, statusEl){
+  // 失败会自动换号重试（15s / 40s / 90s 三档），四次尝试最坏接近 7 分钟，预算给足 15 分钟
+  for (let t = 0; t < 450; t++){
+    await new Promise(r=>setTimeout(r, 2000));
+    let d;
+    try { d = await (await fetch('/api/jobs/' + id)).json(); } catch { continue; }
+    if (d.status === 'queued'){
+      statusEl.textContent = '第 ' + (i + 1) + ' 张'
+        + (d.auto_retry ? `换号重试中（第 ${d.auto_retry}/3 次）` : '排队中') + '…';
+      continue;
+    }
+    if (d.status === 'running'){
+      statusEl.textContent = '第 ' + (i + 1) + ' 张生成中 · ' + (d.account || '');
+      continue;
+    }
+    if (d.status === 'done'){
+      const url = d.image_url + '?t=' + Date.now();
+      const rec = {url, topic, seq: i, id, account: d.account || '',
+        w: d.result && d.result.width, h: d.result && d.result.height};
+      const old = state.results.findIndex(x=> x.seq === i);
+      if (old >= 0) state.results[old] = rec; else state.results.push(rec);
+      state.results.sort((a,b)=>(a.seq??0)-(b.seq??0));
+      state.idx = state.results.indexOf(rec);
+      renderStrip();
+      statusEl.textContent = '第 ' + (i + 1) + ' 张完成 · ' + (d.account || '');
+      const swapped = (d.attempts || []).length;
+      toast(topic + (d.account ? ' · ' + d.account : '')
+            + (swapped ? ` · 换号 ${swapped} 次后成功` : ''),
+            {type: 'ok', title: '第 ' + (i + 1) + ' 张出图完成'});
+      return true;
+    }
+    const who = [...new Set((d.attempts || []).map(a=>a.account).filter(Boolean))];
+    statusEl.textContent = '第 ' + (i + 1) + ' 张失败：' + (d.error || '未知错误');
+    toast(who.length ? `换过 ${who.length} 个号：${who.join('、')}`
+                     : ('第 ' + (i + 1) + ' 张出图失败：' + (d.error || '')),
+          {type: 'err', title: `第 ${i + 1} 张出图失败`, ms: 6500});
+    return false;
+  }
+  statusEl.textContent = '第 ' + (i + 1) + ' 张超时未完成';
+  return false;
+}
+
+async function composeAll(){
+  if (!state.items.length){
+    // 清单为空但有选型 / 参考图 / 手改指令：自动补一条空白分镜，直接按出图指令拼
+    const hasSel = state.sel.style || state.sel.layout || state.sel.color;
+    if (!hasSel && !state.ref && !(state.instrCustom || '').trim()){
+      toast('先写标题正文，或选图型 / 风格 / 主题色，或上传参考图'); return;
+    }
+    state.items = [{title: '', body: '', scene: '', prompt: ''}];
+    renderItems();
+  }
+  const allBlank = state.items.every(x=> !(x.title||'').trim() && !(x.body||'').trim());
+  // 只有参考图也放行：画风基准来自参考图，文案以后再补（用户 2026-11-08 要求）
+  if (allBlank && !state.sel.style && !state.sel.layout && !state.sel.color
+      && !state.ref && !(state.instrCustom||'').trim()){
+    toast('先写标题正文，或选图型 / 风格 / 主题色，或上传参考图'); return;
+  }
+  const written = state.items.filter(x=> (x.prompt || '').trim()).length;
+  if (written && !confirm('会用图型/风格重拼 ' + state.items.length + ' 条提示词，其中 '
+    + written + ' 条已有内容（含手写的）会被覆盖，继续？')) return;
+  const st = $('#imageStatus');
+  st.className = 'status run'; st.textContent = '拼装中…';
+  try{
+    const d = await postCompose(state.items);
+    d.items.forEach((x, i)=>{
+      if (!state.items[i]) return;
+      state.items[i].prompt = leadFor(state.items[i]) + x.prompt;
+    });
+    renderItems();
+    st.className = 'status ok';
+    st.textContent = '已生成 ' + d.items.length + ' 条提示词';
+    toast('提示词已生成，可逐条手改后再出图');
+  }catch(e){
+    st.className = 'status err'; st.textContent = '拼装失败：' + e.message;
+  }
+}
+
+/* 整段清单 → 多条卡片。支持 01｜标题 / 1、标题 / **01｜标题** / 【01】标题
+   编号必须递增才算新的一条，避免正文里「3、xxx」被误判成标题 */
+const ITEM_HEAD_RE = /^[*＊【\[(（]*\s*(\d{1,2})\s*[｜|、,，.．:：)）]\s*(.+?)\s*[*＊】\])）]*$/;
+
+function parseImport(text){
+  const full = String(text || '').replace(/\r/g, '');
+
+  /* 「复制全部」导出的格式：**卡片 01/08 ｜ 标题** + ```围栏```里是完整提示词。
+     正文文字：「……」还能抠回来当正文，之后重拼也有原料。 */
+  if (/\*\*?卡片\s*\d{1,2}\s*\/\s*\d{1,2}\s*[｜|]/.test(full)){
+    const out = [];
+    const re = /\*\*?卡片\s*(\d{1,2})\s*\/\s*\d{1,2}\s*[｜|]\s*(.+?)\*\*?([\s\S]*?)(?=\*\*?卡片\s*\d{1,2}\s*\/|$)/g;
+    let m;
+    while ((m = re.exec(full))){
+      const seg = m[3] || '';
+      const fence = seg.match(/```[^\n]*\n([\s\S]*?)```/);
+      const bodyM = seg.match(/正文文字[：:]\s*[「\u201c]([\s\S]*?)[」\u201d]/);
+      out.push({
+        title: m[1] === '00' ? m[2].trim() : (m[1] + ' ' + m[2]).trim(),
+        cover: m[1] === '00' || undefined,
+        body: bodyM ? bodyM[1].trim() : '',
+        prompt: fence ? fence[1].trim() : ''
+      });
+    }
+    if (out.length > 1) return out;
+    /* 只有一个说明多半是误判（正文里正好出现「卡片 01/08」），走下面的常规解析 */
+  }
+
+  const out = [];
+  let cur = null, lastNum = 0;
+  full.split('\n').forEach(raw=>{
+    const line = raw.trim();
+    if (!line) return;
+    const m = line.match(ITEM_HEAD_RE);
+    const num = m ? parseInt(m[1], 10) : -1;
+    const isHead = !!m && (!cur || num === lastNum + 1);
+    if (isHead){
+      if (cur) out.push(cur);
+      cur = {title: (m[1] + ' ' + m[2]).replace(/[*＊]/g, '').trim(), body: ''};
+      lastNum = num;
+    } else if (cur){
+      cur.body = cur.body ? cur.body + '\n' + line : line;
+    } else {
+      cur = {title: line.replace(/[*＊]/g, '').trim(), body: ''};
+    }
+  });
+  if (cur) out.push(cur);
+  // 完全没有编号：按空行切块，首行当标题
+  if (out.length < 2 && out[0] && !out[0].body){
+    const blocks = String(text || '').split(/\n\s*\n/).map(b=>b.trim()).filter(Boolean);
+    if (blocks.length > 1){
+      return blocks.map(b=>{
+        const lines = b.split('\n').map(x=>x.trim()).filter(Boolean);
+        return {title: lines[0].replace(/^[*＊]+|[*＊]+$/g, ''), body: lines.slice(1).join('\n')};
+      });
+    }
+  }
+  return out.filter(x=>x.title || x.body);
+}
+
+/* 纯提示词解析：剥 markdown 围栏，按 ---/=== 分隔行拆，再按空行拆；每段一条，标题/正文留空。
+   主要场景：从别处复制来的现成提示词，不加工直接生图。 */
+function parsePrompts(text){
+  let full = String(text || '').replace(/\r/g, '').trim();
+  if (!full) return [];
+  /* 整体被一个代码围栏包住：先剥壳 */
+  const whole = full.match(/^```[^\n]*\n?([\s\S]*?)\n?```$/);
+  if (whole) full = whole[1].trim();
+  const out = [];
+  full.split(/\n[ \t]*(?:-{3,}|={3,}|\*{3,}|~{3,})[ \t]*\n/)
+      .flatMap(s => s.split(/\n\s*\n+/))
+      .forEach(seg=>{
+        const s0 = seg.trim();
+        if (!s0) return;
+        const fence = s0.match(/```[^\n]*\n([\s\S]*?)```/);
+        const t = (fence ? fence[1] : s0).trim();
+        if (t) out.push({title: '', body: '', prompt: t});
+      });
+  return out;
+}
+
+/* 把解析结果放进清单：清单还是空的就直接铺开，否则追加 */
+function applyImport(parsed){
+  if (!parsed.length) return 0;
+  if (state.items.every(x=> !(x.title || '').trim() && !(x.body || '').trim())) state.items = [];
+  const seen = new Set(state.items.map(x=> (x.title || '').trim()).filter(Boolean));
+  let added = 0;
+  parsed.forEach(x=>{
+    const key = (x.title || '').trim();
+    if (key && seen.has(key)) return;   // 同一份清单别粘两遍
+    if (key) seen.add(key);
+    state.items.push({title: x.title, body: x.body, scene: '', prompt: x.prompt || '', cover: x.cover});
+    added++;
+  });
+  renderItems();
+  return added;
+}
+
+let importMode = 'list';  /* list=按清单解析 | prompts=按提示词解析 */
+let importPh0 = null;
+
+function openImport(mode){
+  importMode = mode === 'prompts' ? 'prompts' : 'list';
+  const prompts = importMode === 'prompts';
+  if (importPh0 === null) importPh0 = $('#importText').getAttribute('placeholder');
+  $('#importTitle').textContent = prompts ? '导入提示词' : '批量导入分镜';
+  $('#importHint').innerHTML = prompts
+    ? '把别处复制来的现成提示词整段贴进来。<b>一段一条</b>，多条之间用空行或 <b>---</b> 分隔；markdown 代码围栏会自动剥掉。<br>导入后标题和正文保持空白，提示词原样用于出图，不会被重新拼装。'
+    : '整段贴进来即可。每条以 <b>01｜先存后花</b> 开头，下一行写正文，遇到下一个编号自动断开。识别出几张就生成几张图。<br>贴的是现成提示词？点工具条的「<b>导入提示词</b>」。';
+  $('#importOk').textContent = prompts ? '导入提示词' : '导入';
+  $('#importText').placeholder = prompts ? '把复制来的提示词整段贴进来，一段一条…' : importPh0;
+  $('#importText').value = '';
+  $('#importCount').textContent = '粘贴后自动识别';
+  $('#importDlg').showModal();
+  setTimeout(()=> $('#importText').focus(), 50);
+}
+
+/* 导入框边粘边报数：两种口径都报，用哪个按钮就按哪个算 */
+function countImport(){
+  const txt = $('#importText').value;
+  if (!txt.trim()){ $('#importCount').textContent = '粘贴后自动识别'; return; }
+  const nl = parseImport(txt).length;
+  const np = parsePrompts(txt).length;
+  $('#importCount').textContent = '清单 ' + nl + ' 张 · 提示词 ' + np + ' 条';
+}
+
+async function copyText(text, okMsg){
+  if (!text || !text.trim()){ toast('没有可复制的内容'); return; }
+  try{ await navigator.clipboard.writeText(text); toast(okMsg || '已复制'); }
+  catch{ toast('复制失败，请手动选中'); }
+}
+
+function renderStrip(){
+  const has = state.results.length > 0;
+  $('#coverPrev').hidden = !has;
+  $('#coverNext').hidden = !has;
+  $('#coverNavRow').classList.toggle('show', has);
+  $('#coverPrev').disabled = state.results.length < 2;
+  $('#coverNext').disabled = state.results.length < 2;
+  if (has) selectResult(state.idx);
+  else $('#dlRow').classList.remove('show');
+  saveSessionSoon();          // 图出来了也进会话快照，刷新不丢预览
+}
+
+/* 预览只加载压缩图；派生图万一挂了，自动退回原图，不白屏 */
+function setCover(prev, raw){
+  const box = $('#cover'); box.innerHTML = '';
+  const img = document.createElement('img');
+  img.alt = '生成配图'; img.decoding = 'async';
+  img.src = prev || raw;
+  if (raw && prev !== raw){
+    img.onerror = ()=>{ img.onerror = null; img.src = raw; };
+  }
+  box.appendChild(img);
+}
+
+/* 清空预览图，退回占位文案。载入一份还没出过图的任务、或者清空重来时用 */
+function clearCover(){
+  const box = $('#cover'); box.innerHTML = '等待生成配图';
+  $('#coverCount').textContent = '';
+}
+
+function selectResult(i){
+  const n = state.results.length;
+  if (!n) return;
+  state.idx = Math.max(0, Math.min(n-1, i));
+  const r = state.results[state.idx];
+  setCover(r.preview || r.url, r.url);
+  $('#coverCount').textContent = (state.idx + 1) + '/' + n;
+  $('#dlRow').classList.add('show');
+  const dl = $('#downloadBtn'); dl.href = downloadHref(r, r.url);
+  $('#viewerMeta').textContent = `第 ${state.idx+1}/${n} 张 · ${r.topic}` + (r.account ? ' · ' + r.account : '');
+}
+
+/* 大图查看器：同一个任务内部就能左右翻。
+   kind='result' 看的是工作台本轮结果，kind='history' 看的是历史里某个任务的那一批图。
+   以前两处都是「打开就锁死这一张」，想看同组下一张得关掉再点，翻八张点八次。 */
+const VIEW = { list: [], i: 0, kind: 'result' };
+
+function viewItemAt(i){
+  const n = VIEW.list.length;
+  if (!n) return null;
+  VIEW.i = ((i % n) + n) % n;      // 首尾循环：最后一张再按「下一张」回到第一张
+  return VIEW.list[VIEW.i];
+}
+
+/* 大图缩放：滚轮放大缩小，放大后可以拖着看。换图 / 关弹窗自动回 1 倍。
+   只作用于 #viewImg，不动对话尺寸，翻页按钮永远在原位 */
+const ZOOM = {s: 1, x: 0, y: 0, min: 1, max: 6};
+
+function clampPan(){
+  const img = $('#viewImg');
+  const mx = Math.max(0, (ZOOM.s - 1) * (img.clientWidth || 0) / 2);
+  const my = Math.max(0, (ZOOM.s - 1) * (img.clientHeight || 0) / 2);
+  ZOOM.x = Math.max(-mx, Math.min(mx, ZOOM.x));
+  ZOOM.y = Math.max(-my, Math.min(my, ZOOM.y));
+}
+
+function applyZoom(){
+  const img = $('#viewImg');
+  if (!img) return;
+  const on = ZOOM.s > 1.001;
+  img.style.transform = on ? `translate(${ZOOM.x}px, ${ZOOM.y}px) scale(${ZOOM.s})` : '';
+  const dlg = $('#viewDlg');
+  if (dlg) dlg.classList.toggle('zoomed', on);
+  const tag = $('#viewZoom');
+  if (tag) tag.textContent = on ? '×' + ZOOM.s.toFixed(1) : '';
+}
+
+function resetZoom(){
+  ZOOM.s = 1; ZOOM.x = 0; ZOOM.y = 0;
+  applyZoom();
+}
+
+function zoomAt(factor){
+  const img = $('#viewImg');
+  if (!img) return;
+  const next = Math.max(ZOOM.min, Math.min(ZOOM.max, ZOOM.s * factor));
+  if (Math.abs(next - ZOOM.s) < 0.001) return;
+  // 平移量按比例跟着缩，画面不会突然跳走
+  ZOOM.x *= next / ZOOM.s;
+  ZOOM.y *= next / ZOOM.s;
+  ZOOM.s = next;
+  if (ZOOM.s <= 1.001){ ZOOM.x = 0; ZOOM.y = 0; }
+  clampPan();
+  applyZoom();
+}
+
+function renderView(i){
+  const r = viewItemAt(i);
+  if (!r) return;
+  const n = VIEW.list.length;
+  const hist = VIEW.kind === 'history';
+  const src = hist ? r.image_url : (r.url || r.preview);
+  const img = $('#viewImg');
+  if (img.getAttribute('src') !== src){
+    img.src = src;               // 主动看大图才加载原图
+    resetZoom();                 // 换了一张，缩放归位
+  }
+  const pos = n > 1 ? `第 ${VIEW.i + 1}/${n} 张 · ` : '';
+  $('#viewCap').textContent = hist
+    ? pos + (r.title || '未命名') + ' · ' + fmtTime(r.finished)
+    : pos + (r.topic || '') + (r.account ? ' · ' + r.account : '');
+  const vdl = $('#viewDl');
+  const href = hist ? (r.download_url || r.image_url) : downloadHref(r, r.url);
+  vdl.href = href || '#'; vdl.hidden = !href;
+  $('#viewPrev').hidden = n < 2;
+  $('#viewNext').hidden = n < 2;
+  // 工作台侧的缩略条跟着走：关掉大图后停在你最后看的那张
+  if (!hist){ state.idx = VIEW.i; selectResult(VIEW.i); }
+}
+
+function stepView(d){
+  if (VIEW.list.length < 2) return;
+  renderView(VIEW.i + d);
+}
+
+function openViewer(){
+  const list = state.results.filter(r=>r && (r.url || r.preview));
+  if (!list.length){ toast('还没有可预览的图片'); return; }
+  VIEW.kind = 'result';
+  VIEW.list = list;
+  VIEW.i = Math.max(0, list.indexOf(state.results[state.idx]));
+  const dlg = $('#viewDlg');
+  if (!dlg.open) dlg.showModal();   // 单击已经打开过一次时别重复 showModal（会抛异常）
+  resetZoom();
+  renderView(VIEW.i);
+}
+
+/* 同一时间只允许一个批次在等图：手动点「批量出图」和刷新后的自动续接互斥 */
+let _batchRunning = false;
+
+/* ---------- 空手点「批量出图」：先随机给一套示例，别让人猜图是按什么出的 ----------
+   以前这里什么都不问，直接按当前组合拼一条没有标题没有正文的提示词出图，
+   出来一张图里没有字的插画，谁也不知道它是按什么生成的。现在改成：
+   只要用户什么都没提供，就先随机挑选题 + 组合，把分镜清单和提示词一起填好，
+   再照常出图，并在配图工坊顶上挂一条说明这是示例（用户 2026-11-08 要求）。 */
+const DEMO_IDEAS = [
+  { topic: '秋天第一杯奶茶怎么点才不踩雷', title: '秋天的第一杯奶茶', points: [
+    { t: '先看糖度', b: '全糖差不多是半杯糖浆，从三分糖起步，喝着不齁还少一截热量。' },
+    { t: '配料别贪多', b: '珍珠、布丁、奶盖叠一块，口感打架还翻倍，留一样就够。' },
+    { t: '自带杯能省钱', b: '不少门店自带杯减三块，一年下来够再喝十几杯。' } ] },
+  { topic: '打工人工位抽屉里该放什么', title: '工位抽屉里的救命三件套', points: [
+    { t: '降噪耳塞', b: '隔壁组开始讨论需求的时候，塞上就能把注意力拽回来。' },
+    { t: '无糖薄荷糖', b: '下午三点最想摸零食，含一颗把嘴占住就过去了。' },
+    { t: '一个解压小玩意', b: '被消息追着跑的时候，捏两分钟比刷手机管用。' } ] },
+  { topic: '周末不社交怎么回血', title: '周末不社交也能回血', points: [
+    { t: '睡到自然醒', b: '别定闹钟，让身体自己决定几点起。' },
+    { t: '煮一锅汤', b: '洗菜切菜那四十分钟，比任何冥想都让人安静。' },
+    { t: '把手机放远', b: '丢到另一个房间，一小时后你会想起自己还会发呆。' } ] },
+  { topic: '第一次用 AI 写文案要注意什么', title: '第一次用 AI 写文案', points: [
+    { t: '先说清写给谁', b: '写给刚毕业的租房党，和写给二胎妈妈，是两套话。' },
+    { t: '给三个真细节', b: '越具体越不像 AI，比如凌晨一点半还在改第三版。' },
+    { t: '最后自己改一遍', b: '它给的句子删掉三分之一，剩下的才像人话。' } ] },
+];
+
+function hideDemoNote(){ const el = $('#demoNote'); if (el) el.hidden = true; }
+
+function showDemoNote(idea){
+  const el = $('#demoNote'), tx = $('#demoNoteText');
+  if (!el || !tx) return;
+  const combo = [state.sel.layout && state.sel.layout.id, state.sel.style && state.sel.style.id,
+                 state.sel.color && state.sel.color.id].filter(Boolean).join(' / ') || '不限';
+  tx.innerHTML = '<b>这是随机生成的示例</b>：你还没写选题和文案，系统随机挑了「' + idea.title
+    + '」和一组合（' + combo + '），分镜和提示词也是它自动拆的。'
+    + '在左边改文案、在清单里改分镜，再点批量出图，出来的就是你的内容。';
+  el.hidden = false;
+}
+
+/* 完全没提供任何东西：没有文案、没有分镜、没有手改指令、没有参考图 */
+function isBlankStart(){
+  const hasItemText = state.items.some(it =>
+    (it.title || '').trim() || (it.body || '').trim() || (it.prompt || '').trim());
+  if (hasItemText) return false;
+  if (['#topic', '#docTitle', '#docBody', '#note'].some(id=> ($(id).value || '').trim())) return false;
+  if ((state.instrCustom || '').trim()) return false;
+  return !state.ref;
+}
+
+function fillDemoSample(){
+  // 先立牌子再动内容：syncPicks / syncPreview 都会排队自动暂存，晚一步就会先存出一份示例草稿
+  state.demoPending = true;
+  const idea = DEMO_IDEAS[Math.floor(Math.random() * DEMO_IDEAS.length)];
+  // 图型/风格/主题色一律补齐一套，别留空白：空着的话提示词里只能写「不限」，出的图没依据
+  if (state.styles.length && state.layouts.length && state.colors.length){
+    const r = a => a[Math.floor(Math.random() * a.length)];
+    if (!state.selTouched){
+      // 开场那套是程序填的默认值，不算用户选的：换一套随机的，示例才有示例的样子
+      state.sel.style  = r(state.styles);
+      state.sel.layout = r(state.layouts);
+      state.sel.color  = r(state.colors);
+    }else{
+      // 用户亲手选过或亲手清过：只补空着的那几项，挑好的保留
+      if (!state.sel.style)  state.sel.style  = r(state.styles);
+      if (!state.sel.layout) state.sel.layout = r(state.layouts);
+      if (!state.sel.color)  state.sel.color  = r(state.colors);
+    }
+    syncPicks();
+  }
+  $('#topic').value = idea.topic;
+  $('#docTitle').value = idea.title;
+  $('#docBody').value = idea.points
+    .map((p, i)=> String(i + 1).padStart(2, '0') + '｜' + p.t + '\n' + p.b).join('\n\n');
+  syncPreview();
+  // 封面 + 三条，和「拆成分镜」拆出来的形状一致
+  state.items = [{title: idea.title, body: '', scene: '', prompt: '', cover: true}]
+    .concat(idea.points.map((p, i)=>({
+      title: String(i + 1).padStart(2, '0') + ' ' + p.t,
+      body: p.b, scene: '', prompt: ''
+    })));
+  state.group = idea.title;
+  $('#groupTag').textContent = '整组主题：' + idea.title;
+  renderItems();
+  showDemoNote(idea);
+  noteContentChanged();
+  return idea;
+}
+
+async function runImage(){
+  if (!redoGuard()) return;
+  if (_batchRunning){ toast('上一批还在出图，等它跑完再点'); return; }
+  // 什么都没有就直接点：先补一套随机示例，否则出的图没有依据
+  const demoIdea = isBlankStart() ? fillDemoSample() : null;
+  let items = state.items.map(it=>({...it}));
+  if (!items.length){
+    const t = $('#topic').value.trim();
+    if (t) items = [{title: t, body: '', prompt: ''}];
+  }
+  // 全空也放行：没有标题/正文/选题时，按当前选型 + 出图指令直接出一版提示词
+  if (!items.length) items = [{title: '', body: '', prompt: ''}];
+  // 清单是空的就补一条占位卡，让人看得见这一张是按什么拼出来的
+  if (!state.items.length){
+    state.items = items.map(x=>({...x}));
+    renderItems();
+  }
+  const statusEl = $('#imageStatus');
+  const btn = $('#genImage');
+  btn.disabled = true;
+  _batchRunning = true;
+  state.results = []; state.idx = 0;
+  // 一次批量出图 = 一个任务，历史里按它折叠成一组
+  const taskId = 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  statusEl.className = 'status run';
+  statusEl.textContent = demoIdea ? '已随机生成示例，准备提示词…' : '准备提示词…';
+  if (demoIdea) toast('没写内容，先给一套随机示例：' + demoIdea.title);
+  renderStrip();
+  try{
+    // 缺提示词的先拼出来；已经手改过的保留手改版本
+    const missing = items.filter(x=>!x.prompt || !x.prompt.trim());
+    if (missing.length){
+      statusEl.textContent = '拼装提示词…';
+      const d = await postCompose(missing);
+      missing.forEach((x, k)=>{
+        x.prompt = leadFor(x) + d.items[k].prompt;
+      });
+      // 拼好的提示词写回清单：以前只留在这份临时副本里，分镜卡的提示词框一直是空的，
+      // 用户看不到「随机生成/自动拼」到底写了什么，也没法就地改
+      if (items.length === state.items.length){
+        items.forEach((x, k)=>{ if (state.items[k]) state.items[k].prompt = x.prompt; });
+        renderItems();
+      }
+    }
+    const ids = [];
+    const topics = items.map(it=>it.title || it.body || '配图');
+    // 整篇正文一起落进历史，下次「载入」才还原得回来
+    const docBody = $('#docBody').value;
+    // 并行出图完成顺序是乱的，seq 记下提交顺序，历史里才能还原成 01 02 03
+    const redo = state.redo;
+    let seq = 0;
+    for (const it of items){
+      const topic = (it.title || it.body || '配图').slice(0, 60);
+      const prompt = await redoPrompt(it, redo, it.prompt);
+      const r = await fetch('/api/generate', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({...payload('image', topic), task_id: taskId, seq: seq++,
+          doc_body: docBody, title: it.title, body: it.body, prompt,
+          ...redoExtra(redo)})});
+      if (!r.ok) throw new Error('提交失败 HTTP ' + r.status);
+      ids.push((await r.json()).job_id);
+      // 每提交一张就刷一次断点：刷新页面后能凭它接着等图
+      saveBatch({task: taskId, ids: ids.slice(), topics, t: Date.now()});
+      statusEl.textContent = `已提交 ${ids.length}/${items.length}…`;
+    }
+    // 整批都提交成功＝这份草稿的活干完了，从草稿箱移走（内容和提示词已随这一批进历史）
+    const consumed = await consumeCurrentDraft();
+    if (consumed) toast('已开始出图，这份草稿从草稿箱移出');
+    await pollBatch(ids, topics, statusEl);
+    if (state.results.length) clearRedo(true);
+  }catch(e){
+    statusEl.className = 'status err'; statusEl.textContent = e.message;
+  }finally{
+    btn.disabled = false;
+    _batchRunning = false;
+  }
+}
+
+async function pollBatch(ids, topics, statusEl){
+  const t0 = Date.now();
+  const pending = new Set(ids.map((_,i)=>i));
+  let finished = 0, failed = 0, lastErr = '';
+  const retrying = new Set();
+  const retryCount = new Map();   // 第 N 张已经换到第几轮
+  const failAcc = new Set();      // 这批里失败过的账号，汇总时如实点名
+  let swappedOk = 0;              // 换过号但最后成功了的张数
+  const gone = new Map();   // 连续查不到这个 job 的次数：后端重启且任务没落盘时才会发生
+  // 失败会自动重试（20s + 60s 两档），预算按「基础 6 分钟 + 重试 5 分钟」给
+  const maxTicks = 300 * ids.length;
+  for (let tick=0; tick<maxTicks && pending.size; tick++){
+    await new Promise(r=>setTimeout(r, 2000));
+    let runningAccount = '';
+    for (const i of [...pending]){
+      let d;
+      try {
+        const rr = await fetch('/api/jobs/' + ids[i]);
+        if (rr.status === 404) throw new Error('404');
+        d = await rr.json();
+      } catch {
+        // 查不到就当一张废票：连续 5 次（约 10 秒）才判定丢失，避免后端重启瞬间误杀
+        const n = (gone.get(i) || 0) + 1;
+        gone.set(i, n);
+        if (n >= 5){
+          pending.delete(i); failed++;
+          lastErr = '任务已丢失（后端重启且未能恢复），请重新出这一张';
+          toast('后端重启且这张没恢复，需要重新出这一张', {type: 'err', title: `第 ${i + 1} 张已丢失`});
+        }
+        continue;
+      }
+      gone.delete(i);
+      if (d.status === 'running'){ runningAccount = d.account || ''; continue; }
+      if (d.status !== 'done' && d.status !== 'error'){
+        // 失败后后端会换号重试（15s / 40s / 90s 三档），这期间状态是 queued，
+        // 不能当失败处理，否则任务就断在这一张上了
+        if (d.status === 'queued' && d.auto_retry){
+          retrying.add(i + 1);
+          retryCount.set(i + 1, d.auto_retry);
+        }
+        continue;
+      }
+      retrying.delete(i + 1);
+      retryCount.delete(i + 1);
+      pending.delete(i);
+      if (d.status === 'done'){
+        finished++;
+        const raw = d.image_url;
+        const prev = d.preview_url || ('/api/history/' + ids[i] + '/preview');
+        const rec = {url: raw, preview: prev, topic: topics[i], seq: i, id: ids[i], account: d.account || '',
+          w: d.result && d.result.width, h: d.result && d.result.height};
+        state.results.push(rec);
+        // 并行出图完成顺序是乱的，展示一律按清单顺序（seq）排
+        state.results.sort((a,b)=>(a.seq??0)-(b.seq??0));
+        state.idx = state.results.indexOf(rec);
+        renderStrip();
+        const swapped = (d.attempts || []).length;
+        if (swapped) swappedOk++;
+        toast(topics[i] + (d.account ? ' · ' + d.account : '')
+              + (swapped ? ` · 换号 ${swapped} 次后成功` : ''),
+              {type: 'info', title: `第 ${finished}/${ids.length} 张完成`});
+      } else {
+        failed++; lastErr = d.error || '未知错误';
+        // 后端把每次尝试用的账号都记在 attempts 里，这里如实列出是谁失败的
+        const att = d.attempts || [];
+        const who = [...new Set(att.map(a => a.account).filter(Boolean))];
+        who.forEach(n => failAcc.add(n));
+        const detail = who.length ? `本次换过 ${who.length} 个号：${who.join('、')}` : '未能定位到具体账号';
+        toast(detail, {type: 'err', title: `第 ${i + 1} 张最终失败`, ms: 6500});
+      }
+    }
+    if (pending.size){
+      statusEl.className = 'status run';
+      const nRun = [...pending].length;
+      const rt = [...retrying].sort((a,b)=>a-b)
+        .map(n => `第 ${n} 张换号重试中 ${retryCount.get(n) || 1}/3`);
+      statusEl.textContent = `完成 ${finished}/${ids.length}` +
+        (runningAccount ? ` · 并行生成中 ${runningAccount}` : ` · 剩余 ${nRun} 张排队…`) +
+        (rt.length ? ` · ${rt.join('，')}` : '');
+    }
+  }
+  statusEl.className = failed ? 'status err' : 'status ok';
+  statusEl.textContent = `完成 ${finished}/${ids.length} 张` +
+    (failed ? ` · 失败 ${failed}（${lastErr}）` : '') +
+    (pending.size ? ` · ${pending.size} 张超时` : '');
+  if (!pending.size) clearBatch();
+  // 一整批跑完单独给一次总气泡：中间每张只是轻提示，容易被下一条盖掉
+  if (!state.results.length){
+    toast(failAcc.size ? `失败账号：${[...failAcc].join('、')}` : '一张都没出来，检查号池状态或稍后重试',
+          {type: 'err', title: '本轮出图失败'});
+  } else {
+    const allOk = failed === 0 && !pending.size;
+    const swapNote = swappedOk ? ` · ${swappedOk} 张换号后出图` : '';
+    const tail = allOk ? ' · 点气泡看大图' + swapNote
+      : swapNote + (failed ? ` · ${failed} 张失败` : '') +
+        (failAcc.size ? `（${[...failAcc].join('、')}）` : '') +
+        (pending.size ? ` · ${pending.size} 张超时` : '');
+    toast(`${finished}/${ids.length} 张 · 用时 ${fmtDur(Date.now() - t0)}${tail}`,
+          {type: allOk ? 'ok' : 'err',
+           title: allOk ? '本轮出图全部完成' : '本轮出图结束，有没成的',
+           click: ()=>{ if (state.results.length) openViewer(); }});
+  }
+}
+
+/* ---------- 批量断点：刷新/关页面后回来接着等图 ---------- */
+function saveBatch(b){
+  try{ localStorage.setItem('wb_batch', JSON.stringify(b)); }catch(e){}
+}
+function loadBatch(){
+  try{ return JSON.parse(localStorage.getItem('wb_batch') || 'null'); }catch(e){ return null; }
+}
+function clearBatch(){
+  try{ localStorage.removeItem('wb_batch'); }catch(e){}
+}
+
+async function resumeBatch(){
+  const b = loadBatch();
+  if (!b || !Array.isArray(b.ids) || !b.ids.length) return;
+  // 超过 2 小时的批次不自动接：图早进历史了，硬接只会白等
+  if (Date.now() - (b.t || 0) > 2 * 3600 * 1000){ clearBatch(); return; }
+  if (_batchRunning) return;
+  _batchRunning = true;
+  const statusEl = $('#imageStatus');
+  const btn = $('#genImage');
+  btn.disabled = true;
+  statusEl.className = 'status run';
+  statusEl.textContent = `接上上次没跑完的 ${b.ids.length} 张…`;
+  toast(`检测到上次未完成的 ${b.ids.length} 张，自动接着等`);
+  try{
+    await pollBatch(b.ids, b.topics || b.ids.map(()=> '配图'), statusEl);
+  }catch(e){
+    statusEl.className = 'status err'; statusEl.textContent = e.message;
+  }finally{
+    _batchRunning = false;
+    btn.disabled = false;
+  }
+}
+
+async function refreshPool(){
+  try{
+    const d = await (await fetch('/api/pool')).json();
+    const mode = (d.pool && d.pool.mode) || (d.accounts.some(a=>a.env_id) ? 'pool' : 'single');
+    const run = (d.running || []).length;
+    if (mode === 'single'){
+      const online = !!(d.pool && d.pool.online);
+      const name = (d.pool && d.pool.name) || '接口';
+      $('#poolText').textContent = (online ? '接口在线' : '接口离线') + ` · ${name}`
+        + (run ? ` · 并行 ${run}/${d.workers || 1}` : '');
+      $('#poolDot').className = 'dot' + (online ? '' : ' off');
+    } else {
+      const pool = d.pool || {};
+      const hasAcc = d.accounts.length > 0;
+      // 明细拉不到时（换接口后 admin-key 对不上）退回号池自报的数字，别显示成 0/0
+      const ready = hasAcc ? d.accounts.filter(a=>a.status==='ready' && a.env_id).length
+                           : Number(pool.active || 0);
+      const total = hasAcc ? d.accounts.filter(a=>a.env_id).length
+                           : Number(pool.total || 0);
+      const limited = hasAcc ? d.accounts.filter(a=>a.status==='limited').length
+                             : Number(pool.limited || 0);
+      $('#poolText').textContent = `号池 ${ready}/${total} 可用`
+        + (limited ? ` · ${limited} 个额度已满` : '')
+        + (run ? ` · 并行 ${run}/${d.workers || 1}` : '')
+        + ((d.queued || 0) ? ` · 排队 ${d.queued}` : '');
+      $('#poolDot').className = 'dot' + (ready ? '' : ' off');
+      if (hasAcc){
+        const bad = d.accounts.filter(a=>a.status==='unhealthy').map(a=>a.masked);
+        $('#poolDetail').textContent = `已绑定 ${total}/${d.total} 个账号`
+          + (bad.length ? ` · 下线：${bad.join('、')}` : '')
+          + (d.fails_today ? ` · 今日失败 ${d.fails_today} 次（已换号重试）` : '');
+      } else {
+        $('#poolDetail').textContent = d.accounts_error || '账号明细加载中…';
+      }
+    }
+  }catch(e){
+    $('#poolText').textContent = '接口连不上'; $('#poolDot').className = 'dot off';
+  }
+}
+
+/* ---------- 接口设置 ---------- */
+/* 工作台名字：页头标题和浏览器标签共用一个名，存 config 的 app_name */
+const APP_NAME_DEFAULT = 'Bluxe手绘工坊 · 生图工作台';
+function applyAppName(name){
+  const n = (name || '').trim() || APP_NAME_DEFAULT;
+  state.appName = n;
+  const el = $('#appName'); if (el) el.textContent = n;
+  document.title = n;
+}
+async function loadAppName(){
+  try{
+    const d = await (await fetch('/api/config')).json();
+    applyAppName(d.app_name || d.app_name_default);
+  }catch(e){ /* 读不到就用默认名，不影响其他功能 */ }
+}
+function cfgFill(d){
+  $('#cfgAppName').value = d.app_name || d.app_name_default || '';
+  $('#cfgBase').value = d.base_url || '';
+  $('#cfgKey').value = '';
+  $('#cfgKey').placeholder = d.api_key_set ? '留空沿用已保存密钥' : 'sk-...（未配置）';
+  $('#cfgKeyHint').textContent = d.api_key_set ? ('当前：' + (d.api_key_masked || '已配置')) : '尚未配置密钥';
+  $('#cfgModelImage').value = d.model_image || '';
+  $('#cfgModelText').value = d.model_text || '';
+  // 默认目录不回填到输入框，留空表示「用默认」，占位符里给出真实路径
+  const def = d.output_dir_default || '';
+  $('#cfgOutDir').value = d.output_dir_is_default ? '' : (d.output_dir || '');
+  $('#cfgOutDir').placeholder = def ? '默认：' + def : '留空 = 工作台默认目录';
+  $('#cfgOutHint').textContent = d.output_dir_is_default
+    ? '当前存到默认目录；改成别的绝对路径（例如 D:\\DH_Picture）后，新图会存到那里，旧图仍可正常打开。'
+    : '当前：' + (d.output_dir || '') + '（留空保存即回到默认目录）';
+  $('#cfgEdits').checked = !!d.supports_edits;
+  $('#cfgFormat').value = d.image_response_format || 'auto';
+  $('#cfgEditsStyle').value = d.edits_style || 'auto';
+  const modeTxt = (d.mode === 'pool' ? '号池模式' : '通用接口模式')
+    + (d.pool_message ? ' · ' + d.pool_message : '');
+  $('#cfgEngine').textContent = modeTxt;
+  $('#cfgAppNameHint').textContent = '默认名：' + (d.app_name_default || APP_NAME_DEFAULT) + '（留空保存即回到默认名）';
+}
+function cfgPayload(){
+  return {
+    app_name: $('#cfgAppName').value.trim(),
+    base_url: $('#cfgBase').value.trim(),
+    output_dir: $('#cfgOutDir').value.trim(),
+    api_key: $('#cfgKey').value.trim(),
+    model_image: $('#cfgModelImage').value.trim(),
+    model_text: $('#cfgModelText').value.trim(),
+    supports_edits: $('#cfgEdits').checked,
+    edits_style: $('#cfgEditsStyle').value,
+    image_response_format: $('#cfgFormat').value,
+  };
+}
+async function openConfig(){
+  $('#configDlg').showModal();
+  $('#cfgResult').textContent = '';
+  showCfgTab('iface');
+  try{
+    const d = await (await fetch('/api/config')).json();
+    cfgFill(d);
+  }catch(e){ $('#cfgResult').textContent = '读取配置失败：' + e.message; }
+  loadPoolPanel(true);          // 顺手把「本地号池」页签上的可用数填上，不用点进去等
+}
+async function testConn(){
+  const r = $('#cfgResult'); r.style.color = 'var(--ink-3)'; r.textContent = '测试中…';
+  try{
+    const d = await (await fetch('/api/config/test', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(cfgPayload())})).json();
+    r.style.color = d.ok ? '#1f9d6b' : '#d4380d';
+    r.textContent = (d.ok ? '✓ ' : '✗ ') + d.message
+      + (d.models && d.models.length ? '（例：' + d.models.slice(0,3).join('、') + '…）' : '');
+  }catch(e){ r.style.color = '#d4380d'; r.textContent = '测试请求失败：' + e.message; }
+}
+async function saveConfig(){
+  const r = $('#cfgResult'); r.style.color = 'var(--ink-3)'; r.textContent = '保存中…';
+  // 名字先换上去：保存要顺带重探号池，慢的时候别让人对着旧标题等
+  const wantName = $('#cfgAppName').value.trim();
+  applyAppName(wantName);
+  try{
+    const resp = await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(cfgPayload())});
+    const d = await resp.json();
+    if (!resp.ok) throw new Error(d.detail || ('HTTP ' + resp.status));
+    cfgFill(d);
+    applyAppName(d.app_name);
+    r.style.color = '#1f9d6b';
+    r.textContent = '已保存：' + d.app_name + ' · ' + (d.mode === 'pool' ? '号池模式' : '通用接口模式') + ' · ' + d.base_url;
+    toast('设置已保存');
+    refreshPool();
+  }catch(e){
+    r.style.color = '#d4380d'; r.textContent = '保存失败：' + e.message;
+    loadAppName();          // 没存上就把标题退回服务端的真实值
+  }
+}
+
+/* ---------- 本地号池：状态 / 进程控制 / 导入账号 / 对外接口 ---------- */
+let poolPanel = null;
+let poolBusy = false;
+function showCfgTab(name){
+  document.querySelectorAll('.cfg-tab').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  $('#tabIface').hidden = name !== 'iface';
+  $('#tabPool').hidden = name !== 'pool';
+  $('#cfgFoot').hidden = name !== 'iface';
+  if (name === 'pool') loadPoolPanel();
+}
+document.querySelectorAll('.cfg-tab').forEach(b => { b.onclick = ()=> showCfgTab(b.dataset.tab); });
+
+function poolAccRow(a){
+  const row = document.createElement('div'); row.className = 'pacc-row';
+  const mail = document.createElement('span'); mail.className = 'pacc-mail';
+  mail.textContent = a.email || '（无邮箱）';
+  if (a.error) mail.title = '最近一次报错：' + a.error;
+  const chip = document.createElement('span');
+  chip.className = 'pchip ' + (a.cls || 'warn'); chip.textContent = a.status || '正常';
+  const q = document.createElement('span'); q.className = 'pacc-num';
+  q.textContent = a.quota > 0 ? ('剩 ' + a.quota) : '已用完';
+  if (a.quota <= 0) q.style.color = 'var(--warn)';
+  const u = document.createElement('span'); u.className = 'pacc-use';
+  u.textContent = `用 ${a.success} / 错 ${a.fail}`;
+  const act = document.createElement('span'); act.className = 'pacc-act';
+  const tog = document.createElement('button');
+  tog.type = 'button'; tog.textContent = a.status === '禁用' ? '启用' : '停用';
+  tog.onclick = ()=> poolToggle(a);
+  const del = document.createElement('button');
+  del.type = 'button'; del.className = 'danger'; del.textContent = '删除';
+  del.onclick = ()=> poolDelete(a);
+  act.appendChild(tog); act.appendChild(del);
+  row.appendChild(mail); row.appendChild(chip); row.appendChild(q); row.appendChild(u); row.appendChild(act);
+  return row;
+}
+
+function renderPool(d){
+  poolPanel = d;
+  const on = !!d.online;
+  const sv = d.service || {};
+  $('#pDot').className = 'dot' + (on ? '' : ' off');
+  $('#pState').textContent = on ? '号池在线' : (d.local ? '号池没在跑' : '当前不是本机号池');
+  // 号池归本工作台管：停了就地启动，不用再去别的插件
+  const canManage = !!sv.local && !!sv.manageable;
+  $('#pStart').hidden = !canManage || on || !!poolBusy;
+  $('#pRestart').hidden = !canManage || !sv.running || !!poolBusy;
+  $('#pStop').hidden = !canManage || !sv.running || !!poolBusy;
+  // 上一步动作把按钮 disable 过，这里必须按最新状态复位，否则「启动」看得到却点不动
+  ['pStart', 'pRestart', 'pStop'].forEach(id => { $('#' + id).disabled = !!poolBusy; });
+  $('#pAuto').disabled = !canManage;
+  $('#pAuto').checked = !!sv.auto_start;
+  $('#pSvcMsg').textContent = sv.message || (on ? '工作台守护中' : '');
+  $('#pSvcMsg').title = sv.log || '';
+  const bits = [];
+  if (d.local && on){
+    bits.push(`${d.total} 个账号`, `可用 ${d.active}`);
+    if (d.limited) bits.push(`限流 ${d.limited}`);
+    if (d.disabled) bits.push(`停用 ${d.disabled}`);
+    bits.push(`剩 ${d.quota} 次额度`);
+  } else {
+    bits.push(d.message || '连接失败');
+  }
+  $('#pMeta').textContent = bits.filter(Boolean).join(' · ');
+  $('#poolTabTag').textContent = (d.local && on) ? `${d.active}/${d.total}` : '';
+
+  $('#pBase').textContent = d.base_url || '—';
+  $('#pBase').title = d.base_url || '';
+  $('#pKey').textContent = d.api_key || (d.local ? '还没有用户 Key，点「重新生成」' : '—');
+  $('#pKey').title = d.api_key || '';
+  $('#pApplyHint').textContent = d.local
+    ? (d.api_key ? '会把这套地址和密钥写进上面的出图接口' : '先生成一把密钥')
+    : '';
+  // 本机可能同时开着两个号池，写清楚当前管的是哪个目录，免得改错池子
+  const runtimeTag = sv.vendor_bundled ? '　·　号池运行时随插件自带' : '　·　插件运行时缺失，请重装插件';
+  $('#pHome').textContent = d.home ? ('号池目录：' + d.home + runtimeTag) : '';
+  $('#pHome').title = (d.home || '') + (sv.vendor_path ? '　运行时：' + sv.vendor_path : '');
+
+  const warn = $('#pWarn'); const msgs = [];
+  if (!d.local){
+    msgs.push('当前接口不是本机号池：Base URL 要指向 127.0.0.1 上的号池端口，且本机号池目录里要有 admin-key。导入账号只在直连本机号池时可用。');
+  } else if (!d.online){
+    msgs.push(canManage
+      ? '号池进程没在跑。点上面的「启动号池」，工作台会自己拉起；开启「掉线自动拉起」后以后不用再管。'
+        + (sv.runtime_ready ? ''
+           : '首次启动会用插件自带的号池运行时初始化并装依赖，约 1–3 分钟，不需要另装任何号池插件。')
+      : (sv.message || '号池进程没在跑。'));
+  }
+  if (d.accounts_error) msgs.push(d.accounts_error);
+  warn.hidden = msgs.length === 0;
+  warn.textContent = msgs.join(' ');
+
+  const list = $('#pAccList'); list.textContent = '';
+  const accs = d.accounts || [];
+  const left = accs.reduce((s, a)=> s + Math.max(0, a.quota || 0), 0);
+  $('#pAccTag').textContent = accs.length ? `${accs.length} 个 · 合计 ${left} 次额度` : '';
+  if (!accs.length){
+    const e = document.createElement('div'); e.className = 'pacc-empty';
+    e.textContent = !d.local ? '读不到账号明细。'
+      : (canManage && !sv.running)
+        ? '号池没在跑，启动后这里会列出全部账号。'
+        : '还没有账号。把 access_token 贴到上面导入，第一个号进来就能出图。';
+    list.appendChild(e);
+  } else {
+    accs.forEach(a => list.appendChild(poolAccRow(a)));
+  }
+  $('#pImportBtn').disabled = !d.local || !d.online;
+  $('#pKeyNew').disabled = !d.local || !d.online;
+  $('#pApply').disabled = !d.api_key;
+}
+
+async function loadPoolPanel(quiet){
+  if (!quiet){ $('#pState').textContent = '读取中…'; $('#pMeta').textContent = ''; }
+  try{
+    const d = await (await fetch('/api/pool/panel', {cache: 'no-store'})).json();
+    renderPool(d);
+  }catch(e){
+    $('#pDot').className = 'dot off';
+    $('#pState').textContent = '读取失败';
+    $('#pMeta').textContent = e.message || String(e);
+  }
+}
+
+async function poolPost(path, body){
+  const r = await fetch(path, {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body || {})});
+  const d = await r.json().catch(()=> ({}));
+  if (!r.ok) throw new Error(d.detail || d.message || ('HTTP ' + r.status));
+  return d;
+}
+
+async function copyText(text){
+  try{
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(text); return true;
+    }
+  }catch(e){ /* iframe 里可能没授权，退回 execCommand */ }
+  try{
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+    return true;
+  }catch(e){ return false; }
+}
+document.querySelectorAll('[data-copy]').forEach(b => {
+  b.onclick = async ()=>{
+    const el = document.getElementById(b.dataset.copy);
+    const text = ((el && el.textContent) || '').trim();
+    if (!text || text === '—' || text.indexOf('还没有') === 0){ toast('这里没有可复制的内容', 'err'); return; }
+    if (await copyText(text)){
+      const old = b.textContent; b.textContent = '已复制';
+      setTimeout(()=> { b.textContent = old; }, 1400);
+    } else {
+      toast('复制失败，手动选中那串再 Ctrl+C', 'err');
+    }
+  };
+});
+
+$('#pReload').onclick = ()=> loadPoolPanel();
+
+/* 号池进程归本工作台管：启动 / 停止 / 重启都打自己的后端，不去别的插件 */
+async function poolService(path, label){
+  if (poolBusy) return;
+  poolBusy = true;
+  ['pStart','pStop','pRestart'].forEach(id => { const b = $('#'+id); b.disabled = true; });
+  toast(label + '中…（首次会久一点）');
+  try{
+    const d = await poolPost(path, {});
+    toast(d.message || (d.ok ? label + '完成' : label + '失败'), d.ok ? 'ok' : 'err');
+  }catch(e){ toast(label + '失败：' + e.message, 'err'); }
+  finally{
+    poolBusy = false;
+    await loadPoolPanel(true);
+    refreshPool();
+  }
+}
+$('#pStart').onclick = ()=> poolService('/api/pool/service/start', '启动号池');
+$('#pRestart').onclick = ()=> poolService('/api/pool/service/restart', '重启号池');
+$('#pStop').onclick = ()=>{
+  if (confirm('停止号池后，正在生成的图会失败。确定停止？')) poolService('/api/pool/service/stop', '停止号池');
+};
+$('#pAuto').onchange = async (e)=>{
+  try{
+    const d = await poolPost('/api/pool/service/auto', {enabled: !!e.target.checked});
+    toast(d.message || '已更新');
+  }catch(err){
+    toast('设置失败：' + err.message, 'err');
+    await loadPoolPanel(true);
+  }
+};
+
+$('#pImportBtn').onclick = async ()=>{
+  const msg = $('#pImportMsg');
+  const text = $('#pImport').value.trim();
+  if (!text){ msg.style.color = '#d4380d'; msg.textContent = '先把 access_token 贴进来'; return; }
+  const btn = $('#pImportBtn');
+  btn.disabled = true;
+  msg.style.color = 'var(--ink-3)';
+  msg.textContent = '正在导入并校验，每个号都要上游过一遍，几十秒正常…';
+  try{
+    const d = await poolPost('/api/pool/accounts/import', {text});
+    if (!d.ok){ msg.style.color = '#d4380d'; msg.textContent = d.message || '导入失败'; return; }
+    const parts = [];
+    if (d.added) parts.push(`新增 ${d.added} 个`);
+    if (d.skipped) parts.push(`号池里已有，跳过 ${d.skipped} 个`);
+    if (d.refreshed) parts.push(`校验通过 ${d.refreshed} 个`);
+    if (d.errors && d.errors.length) parts.push(`失败 ${d.errors.length} 个（${d.errors.slice(0, 2).join('；')}）`);
+    if (d.bad) parts.push(`${d.bad} 行没认出 token`);
+    if (d.note) parts.push(d.note);
+    msg.style.color = (d.errors && d.errors.length) ? '#d4380d' : '#1f9d6b';
+    msg.textContent = parts.join(' · ') || '没有新增';
+    if (d.added){ $('#pImport').value = ''; toast(`号池新增 ${d.added} 个账号`, 'ok'); refreshPool(); }
+    await loadPoolPanel(true);
+  }catch(e){
+    msg.style.color = '#d4380d'; msg.textContent = '导入失败：' + e.message;
+  }finally{ btn.disabled = false; }
+};
+
+async function poolDelete(a){
+  if (!confirm(`从号池删除 ${a.email}？\n\n只是把它移出这个号池，账号本身不受影响，以后还能再导入。`)) return;
+  try{
+    const d = await poolPost('/api/pool/accounts/delete', {ids: [a.id]});
+    if (!d.ok){ toast(d.message || '删除失败', 'err'); return; }
+    toast(`已删除 ${d.removed} 个账号`);
+    await loadPoolPanel(true); refreshPool();
+  }catch(e){ toast('删除失败：' + e.message, 'err'); }
+}
+
+async function poolToggle(a){
+  const disabled = a.status !== '禁用';
+  try{
+    const d = await poolPost('/api/pool/accounts/status', {ids: [a.id], disabled});
+    if (!d.ok){ toast(d.message || '操作失败', 'err'); return; }
+    toast(disabled ? '已停用，号池不再派图给它' : '已启用，重新参与轮转');
+    await loadPoolPanel(true); refreshPool();
+  }catch(e){ toast('操作失败：' + e.message, 'err'); }
+}
+
+$('#pKeyNew').onclick = async ()=>{
+  if (!confirm('生成一把新的用户 Key？\n\n老的 Key 不会失效，正在用它的脚本不受影响。')) return;
+  const btn = $('#pKeyNew');
+  btn.disabled = true; btn.textContent = '生成中…';
+  try{
+    const d = await poolPost('/api/pool/key/ensure', {new: true});
+    if (!d.ok){ toast(d.message || '生成失败', 'err'); return; }
+    toast('新密钥已生成，点复制拿走');
+    await loadPoolPanel(true);
+  }catch(e){ toast('生成失败：' + e.message, 'err'); }
+  finally{ btn.disabled = false; btn.textContent = '重新生成'; }
+};
+
+$('#pApply').onclick = async ()=>{
+  if (!poolPanel || !poolPanel.api_key) return;
+  const btn = $('#pApply'); const hint = $('#pApplyHint');
+  btn.disabled = true; hint.textContent = '保存中…';
+  try{
+    const r = await fetch('/api/config', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({base_url: poolPanel.base_url, api_key: poolPanel.api_key,
+        monitor_mode: 'pool', pool_dir: poolPanel.home})});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+    cfgFill(d); applyAppName(d.app_name);
+    hint.textContent = '已切到这个号池';
+    toast('已切到本地号池出图', 'ok');
+    refreshPool();
+  }catch(e){ hint.textContent = ''; toast('切换失败：' + e.message, 'err'); }
+  finally{ btn.disabled = false; }
+};
+
+$('#cfgOpenDir').onclick = async ()=>{
+  const r = $('#cfgResult');
+  try{
+    const d = await (await fetch('/api/config/open-dir', {method:'POST'})).json();
+    if (d.ok){ r.style.color = '#1f9d6b'; r.textContent = '已打开：' + d.path; }
+    else { r.style.color = '#d4380d'; r.textContent = (d.message || '打不开') + '：' + d.path; }
+  }catch(e){ r.style.color = '#d4380d'; r.textContent = '打开目录失败：' + e.message; }
+};
+$('#openConfig').onclick = openConfig;
+$('#cfgClose').onclick = ()=> $('#configDlg').close();
+$('#cfgTest').onclick = testConn;
+$('#cfgSave').onclick = saveConfig;
+
+function setPoolDetail(t){ $('#poolDetail').textContent = t; }
+
+$('#genText').onclick = ()=> run('text', $('#textStatus'));
+$('#polishText').onclick = polishText;
+$('#genImage').onclick = runImage;
+$('#redoExit').onclick = ()=> clearRedo(false);
+$('#coverPrev').onclick = ()=>{ if (state.results.length > 1) selectResult((state.idx - 1 + state.results.length) % state.results.length); };
+$('#coverNext').onclick = ()=>{ if (state.results.length > 1) selectResult((state.idx + 1) % state.results.length); };
+$('#viewClose').onclick = ()=> $('#viewDlg').close();
+$('#viewPrev').onclick = ()=> stepView(-1);
+$('#viewNext').onclick = ()=> stepView(1);
+/* 键盘左右翻，仅在 大图 打开时接管，别影响编辑区打字 */
+document.addEventListener('keydown', e=>{
+  const dlg = $('#viewDlg');
+  if (!dlg || !dlg.open) return;
+  if (e.key === 'ArrowLeft'){ e.preventDefault(); stepView(-1); }
+  else if (e.key === 'ArrowRight'){ e.preventDefault(); stepView(1); }
+  else if (e.key === '0'){ resetZoom(); }
+});
+/* 排版预览点一下就开大图（以前要双击，没人猜得到） */
+$('#cover').addEventListener('click', e=>{
+  if (e.target.closest('#cover img')) openViewer();
+});
+/* 大图里滚轮缩放：指针在图上就放大 / 缩小，1 倍为下限，回到底部自动停 */
+$('#viewDlg').addEventListener('wheel', e=>{
+  e.preventDefault();
+  zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15);
+}, {passive: false});
+/* 放大后按住拖动看细节；没放大时不抢事件，双击开图照旧 */
+(()=>{
+  const img = $('#viewImg');
+  if (!img) return;
+  img.draggable = false;
+  let drag = null;
+  img.addEventListener('pointerdown', e=>{
+    if (ZOOM.s <= 1.001) return;
+    e.preventDefault();
+    drag = {x: e.clientX, y: e.clientY, ox: ZOOM.x, oy: ZOOM.y};
+    img.classList.add('dragging');
+    img.setPointerCapture?.(e.pointerId);
+    applyZoom();
+  });
+  img.addEventListener('pointermove', e=>{
+    if (!drag) return;
+    ZOOM.x = drag.ox + (e.clientX - drag.x);
+    ZOOM.y = drag.oy + (e.clientY - drag.y);
+    clampPan();
+    applyZoom();
+  });
+  const end = ()=>{
+    if (!drag) return;
+    drag = null;
+    img.classList.remove('dragging');
+    applyZoom();
+  };
+  img.addEventListener('pointerup', end);
+  img.addEventListener('pointercancel', end);
+  window.addEventListener('pointerup', end);
+})();
+$('#viewDlg').addEventListener('close', resetZoom);
+document.addEventListener('dblclick', e=>{
+  const shot = e.target.closest('.shot');
+  if (shot){ selectResult(+shot.dataset.i); openViewer(); return; }
+  if (e.target.closest('#cover img')) openViewer();
+});
+$('#copyText').onclick = async ()=>{
+  const t = ($('#docTitle').value.trim() + '\n\n' + $('#docBody').value.trim()).trim();
+  if (!t){ toast('还没有可复制的内容'); return; }
+  try { await navigator.clipboard.writeText(t); toast('已复制'); } catch { toast('复制失败，请手动选择'); }
+};
+$('#randomCombo').onclick = ()=>{
+  const r = a => a[Math.floor(Math.random()*a.length)];
+  pick('style', r(state.styles)); pick('layout', r(state.layouts)); pick('color', r(state.colors));
+  toast('已随机组合：' + state.sel.style.id + ' / ' + state.sel.layout.id + ' / ' + state.sel.color.id);
+};
+$('#addItem').onclick = ()=> addItem();
+$('#importItems').onclick = ()=> openImport('list');
+$('#copyInstr').onclick = ()=> copyText($('#instrOut').textContent.trim(), '出图指令已复制');
+$('#resetInstr').onclick = ()=>{ state.instrCustom = null; syncInstr(); toast('已还原为自动拼接的指令'); };
+$('#instrOut').addEventListener('input', ()=>{
+  state.instrCustom = $('#instrOut').textContent.trim() || null;
+  instrUi();
+});
+$('#composeAll').onclick = composeAll;
+$('#mood').addEventListener('input', ()=>{ renderMoodChips(); syncInstr(); });
+$('#ratio').addEventListener('change', ()=>{ syncInstr(); syncRatioUi(); });
+$('#fusion').addEventListener('change', ()=>{
+  try{ sessionStorage.setItem('wb_fusion_user', $('#fusion').checked ? '1' : '0'); }catch(e){}
+  syncInstr();
+  if (state.items.some(x=>(x.prompt||'').trim())) toast('组合已变，请重新点「生成提示词」或单条「重拼」');
+});
+/* 出图模式切换：只改显隐与指令，不动已有输入 */
+document.querySelectorAll('#omodeSeg button').forEach(b=>{
+  b.onclick = ()=>{
+    state.omode = b.dataset.omode === 'photo' ? 'photo' : 'graphic-text';
+    syncOmode();
+    if (state.omode === 'photo') renderShootChips();
+    syncInstr();
+  };
+});
+$('#shootType').addEventListener('input', ()=>{ renderShootChips(); syncInstr(); });
+document.querySelectorAll('#wsSeg button').forEach(b=>{
+  b.onclick = ()=>{
+    state.ws = b.dataset.ws;
+    document.querySelectorAll('#wsSeg button').forEach(x=> x.classList.toggle('on', x === b));
+    syncInstr();
+  };
+});
+$('#importOk').onclick = ()=>{
+  const txt = $('#importText').value;
+  if (importMode === 'prompts'){
+    const parsed = parsePrompts(txt);
+    if (!parsed.length){ toast('没有可导入的提示词'); return; }
+    const n = applyImport(parsed);
+    if (!n){ toast('清单没有变化'); return; }
+    $('#importDlg').close();
+    toast('已导入 ' + n + ' 条提示词，标题正文留空，直接点「批量出图」');
+    return;
+  }
+  const parsed = parseImport(txt);
+  const n = applyImport(parsed);
+  if (!n){ toast('没解析出内容'); return; }
+  $('#importDlg').close();
+  const withP = parsed.filter(x=> (x.prompt || '').trim()).length;
+  toast(withP
+    ? ('已识别 ' + n + ' 张卡片，提示词已带回，直接点「批量出图」')
+    : ('已识别 ' + n + ' 张卡片'));
+};
+$('#importText').addEventListener('input', countImport);
+$('#importText').addEventListener('paste', ()=> setTimeout(countImport, 20));
+$('#importPromptOuter').onclick = async ()=>{
+  openImport('prompts');
+  /* 能读剪贴板就自动预填，复制过来一步到位；没权限就自己粘，照样能用 */
+  try{
+    const t = await navigator.clipboard.readText();
+    if (t && t.trim()){ $('#importText').value = t; countImport(); }
+  }catch(e){}
+};
+$('#importCancel').onclick = ()=> $('#importDlg').close();
+
+/* 整段清单直接粘到清单区：识别到 2 张以上就地分条，不落到输入框里 */
+$('#itemList').addEventListener('paste', e=>{
+  const cd = e.clipboardData || window.clipboardData;
+  const txt = cd ? cd.getData('text') : '';
+  if (!txt || txt.trim().length < 6) return;
+  const parsed = parseImport(txt);
+  if (parsed.length < 2) return;
+  e.preventDefault();
+  const n = applyImport(parsed);
+  const withP = parsed.filter(x=> (x.prompt || '').trim()).length;
+  toast(withP
+    ? ('已识别 ' + n + ' 张卡片，提示词已带回，直接点「批量出图」')
+    : ('已识别 ' + n + ' 张卡片，点「生成提示词」开始拼装'));
+}, true);
+
+/* 复制全部：按「卡片 03/08 ｜ 标题 + 代码块」的格式导出，方便存档或贴给别的 AI */
+function briefAll(){
+  const total = state.items.length;
+  return state.items.map((it, i)=>{
+    const tag = itemNo(it, i) + '/' + String(total).padStart(2, '0');
+    const bare = (it.title || '').replace(/^\d{1,2}[\s.．、,，:：-]+/, '').trim() || ('第 ' + (i + 1) + ' 张');
+    return '**卡片 ' + tag + ' ｜ ' + bare + '**\n```\n' + (it.prompt || '').trim() + '\n```';
+  }).join('\n\n');
+}
+
+$('#downloadAll').onclick = async ()=>{
+  const rs = state.results;
+  const idsAll = rs.map(x=>x.id).filter(Boolean);
+  if (!idsAll.length){ toast('还没有可打包的图片（本轮没有生成成功的图片）'); return; }
+  const btn = $('#downloadAll');
+  btn.disabled = true;
+  toast('正在打包 ' + idsAll.length + ' 张…');
+  try{
+    const r = await fetch('/api/zip', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ids: idsAll})});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '任务图片-' + new Date().toISOString().slice(0,16).replace(/[:T]/g,'') + '.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+    toast('已下载 ' + idsAll.length + ' 张（zip）');
+  }catch(e){ toast('打包失败：' + e.message); }
+  finally{ btn.disabled = false; }
+};
+$('#copyAll').onclick = async ()=>{
+  if (!state.items.length){ toast('清单还是空的'); return; }
+  if (state.items.some(x=> !x.prompt || !x.prompt.trim())){
+    await composeAll();
+  }
+  copyText(briefAll(), '已复制 ' + state.items.length + ' 条提示词');
+};
+$('#docTitle').addEventListener('input', syncPreview);
+$('#docBody').addEventListener('input', syncPreview);
+CARD_KINDS.forEach(([k, sfx])=>{
+  $('#empty'+sfx).onclick = ()=> openPicker(k);
+  $('#chg'+sfx).onclick   = ()=> openPicker(k);
+  $('#clr'+sfx).onclick   = ()=>{ state.sel[k] = null; state.selTouched = true; syncPicks(); };
+});
+$('#pickerFilter').addEventListener('input', renderPicker);
+$('#pickerClose').onclick = ()=> $('#pickerDlg').close();
+
+
+/* ================= 左侧：标题 + 正文 → 分镜清单 ================= */
+function esc(v){
+  return String(v == null ? '' : v).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function bareTitle(t){
+  return String(t || '')
+    .replace(/^[*＊【\[(（\s]*\d{1,2}[\s.．、,，:：)）\-]+\s*/, '')
+    .replace(/[*＊】\])）]+$/g, '')
+    .trim();
+}
+
+/* 没有编号时，用第一句当标题；长了就截，不出现省略号 */
+function autoTitle(text){
+  const first = (String(text || '').split(/[。！？!?\n]/)[0] || '')
+    .replace(/^[#*\s]+/, '').trim().replace(/[，,、；;：:]+$/, '');
+  return (first.length > 16 ? first.slice(0, 16) : first) || '一张图';
+}
+
+/* 结尾收束行 / 话题标签行：只用于「最后一条编号块」的尾部裁剪 */
+const TAIL_LINE_RE = /^(?:#|[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F\s]*(?:最后想|最后告诉|写在最后|总之|以上|共勉|愿你|愿我们|从今天开始|从今天起|最后[，：:]|最后))/u;
+
+/* AI 写「N 条贴图文案」时常是：几句开场引导 → 01｜小标题 … 08｜小标题 → 结尾收束 + #标签。
+   旧逻辑只看正文首行有没有编号，首行是引导语时整篇按空行切；而条目之间常常一个空行都没有，
+   8 条就塌成 1 条。这里全文扫描编号行，按编号断，丢掉开场引导与尾部收束。 */
+function splitNumberedBlocks(body){
+  const lines = String(body || '').replace(/\r/g, '').split('\n').map(x => x.trim());
+  const heads = [];
+  lines.forEach((line, i) => {
+    const m = line.match(ITEM_HEAD_RE);
+    if (m) heads.push({i: i, num: parseInt(m[1], 10), title: m[2].replace(/[*＊]/g, '').trim()});
+  });
+  if (heads.length < 2) return null;
+  if (!heads.every((h, k) => k === 0 || h.num === heads[k - 1].num + 1)) return null;
+  const out = [];
+  heads.forEach((h, k) => {
+    const end = k + 1 < heads.length ? heads[k + 1].i : lines.length;
+    const seg = lines.slice(h.i + 1, end);
+    let cut = seg.length;
+    if (k === heads.length - 1){
+      for (let j = 0; j < seg.length; j++){
+        if (seg[j] && TAIL_LINE_RE.test(seg[j])) { cut = j; break; }
+      }
+    }
+    out.push({title: h.title, body: seg.slice(0, cut).filter(Boolean).join('\n').trim()});
+  });
+  return out.filter(x => x.title || x.body);
+}
+
+/* 正文 → 卡片：优先按编号块断，其次按空行断，最后兜底整段一张 */
+function splitDoc(title, body){
+  const firstLine = (String(body || '').split('\n').find(l => l.trim()) || '').trim();
+  const hasNum = /^[*＊【\[(（]*\s*\d{1,2}\s*[｜|、,，.．:：)）]/.test(firstLine);
+  let items = [];
+  if (hasNum){
+    items = parseImport(body);
+  } else {
+    const numbered = splitNumberedBlocks(body);
+    if (numbered && numbered.length >= 2){
+      items = numbered;
+    } else {
+      const blocks = String(body || '').split(/\n\s*\n/).map(b => b.trim()).filter(Boolean)
+        .filter(b => !b.split('\n').every(l => /^\s*#/.test(l.trim())));
+      if (blocks.length > 1) items = blocks.map(b => ({title: autoTitle(b), body: b}));
+      else if (String(body || '').trim()) items = [{title: title || autoTitle(body), body}];
+    }
+  }
+  if (!items.length && title) items = [{title, body: ''}];
+  return items
+    .map(x => ({title: bareTitle(x.title), body: (x.body || '').trim()}))
+    .filter(x => x.title || x.body)
+    .map((x, i) => ({
+      title: String(i + 1).padStart(2, '0') + ' ' + (x.title || autoTitle(x.body)),
+      body: x.body, scene: '', prompt: ''
+    }));
+}
+
+async function splitToItems(){
+  const title = $('#docTitle').value.trim();
+  const body  = $('#docBody').value.trim();
+  if (!title && !body){
+    // 左侧全空也允许：给一条空白分镜，直接靠选型 + 出图指令（可手改）出提示词
+    if (state.items.length){ toast('左侧为空，保留现有清单直接出图'); return; }
+    state.items = [{title: '', body: '', scene: '', prompt: ''}];
+    state.group = '';
+    $('#groupTag').textContent = '';
+    renderItems();
+    const st = $('#splitStatus');
+    st.className = 'status ok';
+    st.textContent = '空白分镜 · 提示词按出图指令拼';
+    await composeAll();
+    toast('已按出图指令生成提示词');
+    return;
+  }
+  const items = splitDoc(title, body);
+  if (!items.length){ toast('没拆出内容'); return; }
+  // 封面也拆进清单：标题做主视觉大图，编号固定 00 排最前（标记在 cover 上，标题不带 00），不要时可以点 × 删掉
+  items.unshift({title: bareTitle(title) || autoTitle(body), body: '', scene: '', prompt: '', cover: true});
+  const dirty = state.items.some(x=> (x.title || '').trim() || (x.body || '').trim());
+  if (dirty && !confirm('左侧标题 + 正文会重新生成 ' + items.length + ' 张卡片，当前清单（含已改过的提示词）会被替换，继续？')) return;
+
+  state.items = items;
+  state.group = title;
+  $('#groupTag').textContent = title ? '整组主题：' + title : '';
+  renderItems();
+
+  const st = $('#splitStatus');
+  st.className = 'status run';
+  st.textContent = `已拆 ${items.length} 张，正在拼提示词…`;
+  await composeAll();
+  st.className = 'status ok';
+  st.textContent = `已拆 ${items.length} 张 · 提示词已生成，可逐条修改`;
+  toast(`已拆成 ${items.length} 张卡片`);
+}
+
+/* ================= 生成历史 ================= */
+function fmtTime(ts){
+  if (!ts) return '—';
+  const d = new Date(ts * 1000), p = n => String(n).padStart(2, '0');
+  return `${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+/* 清掉孤立代理项与替换字符：JS 的 slice 按 UTF-16 单元切，切到 emoji 一半会显示成 ▯ */
+function safeText(v){
+  const out = [];
+  for (const ch of String(v == null ? '' : v)){
+    const c = ch.codePointAt(0);
+    if (c === 0xFFFD || (c >= 0xD800 && c <= 0xDFFF)) continue;
+    out.push(ch);
+  }
+  return out.join('');
+}
+/* 按 Unicode 码点截断（不是 UTF-16 单元），超出加省略号，不会再切坏 emoji */
+function clipText(v, n){
+  const a = Array.from(safeText(v));
+  return a.length > n ? a.slice(0, n).join('') + '…' : a.join('');
+}
+function fmtSize(n){
+  if (!n) return '';
+  return n > 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.round(n / 1024) + 'KB';
+}
+
+/* 历史：按「一次批量出图」分组，默认折叠，展开才加载这一批的缩略图 */
+const HIST_SIZES = [20, 50, 100];
+function pageSize(){
+  const v = +($('#historyPageSize').value || 20);
+  return HIST_SIZES.includes(v) ? v : 20;
+}
+
+async function loadTasks(page){
+  const limit = pageSize();
+  const p = Math.max(1, +page || 1);
+  const q = $('#historyFilter').value.trim();
+  const box = $('#taskList');
+  box.innerHTML = '<div class="task-empty">加载中…</div>';
+  let d;
+  try{
+    d = await (await fetch(`/api/tasks?limit=${limit}&offset=${(p - 1) * limit}&q=${encodeURIComponent(q)}`)).json();
+  }catch(e){
+    box.innerHTML = '<div class="task-empty">历史加载失败，点「刷新」重试</div>';
+    return;
+  }
+  state.tasks = {page: d.page || p, limit, pages: d.pages || 1,
+    total: d.total || 0, items: d.items || [], q};
+  renderTasks();
+}
+
+function renderTasks(){
+  const box = $('#taskList'); box.innerHTML = '';
+  const t = state.tasks;
+  $('#historyCount').textContent = t.total + ' 个任务';
+  $('#historyEmpty').hidden = !!t.items.length;
+  $('#taskPageInfo').textContent = t.total
+    ? `第 ${t.page} / ${t.pages} 页 · 共 ${t.total} 个任务 · 每页 ${t.limit}`
+    : '';
+  $('#taskPrev').disabled = t.page <= 1;
+  $('#taskNext').disabled = t.page >= t.pages;
+
+  if (!t.items.length){
+    box.innerHTML = '<div class="task-empty">' + (t.q ? '没有匹配「' + esc(t.q) + '」的任务' : '还没有生成记录') + '</div>';
+    return;
+  }
+
+  t.items.forEach(task=>{
+    const items = task.items || [];
+    const nImg = items.filter(i=>i.image_url).length;
+    const nText = (task.modes && task.modes.text) || 0;
+    const row = document.createElement('div');
+    row.className = 'task-row';
+    row.innerHTML =
+        '<div class="task-head">'
+      + '<span class="tw">▶</span>'
+      + `<b>${esc(task.title || '未命名任务')}</b>`
+      + `<span class="chipx">${task.total} 条</span>`
+      + (nImg ? `<span class="chipx img">${nImg} 张图</span>` : '')
+      + (nText ? `<span class="chipx">文字 ${nText}</span>` : '')
+      + `<span class="tm"><span class="okc">${task.done} 成功</span>`
+      + (task.error ? ` · <span class="errc">${task.error} 失败</span>` : '')
+      + ` · ${fmtTime(task.finished || task.created)}</span>`
+      + '<span class="spacer"></span>'
+      + '<span class="tacts">'
+      + '<button class="mini" data-act="load" type="button" title="把这个任务的分镜和提示词载回左侧，改完可以继续出图">载入</button>'
+      + '<button class="mini" data-act="bundle" type="button" title="把这一批的图片和文案打包成 zip 下载">打包</button>'
+      + '<button class="mini del" data-act="del" type="button" title="删除这个任务，图片文件一起清理">删除</button>'
+      + '</span>'
+      + '</div>'
+      + '<div class="task-body" hidden></div>';
+    const body = row.querySelector('.task-body');
+    row.querySelector('.task-head').onclick = ()=>{
+      const open = row.classList.toggle('open');
+      body.hidden = !open;
+      if (open && body.dataset.filled !== '1'){
+        fillTaskGrid(body, items, task);
+        body.dataset.filled = '1';
+      }
+    };
+    // 动作按钮在头部里，点它们不能连带把任务折叠/展开
+    row.querySelectorAll('.tacts [data-act]').forEach(b=>{
+      b.onclick = e=>{
+        e.stopPropagation();
+        if (b.dataset.act === 'load') loadTaskIntoWorkbench(task);
+        else if (b.dataset.act === 'bundle') location.href = '/api/tasks/' + encodeURIComponent(task.task_id) + '/bundle';
+        else deleteHistoryTask(task);
+      };
+    });
+    box.appendChild(row);
+  });
+}
+
+function fillTaskGrid(body, items, task){
+  const grid = document.createElement('div');
+  grid.className = 'task-grid';
+  items.forEach((rec, i)=> grid.appendChild(histCard(rec, task, i, items)));
+  if (!items.length) grid.innerHTML = '<div class="task-empty">这个任务没有记录</div>';
+  body.appendChild(grid);
+}
+
+function histCard(rec, task, idx, siblings){
+  const ok = rec.status === 'done' && rec.image_url;
+  const isText = rec.status === 'done' && !rec.image_url;
+  const el = document.createElement('div');
+  el.className = 'hist-card';
+  el.innerHTML =
+      (ok
+        ? `<div class="hc-thumb" style="aspect-ratio:${arCss(rec.ratio) || '3 / 4'}"><img src="${rec.thumb_url || rec.image_url}" loading="lazy" decoding="async" alt=""></div>`
+        : isText
+          ? `<div class="hc-thumb text">${esc((rec.body || '').slice(0, 120)) || '文字任务'}</div>`
+          : `<div class="hc-thumb failed">生成失败<br>${esc((rec.error || '未知错误').slice(0, 50))}</div>`)
+    + '<div class="hc-body">'
+    + `<b>${esc(rec.title || '未命名')}</b>`
+    + `<span class="hc-sub">${(rec.width && rec.height) ? rec.width + '×' + rec.height : (isText ? '文字' : '—')}${rec.bytes ? ' · ' + fmtSize(rec.bytes) : ''}</span>`
+    + `<span class="hc-sub">${esc(rec.account || '')}</span>`
+    + '<div class="hc-acts">'
+    + (ok ? '<button class="mini" data-act="view" type="button">大图</button><button class="mini" data-act="dl" type="button">下载</button>' : '')
+    + '<button class="mini" data-act="reuse" type="button" title="只载入这一张，改完出图后原位替换原任务里这张">重做</button>'
+    + '</div></div>';
+  const img = el.querySelector('img');
+  if (img){
+    img.onclick = ()=> openHistoryView(rec, siblings);
+    img.onerror = ()=>{
+      // 派生图接口异常时退回原图，仍不行才提示
+      if (rec.image_url && !img.dataset.fallback){
+        img.dataset.fallback = '1'; img.src = rec.image_url; return;
+      }
+      img.parentNode.className = 'hc-thumb failed'; img.parentNode.textContent = '缩略图不可用';
+    };
+  }
+  el.querySelectorAll('[data-act]').forEach(b=>{
+    b.onclick = ()=>{
+      const act = b.dataset.act;
+      if (act === 'view') openHistoryView(rec, siblings);
+      else if (act === 'dl') downloadHistory(rec);
+      else redoHistoryOne(rec, task, idx);
+    };
+  });
+  return el;
+}
+
+function openHistoryView(rec, siblings){
+  if (!rec.image_url){ toast('这条没有图片'); return; }
+  // 传进来的 siblings 是这条任务里的全部记录，筛成有图的，就能左右翻整个任务
+  const list = (siblings && siblings.length ? siblings : [rec]).filter(r=>r && r.image_url);
+  const at = list.findIndex(r=>r.id === rec.id);
+  VIEW.kind = 'history';
+  VIEW.list = list.length ? list : [rec];
+  VIEW.i = at < 0 ? 0 : at;
+  const dlg = $('#viewDlg');
+  if (!dlg.open) dlg.showModal();
+  resetZoom();
+  renderView(VIEW.i);
+}
+
+function downloadHistory(rec){
+  if (!rec.download_url){ toast('这条没有图片'); return; }
+  const a = document.createElement('a');
+  a.href = rec.download_url; a.download = '';
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('开始下载：' + (rec.title || ''));
+}
+
+/* 单张重做：只把历史里这一张的图型 / 风格 / 主题色 / 比例 / 出图模式 / 提示词载回左侧，
+   清单只留一条。出图时带原 task_id + seq + replace_id，成功后原位替换那一张，
+   不新增历史任务。任务行的「载入」不走这里，它照样开一个新 task_id、生成一条新记录。 */
+async function redoHistoryOne(rec, task, idx){
+  let full;
+  try{
+    const r = await fetch('/api/history/' + encodeURIComponent(rec.id));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    full = await r.json();
+  }catch(e){ toast('读取这张图的记录失败：' + e.message); return; }
+
+  const tid = (full.task_id || '').trim();
+  if (!tid){
+    // 早期记录只有合成任务号，没法原位替换，退回原来的「加回清单」
+    state.items.push({title: full.title || rec.title || '', body: full.body || '',
+      scene: '', prompt: full.prompt || ''});
+    renderItems();
+    toast('这条是早期记录，没有任务编号，已加回清单（不能原位替换）');
+    return;
+  }
+
+  const dirty = state.items.some(x=> (x.title || '').trim() || (x.body || '').trim())
+    || $('#docTitle').value.trim();
+  if (dirty && !confirm('单张重做会用这一张替换左侧当前内容，继续？')) return;
+
+  const cov = isCoverItem(full);
+  const rawTitle = full.title || rec.title || '';
+  const title = cov ? rawTitle.replace(/^00[\s.．、,，:：｜|]+/, '') : rawTitle;
+  const body = full.body || '';
+  const prompt = full.prompt || '';
+  state.items = [{title, body, scene: '', prompt, cover: cov || undefined}];
+  renderItems();
+
+  // 图型 / 风格 / 主题色 / 比例 / 出图模式按这一张当时的选择还原
+  const pool = {layout:'layouts', style:'styles', color:'colors'};
+  ['layout', 'style', 'color'].forEach(k=>{
+    const id = full[k + '_id'];
+    if (!id) return;
+    const hit = (state[pool[k]] || []).find(x=> String(x.id) === String(id));
+    if (hit) state.sel[k] = hit;
+  });
+  syncPicks();
+  const sel = $('#ratio');
+  if (full.ratio && [...sel.options].some(o=> o.value === full.ratio)) sel.value = full.ratio;
+  syncRatioUi();
+  state.omode = full.image_mode === 'photo' ? 'photo' : 'graphic-text';
+  $('#shootType').value = full.shoot_type || '';
+  syncOmode(); renderShootChips(); syncInstr();
+
+  // 正文框只放这一条方便改错别字；提交时用原任务的整篇正文，不覆盖历史还原数据
+  $('#topic').value = '';
+  $('#docTitle').value = full.group || (task && task.title) || '';
+  $('#docBody').value = body;
+  syncPreview();
+
+  const seq = (typeof full.seq === 'number') ? full.seq : (idx || 0);
+  state.redo = {
+    task_id: tid, job_id: rec.id, seq,
+    group: full.group || (task && task.group) || '',
+    doc_body: full.doc_body || '',
+    label: (task && task.title) || full.group || tid,
+    origTitle: title, origBody: body, origPrompt: prompt
+  };
+  renderRedoBar();
+  $('#historyDlg').close();
+  setTimeout(()=> window.scrollTo({top: 0, behavior: 'smooth'}), 120);
+  toast('已进入单张重做：改完文案或提示词，点「出图」就会原位替换这一张');
+}
+
+function renderRedoBar(){
+  const bar = $('#redoBar');
+  if (!bar) return;
+  const r = state.redo;
+  bar.hidden = !r;
+  if (r) $('#redoText').textContent =
+    '单张重做 · 原任务「' + clipText(safeText(r.label), 18) + '」第 ' + (r.seq + 1)
+    + ' 张 · 出图成功后原位替换，不新增历史记录';
+}
+
+function clearRedo(success){
+  if (!state.redo) return;
+  state.redo = null;
+  renderRedoBar();
+  if (success){
+    toast('已替换原任务里的这一张，单张重做结束');
+    loadTasks(1).catch(()=>{});
+  }
+}
+
+/* 清单被加过头就别替换了，免得一口气往原任务里塞好几张 */
+function redoGuard(){
+  if (!state.redo) return true;
+  if (state.items.length !== 1){
+    toast('单张重做模式下清单只能有一条，删掉多余的，或点「退出重做」按整套生成');
+    return false;
+  }
+  return true;
+}
+
+/* 单张重做的公共提交参数：原任务号、原序号、原整篇正文、原任务标题都不能丢 */
+function redoExtra(redo){
+  if (!redo) return {};
+  return {task_id: redo.task_id, seq: redo.seq, replace_id: redo.job_id,
+    group: redo.group, doc_body: redo.doc_body};
+}
+
+/* 改了分镜标题 / 正文但提示词没动：出图前自动重拼一次，
+   否则提示词里嵌的还是旧文字，错别字会原样画进新图。手改过提示词则尊重手改。 */
+async function redoPrompt(it, redo, prompt){
+  if (!redo) return prompt;
+  const changed = (it.title || '') !== redo.origTitle || (it.body || '') !== redo.origBody;
+  if (!changed || (it.prompt || '') !== redo.origPrompt) return prompt;
+  try{
+    const d = await postCompose([it]);
+    it.prompt = leadFor(it) + d.items[0].prompt;
+    toast('文案已改，提示词自动重拼了一次');
+    return it.prompt;
+  }catch(e){ toast('提示词重拼失败：' + e.message); return prompt; }
+}
+
+/* 把整个任务载回左侧：分镜清单 + 当时的图型/风格/主题色/比例。
+   提示词原样带回，所以改完直接出图，不用重新拼一遍。 */
+async function loadTaskIntoWorkbench(task){
+  // 整体载入 = 再生成一整套、开一条新历史记录，先退出单张重做
+  state.redo = null;
+  renderRedoBar();
+  let d;
+  try{
+    const r = await fetch('/api/tasks/' + encodeURIComponent(task.task_id));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    d = await r.json();
+  }catch(e){ toast('载入失败：拿不到任务内容'); return; }
+
+  // 文字任务在历史里没有可用分镜，别把空清单塞进左侧
+  const rows = (d.items || []).filter(x=> (x.mode || 'image') === 'image'
+    && ((x.title || '').trim() || (x.body || '').trim() || (x.prompt || '').trim()));
+  if (!rows.length){ toast('这个任务没有可载入的分镜（可能是文字任务）'); return; }
+
+  const dirty = state.items.some(x=> (x.title || '').trim() || (x.body || '').trim())
+    || $('#docTitle').value.trim();
+  if (dirty && !confirm('载入会用这个任务的 ' + rows.length + ' 条分镜替换左侧当前内容，继续？')) return;
+
+  // 封面条：老记录标题带 00 前缀，载入时去掉（识别靠 cover 标记 / 00 前缀 / 提示词开头的主视觉要求）
+  state.items = rows.map(x=>{
+    const cov = isCoverItem(x);
+    const t = (x.title || '').trim();
+    return {title: cov ? t.replace(/^00[\s.．、,，:：｜|]+/, '') : t,
+      body: x.body || '', scene: '', prompt: x.prompt || '', cover: cov || undefined};
+  });
+  renderItems();
+
+  // 右侧预览把这一批已经出好的图一起带出来：以前载入只回了文字，
+  // 图得重点一次批量出图才看得见，等于把历史里现成的成果藏了。
+  // seq 用行序，和分镜清单一一对齐；topic 取去掉 00 前缀的标题。
+  state.results = rows.map((x, i)=>({x, i})).filter(({x})=> x.image_url).map(({x, i})=>({
+    url: x.image_url,
+    preview: '/api/history/' + x.id + '/preview',
+    topic: (((state.items[i] && state.items[i].title) || x.title || '配图')).slice(0, 60),
+    seq: i, id: x.id, account: '',
+  }));
+  state.idx = 0;
+  renderStrip();
+  if (!state.results.length) clearCover();
+
+  // 画风/图型/主题色还原成当时那套，不然提示词里的画风和卡片对不上
+  const pool = {layout:'layouts', style:'styles', color:'colors'};
+  ['layout', 'style', 'color'].forEach(k=>{
+    const id = d[k + '_id'];
+    if (!id) return;
+    const hit = (state[pool[k]] || []).find(x=> String(x.id) === String(id));
+    if (hit) state.sel[k] = hit;
+  });
+  syncPicks();
+
+  if (d.ratio){
+    const sel = $('#ratio');
+    if ([...sel.options].some(o=> o.value === d.ratio)) sel.value = d.ratio;
+  }
+  syncRatioUi();
+  // 出图模式和拍摄类型一起还原；老记录没有这两个字段，按图文处理
+  state.omode = d.image_mode === 'photo' ? 'photo' : 'graphic-text';
+  $('#shootType').value = d.shoot_type || '';
+  syncOmode(); renderShootChips(); syncInstr();
+  // 当时用过参考图的话一起带回来（图还在 refs/ 里）
+  if (d.ref_id){
+    state.ref = {id: d.ref_id, url: '/refs/' + d.ref_id + '.png', w: null, h: null};
+    const probe = new Image();
+    probe.onload = ()=>{
+      if (state.ref && state.ref.id === d.ref_id){
+        state.ref.w = probe.naturalWidth; state.ref.h = probe.naturalHeight; syncRef();
+      }
+    };
+    probe.src = state.ref.url;
+  } else if (state.ref){
+    state.ref = null;
+  }
+  syncRef();
+
+  // 正文：新记录存了整篇正文；早于 2026-11-03 的老记录没存，
+  // 用这条任务各分镜还原：标题行 + 正文段，和正文框里原本的写法（01｜先存后花）对齐
+  const rawBody = (d.doc_body || '').trim();
+  const fmtHead = t=>{
+    const str = (t || '').trim();
+    const m = str.match(/^(\d{1,3})\s+(.+)$/);
+    return m ? (m[1].padStart(2, '0') + '｜' + m[2]) : str;
+  };
+  // 封面条（00 开头）不回写正文框：它是拆出来的主视觉，不是正文的一节
+  const joined = rows.filter(x=> !isCoverItem(x)).map(x=>{
+    const head = fmtHead(x.title), body = (x.body || '').trim();
+    return [head, body].filter(Boolean).join('\n');
+  }).filter(Boolean).join('\n\n');
+  $('#docBody').value = rawBody || joined;
+  const bodyGuessed = !rawBody && !!joined;
+
+  // 选题不再用 d.topic 兜底：那是单条分镜的标题（「01 先存后花」），
+  // 塞进选题框就成了一条假选题。旧版本已经填进去的，这里顺手清掉
+  const tv = $('#topic').value.trim();
+  if (tv && rows.some(x=> (x.title || '').trim() === tv)) $('#topic').value = '';
+
+  const group = d.group || d.title || '';
+  if (group) $('#docTitle').value = group;
+  // 上面都是程序赋值，不会触发 input 事件，右侧预览得手动推一次
+  syncPreview();
+
+  $('#historyDlg').close();
+  // 载入的是另一条任务，跟之前绑定的草稿没关系了：断绑，之后的自动暂存另起一份，
+  // 免得把用户在别处暂存的那份悄悄写掉
+  bindDraft(null, '');
+  markContentClean();
+  toast(bodyGuessed
+    ? ('已载入 ' + rows.length + ' 条分镜；这条老记录没存整篇正文，正文已用分镜内容拼接')
+    : ('已载入 ' + rows.length + ' 条分镜，改完提示词直接点批量出图'));
+  // 回页面顶部：载入完最该先看到的是标题和正文有没有回来，
+  // 之前滚到分镜清单中间，一屏都是 04 05 06，看着像顺序错了、正文也没了
+  setTimeout(()=> window.scrollTo({top: 0, behavior: 'smooth'}), 120);
+}
+
+async function deleteHistoryTask(task){
+  const n = task.total || (task.items || []).length;
+  const nImg = (task.items || []).filter(x=> x.image_url).length;
+  const tip = '删除任务「' + (task.title || '未命名') + '」？\n\n'
+    + '这个任务下 ' + n + ' 条记录' + (nImg ? '、' + nImg + ' 张图片' : '')
+    + '会一起删掉，图片文件同时清理，删完找不回来。';
+  if (!confirm(tip)) return;
+  try{
+    const r = await fetch('/api/tasks/' + encodeURIComponent(task.task_id), {method:'DELETE'});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    toast('已删除 ' + (d.deleted || 0) + ' 条记录' + (d.images ? ' · 清掉 ' + d.images + ' 个文件' : ''));
+    await loadTasks(state.tasks.page);
+    if (!state.tasks.items.length && state.tasks.page > 1) await loadTasks(state.tasks.page - 1);
+  }catch(e){ toast('删除失败：' + e.message); }
+}
+
+async function openHistory(){
+  $('#historyDlg').showModal();
+  await loadTasks(1);
+}
+
+/* ================= 运行监控 ================= */
+const ST_LABEL = {ready:'可用', busy:'出图中', limited:'限流', unhealthy:'已下线', unbound:'未绑定', pending:'待验证', error:'异常'};
+let monTimer = null;
+
+function kpi(label, val, cls){
+  return `<div class="mon-kpi"><span>${label}</span><b class="${cls || ''}">${val}</b></div>`;
+}
+
+function agoText(ts){
+  if (!ts) return '—';
+  const s = Math.max(0, Math.round(Date.now() / 1000 - ts));
+  if (s < 60) return s + ' 秒前';
+  if (s < 3600) return Math.round(s / 60) + ' 分钟前';
+  if (s < 86400) return Math.round(s / 3600) + ' 小时前';
+  return Math.round(s / 86400) + ' 天前';
+}
+
+function renderMonitor(d){
+  // 账号表固定按 #1…#N 原序展示，只给正在出图的号加底色高亮。
+  // 曾经把 busy 行置顶，结果监控里序号乱跳（#4 跑到第一行），看不出轮转推进到哪了。
+  const accs = d.accounts || [];
+  const run = d.running || [];
+  const hist = d.history || {};
+  state._monActive = !!d.running_now;     // 有图在跑才 3 秒一刷，空闲 12 秒
+  // 明细拉不到时（换接口后 admin-key 对不上）用号池自报的可用数，别显示成 0/0
+  const poolS = d.pool || {};
+  const kReady = accs.length ? d.ready : Number(poolS.active || 0);
+  const kTotal = accs.length ? d.total : Number(poolS.total || 0);
+  $('#monSum').innerHTML =
+      kpi('账号可用', `${kReady}/${kTotal}`, kReady ? 'ok' : 'err')
+    + kpi('并行任务', `${run.length}/${d.workers || 1}`, run.length ? 'warn' : '')
+    + kpi('排队', d.queued || 0, d.queued ? 'warn' : '')
+    + kpi('今日成功', hist.today_done || 0, 'ok')
+    + kpi('今日失败', hist.today_error || 0, hist.today_error ? 'err' : '')
+    + kpi('历史总量', hist.total || 0, '');
+
+  let lastUsedAcc = null;
+  for (const a of accs){
+    if (a.env_id && a.last_used && (!lastUsedAcc || a.last_used > lastUsedAcc.last_used)) lastUsedAcc = a;
+  }
+  const nLimited = accs.filter(a=> a.status === 'limited').length;
+  $('#monAccHint').textContent = accs.length
+    ? `已绑定 ${d.bound}/${d.total} 个环境`
+      + (lastUsedAcc ? ` · 上次用 #${lastUsedAcc.env_id}，下次顺延` : '')
+      // 限流不是报错：号池给每个号记着 24 小时出图额度，用满就把这个号摘出轮转，
+      // 等它自己的时间窗滚出来才回池。失败数 0 的限流行就是这种情况。
+      + (nLimited ? ` · ${nLimited} 个号今日额度已满（限流 ≠ 出图失败）` : '')
+    // 空表不能当成「0 个账号」：换接口后 admin-key 对不上就是这个样子，得说清原因
+    : (d.accounts_error || (d.pool && d.pool.mode === 'single'
+        ? '当前是通用接口模式，没有账号明细'
+        : '账号明细加载中…'));
+  const chk = d.check || {};
+  if (chk.running){
+    $('#monCheckHint').textContent = `检测中 ${chk.done}/${chk.total}…`;
+    $('#monCheck').disabled = true;
+  } else {
+    $('#monCheckHint').textContent = chk.finished ? `上次检测 ${agoText(chk.finished)}` : '';
+    $('#monCheck').disabled = false;
+  }
+
+  const tb = $('#monAccBody'); tb.innerHTML = '';
+  accs.forEach(a=>{
+    const tr = document.createElement('tr');
+    if (a.status === 'busy') tr.className = 'on-air';
+    // 备注列改成放号池的剩余额度：正常号写「剩 N 次」，用满的写「额度已用满」，
+    // 有异常时接在后面，一个格子同时回答「这个号还能不能用」和「为什么不能用」。
+    const q = (typeof a.quota === 'number') ? a.quota : null;
+    const qtxt = q == null ? '' : (q <= 0 ? '额度已用满' : '剩 ' + q + ' 次');
+    const bad = (a.check_msg && a.check_ok === false) ? a.check_msg
+      : (a.error && a.error !== '限流中' ? a.error : '');
+    const note = bad ? (qtxt ? qtxt + ' · ' + bad : bad) : (qtxt || '—');
+    const noteCls = bad ? 'err' : (q != null && q > 0 && q <= 3 ? 'quota low' : 'quota');
+    const noteTip = [qtxt && (q > 0 ? `配额剩 ${q} 次` : '这个号的出图额度已用满'), bad].filter(Boolean).join(' · ');
+    tr.innerHTML =
+        `<td>${esc(a.label || a.masked)}</td>`
+      + `<td>${a.env_id ? '#' + a.env_id : '—'}</td>`
+      + `<td><span class="st ${a.status}">${ST_LABEL[a.status] || a.status}</span></td>`
+      + `<td>${a.hist_done != null ? a.hist_done : (a.uses || 0)}</td>`
+      + `<td>${a.hist_error != null ? a.hist_error : (a.fails || 0)}</td>`
+      + `<td${a.cooldown ? ` title="这个号的出图额度已用满，还要 ${a.cooldown}s 才滚出 24 小时窗口"` : ''}>${a.cooldown ? a.cooldown + 's' : '—'}</td>`
+      + `<td>${(a.hist_last_ok || a.last_ok) ? agoText(a.hist_last_ok || a.last_ok) : '—'}</td>`
+      + `<td class="${noteCls}" title="${esc(noteTip || note)}">${esc(note)}</td>`;
+    tb.appendChild(tr);
+  });
+  if (!accs.length){
+    // 空表必须说明原因：换接口后 admin-key 对不上时，以前这里什么都不显示，
+    // 看着像「号池里 0 个账号」，而右上角还挂着上一个号池的 33 个号。
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="8" style="color:var(--ink-3);text-align:center;padding:14px 8px">`
+      + esc(d.accounts_error || '账号明细加载中…') + '</td>';
+    tb.appendChild(tr);
+  }
+
+  const jb = $('#monJobs'); jb.innerHTML = '';
+  $('#monJobHint').textContent = `${run.length} 个在跑 · ${d.queued || 0} 个排队 · 并行上限 ${d.workers || 1}`;
+  if (!run.length && !d.queued){
+    jb.innerHTML = '<div class="mon-none">当前没有任务</div>';
+  } else {
+    run.forEach(j=>{
+      const el = document.createElement('div');
+      el.className = 'mon-job';
+      el.innerHTML = `<span class="st busy">运行中</span><span class="mj-t">${esc(j.job_id)}</span>`
+        + `<span class="mj-a">${esc(j.account || '')} · 已 ${j.elapsed || 0}s</span>`;
+      jb.appendChild(el);
+    });
+    if (d.queued){
+      const el = document.createElement('div');
+      el.className = 'mon-job';
+      el.innerHTML = `<span class="st pending">排队</span><span class="mj-t">${d.queued} 个任务等待空闲账号</span>`;
+      jb.appendChild(el);
+    }
+  }
+
+  // 今日失败账号：失败后会自动换号重试，所以这里不是「坏号名单」，
+  // 而是「今天谁出过错、错了几次」的账，方便判断是不是某个号总体不稳
+  const fb = $('#monFails'); fb.innerHTML = '';
+  const fails = d.fail_accounts || [];
+  const failHint = $('#monFailHint');
+  if (failHint) failHint.textContent = (d.fails_today || 0)
+    ? `今天合计 ${d.fails_today} 次（含已换号重试成功的）` : '';
+  if (!fails.length){
+    fb.innerHTML = '<div class="mon-none">今天没有账号失败</div>';
+  } else {
+    fails.forEach(f=>{
+      const el = document.createElement('div');
+      el.className = 'mon-job fail';
+      const when = f.at ? new Date(f.at*1000).toLocaleTimeString('zh-CN', {hour12: false}) : '';
+      el.innerHTML = `<span class="st error">${f.count} 次</span>`
+        + `<span class="mj-t">${esc(f.account || '未知账号')}</span>`
+        + `<span class="mj-a">${esc((f.error || '').slice(0, 80))}${when ? ' · ' + when : ''}</span>`;
+      fb.appendChild(el);
+    });
+  }
+
+  const eb = $('#monErrors'); eb.innerHTML = '';
+  const errs = d.recent_errors || [];
+  if (!errs.length){ eb.innerHTML = '<div class="mon-none">最近没有失败</div>'; }
+  errs.forEach(e=>{
+    const el = document.createElement('div');
+    el.className = 'mon-job fail';
+    el.innerHTML = `<span class="st error">失败</span><span class="mj-t">${esc(e.title || e.id)}</span>`
+      + `<span class="mj-a">${esc(e.error || '')}</span>`;
+    eb.appendChild(el);
+  });
+
+  $('#monUpdated').textContent = '更新于 ' + new Date().toLocaleTimeString('zh-CN', {hour12: false});
+}
+
+async function refreshMonitor(){
+  let d;
+  try{ d = await (await fetch('/api/monitor')).json(); }
+  catch(e){ $('#monUpdated').textContent = '连不上服务'; return; }
+  renderMonitor(d);
+}
+
+async function openMonitor(){
+  $('#monitorDlg').showModal();
+  await refreshMonitor();
+  scheduleMonitor();
+}
+
+/* 出图中 3 秒一刷，空闲时 12 秒。以前写死 3 秒，弹窗开着就在后台一直空转。 */
+function monitorGap(){
+  return (state._monActive || _batchRunning) ? 3000 : 12000;
+}
+let monSeq = 0;
+function scheduleMonitor(){
+  clearTimeout(monTimer);
+  const my = ++monSeq;                    // 快速开关弹窗时，旧的定时器认不出自己已过期就会叠上去
+  monTimer = setTimeout(async ()=>{
+    if (my !== monSeq || !$('#monitorDlg').open){ return; }
+    await refreshMonitor();
+    if (my === monSeq && $('#monitorDlg').open) scheduleMonitor();
+  }, monitorGap());
+}
+
+function closeMonitor(){
+  monSeq++;                               // 让还在排队的回调失效
+  clearTimeout(monTimer); monTimer = null;
+  $('#monitorDlg').close();
+}
+
+$('#splitToItems').onclick = splitToItems;
+/* ---------- 一键清空：回到刚打开页面时的状态 ---------- */
+async function resetAll(){
+  const touched = state.items.some(x=> (x.title || '').trim() || (x.body || '').trim())
+    || ['#topic', '#docTitle', '#docBody', '#note'].some(id=> ($(id).value || '').trim())
+    || !!state.sel.style || !!state.sel.layout || !!state.sel.color
+    || !!state.ref;
+  if (touched && !confirm('清空当前所有内容？\n\n选题、标题、正文、分镜清单、补充要求、参考图都会清掉，'
+    + '图型 / 风格 / 主题色变成「不限」。\n画幅、情绪、留白、出图模式这些设置保留不动。')) return;
+
+  state.items = [];
+  renderItems();
+  state.group = ''; $('#groupTag').textContent = '';
+  ['#topic', '#docTitle', '#docBody', '#note'].forEach(id=>{ $(id).value = ''; });
+  $('#docRaw').textContent = '';
+  syncPreview();
+
+  state.instrCustom = null;
+
+  // 三张卡清成「不限」：不选也照样能出图（有参考图就照参考图，没参考图就按文案拼）
+  state.sel.style = null;
+  state.sel.color = null;
+  state.sel.layout = null;
+  state.selTouched = true;      // 用户主动清过，别在空手出图时又给他随机选一套
+  state.demoPending = false;
+  syncPicks();
+  state.ref = null; syncRef();
+  state.redo = null; renderRedoBar();
+  hideDemoNote();
+
+  state.results = []; state.idx = 0; renderStrip(); clearCover();
+  ['#imageStatus', '#textStatus', '#splitStatus'].forEach(id=>{
+    const el = $(id); if (el){ el.className = 'status'; el.textContent = ''; }
+  });
+
+  // 断开和上一份草稿的关系：清空后再「暂存」应该是一份新的，别写进旧草稿
+  state.draftId = null;
+  state.draftKey = '';
+  try{
+    localStorage.removeItem('wb_draft_id'); localStorage.removeItem('wb_draft_key');
+    localStorage.removeItem('wb_session');   // 清空就是真清空，刷新不该再把内容捞回来
+  }catch(e){}
+  markContentClean();          // 空白页不算改动，别让自动暂存把空壳存进草稿箱
+  refreshDraftCount();
+  toast('已清空，图型 / 风格 / 主题色都变成不限');
+}
+
+/* ---------- 参考图：点击 / 拖入 / Ctrl+V 粘贴 ---------- */
+$('#emptyRef').onclick = ()=> $('#refFile').click();
+$('#chgRef').onclick = ()=> $('#refFile').click();
+$('#clrRef').onclick = clearRef;
+$('#refFile').addEventListener('change', e=>{
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  uploadRef(f);
+});
+['dragenter', 'dragover'].forEach(ev=> $('#cardRef').addEventListener(ev, e=>{
+  e.preventDefault(); $('#cardRef').classList.add('drag');
+}));
+['dragleave', 'drop'].forEach(ev=> $('#cardRef').addEventListener(ev, e=>{
+  e.preventDefault(); $('#cardRef').classList.remove('drag');
+}));
+$('#cardRef').addEventListener('drop', e=>{
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) uploadRef(f);
+});
+document.addEventListener('paste', e=>{
+  const list = (e.clipboardData && e.clipboardData.items) || [];
+  for (const it of list){
+    if (it.type && it.type.indexOf('image/') === 0){
+      uploadRef(it.getAsFile());
+      e.preventDefault();
+      return;
+    }
+  }
+});
+$('#resetAll').onclick = resetAll;
+$('#demoNoteX').onclick = hideDemoNote;
+
+$('#openHistory').onclick = openHistory;
+$('#historyClose').onclick = ()=> $('#historyDlg').close();
+$('#historyRefresh').onclick = ()=> loadTasks(state.tasks.page || 1);
+$('#taskPrev').onclick = ()=> loadTasks((state.tasks.page || 1) - 1);
+$('#taskNext').onclick = ()=> loadTasks((state.tasks.page || 1) + 1);
+$('#historyPageSize').onchange = ()=> loadTasks(1);
+let _histT;
+$('#historyFilter').addEventListener('input', ()=>{
+  clearTimeout(_histT); _histT = setTimeout(()=> loadTasks(1), 300);
+});
+
+/* ---------- 暂存 / 草稿箱 ---------- */
+let _draftT = null;
+function draftSnapshot(){
+  return {
+    topic: $('#topic').value, title: $('#docTitle').value, body: $('#docBody').value,
+    group: state.group || '', note: $('#note').value, mood: $('#mood').value,
+    ws: state.ws, ratio: $('#ratio').value, mode: state.mode || 'image',
+    image_mode: state.omode || 'graphic-text', shoot_type: $('#shootType').value || '',
+    sel: {style: (state.sel.style && state.sel.style.id) || '',
+          layout: (state.sel.layout && state.sel.layout.id) || '',
+          color: (state.sel.color && state.sel.color.id) || ''},
+    ref: state.ref ? {id: state.ref.id, url: state.ref.url, w: state.ref.w, h: state.ref.h} : null,
+    items: state.items.map(it=>({title: it.title || '', body: it.body || '',
+      scene: it.scene || '', prompt: it.prompt || ''})),
+  };
+}
+
+/* 把一份快照铺回界面（不动草稿绑定）：载入草稿和刷新后恢复会话共用 */
+function applySnapshot(d){
+  hideDemoNote();          // 换了一份内容，「随机示例」的说明就不再成立
+  state.demoPending = false;
+  $('#topic').value = d.topic || '';
+  $('#docTitle').value = d.title || '';
+  $('#docBody').value = d.body || '';
+  $('#note').value = d.note || '';
+  $('#mood').value = d.mood || '';
+  const rsel = $('#ratio');
+  rsel.value = [...rsel.options].some(o=> o.value === d.ratio) ? d.ratio : '3:4';
+  syncRatioUi();
+  state.group = d.group || '';
+  state.ws = d.ws || 'normal';
+  state.mode = d.mode || 'image';
+  state.omode = d.image_mode === 'photo' ? 'photo' : 'graphic-text';
+  $('#shootType').value = d.shoot_type || '';
+  state.items = (d.items || []).map(it=>({title: it.title || '', body: it.body || '',
+    scene: it.scene || '', prompt: it.prompt || ''}));
+  const sel = d.sel || {};
+  // 存的是空串＝当时就是「不限」，得真的清回 null，否则会沿用页面上的默认组合
+  const pick1 = (kind, id) => {
+    const pool = state[kind + 's'] || [];
+    state.sel[kind] = (id && pool.find(x=>x.id === id)) || null;
+  };
+  pick1('style', sel.style); pick1('layout', sel.layout); pick1('color', sel.color);
+  state.ref = d.ref && d.ref.id ? d.ref : null;
+  state.redo = null; renderRedoBar();
+  syncPicks(); renderMoodChips(); syncRef(); syncInstr(); renderItems();
+  syncOmode(); renderShootChips();
+  // 预览条：会话快照里有图就铺回来；草稿没有这个字段，按空处理，别让上一次的图串到这份草稿上
+  state.results = (d.results || []).filter(r=> r && r.url).map((r, i)=>({
+    url: r.url, preview: r.preview || r.url, topic: r.topic || '配图',
+    seq: typeof r.seq === 'number' ? r.seq : i, id: r.id || '', account: r.account || ''}));
+  state.idx = 0;
+  renderStrip();
+  if (!state.results.length) clearCover();
+  // 载入草稿是直接改 value，不会触发 input 事件，右侧预览得手动推一次
+  syncPreview();
+  markContentClean();        // 刚载入的内容不算改动，别紧接着又自动存一遍
+}
+
+function applyDraft(d){
+  applySnapshot(d);
+  bindDraft(d.id || null, draftKeyOf(d));
+}
+
+/* ---------- 会话自动保存：刷新页面别把分镜清单丢掉 ---------- */
+let _sessT = 0;
+function saveSession(){
+  try{
+    const snap = draftSnapshot();
+    // 空工作区不回写，避免刚打开页面就把上次的内容擦掉
+    if (!snap.topic.trim() && !snap.title.trim() && !snap.body.trim() && !snap.items.length) return;
+    snap.t = Date.now();
+    // 预览条也一起存：刷新后右侧不该只剩文字，图得原地回来
+    snap.results = state.results.map(r=>({url: r.url, preview: r.preview,
+      topic: r.topic, seq: r.seq, id: r.id, account: r.account || ''}));
+    localStorage.setItem('wb_session', JSON.stringify(snap));
+  }catch(e){}
+}
+function saveSessionSoon(){
+  clearTimeout(_sessT);
+  _sessT = setTimeout(saveSession, 800);
+  noteContentChanged();          // 同一批触发点也用来排自动暂存
+}
+function restoreSession(){
+  let s = null;
+  try{ s = JSON.parse(localStorage.getItem('wb_session') || 'null'); }catch(e){}
+  if (!s || !s.t || Date.now() - s.t > 12 * 3600 * 1000) return false;
+  // 页面上已经有内容（比如刚从草稿载入）就不动它
+  if ($('#topic').value.trim() || $('#docBody').value.trim() || state.items.length) return false;
+  // 恢复出来的内容跟绑定的那份不是同一篇，就别再往那份上写了
+  if (state.draftId && !keysCompatible(state.draftKey, draftKeyOf(s))) bindDraft(null, '');
+  applySnapshot(s);
+  toast('已恢复上次没做完的内容');
+  return true;
+}
+
+/* 一份草稿的身份键：优先选题，没写选题就用标题。两样都空说明还没成文，不算同一篇。 */
+function draftKeyOf(o){
+  return String((o && (o.topic || o.title)) || '').trim();
+}
+
+function bindDraft(id, key){
+  state.draftId = id || null;
+  state.draftKey = String(key || '').trim();
+  try{
+    id ? localStorage.setItem('wb_draft_id', id) : localStorage.removeItem('wb_draft_id');
+    id ? localStorage.setItem('wb_draft_key', state.draftKey) : localStorage.removeItem('wb_draft_key');
+  }catch(e){}
+}
+
+/* ---------- 自动暂存 ----------
+   内容一改，1.5 秒没有新操作就落成草稿；切走页面时再兜一次。
+   规则只有一条：还是同一篇就更新那份，真换了篇才另起一份。
+   「换没换篇」交给 keysCompatible 判，选题改两个字不至于多出一堆草稿。 */
+const AUTOSAVE_MS = 1500;
+let _autoT = null;        // 自动暂存的 debounce 定时器
+let _autoJson = '';       // 上一次成功落盘的内容指纹，用来判断还值不值得再发一次
+let _saveLock = Promise.resolve();
+
+function contentJson(){
+  try{ return JSON.stringify(draftSnapshot()); }catch(e){ return ''; }
+}
+
+function hhmm(){
+  return new Date().toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
+}
+
+function setSaveState(kind, text){
+  const el = $('#saveState'); if (!el) return;
+  el.className = 'save-state' + (kind ? ' ' + kind : '');
+  el.textContent = text || '';
+}
+
+/* 刚载入 / 刚恢复的内容不算「改动」：只记指纹，别急着往草稿里写一遍 */
+function markContentClean(){
+  _autoJson = contentJson();
+  clearTimeout(_autoT);
+  setSaveState('', '');
+}
+
+/* 选题改几个字还算同一篇：互为子串，或者首尾有足够长的公共部分 */
+function keysCompatible(a, b){
+  a = String(a || '').trim(); b = String(b || '').trim();
+  if (!a || !b) return true;                  // 空键不判，当成同一篇继续写
+  if (a === b || a.includes(b) || b.includes(a)) return true;
+  const n = Math.min(a.length, b.length);
+  let p = 0; while (p < n && a[p] === b[p]) p++;
+  let s = 0; while (s < n - p && a[a.length - 1 - s] === b[b.length - 1 - s]) s++;
+  return Math.max(p, s) >= Math.max(3, Math.ceil(n / 2));
+}
+
+function withSave(fn){
+  const run = _saveLock.then(fn, fn);
+  _saveLock = run.catch(()=>{});
+  return run;
+}
+
+async function persistDraft(opts){
+  const o = opts || {};
+  if (o.manual) state.demoPending = false;   // 手动点了「暂存」就是要存，别被示例标记挡住
+  if (!o.manual && state.demoPending) return null;   // 随机示例不落草稿
+  const d = draftSnapshot();
+  const key = draftKeyOf(d);
+  const empty = !key && !d.body.trim() && !d.items.length;
+  if (empty){
+    if (o.manual){ toast('左边还什么都没有，先写点内容'); $('#topic').focus(); }
+    else setSaveState('', '');
+    return null;
+  }
+  // 「另存当前为新草稿」一定新建；其余情况只要还像同一篇，就写回绑定那份
+  const same = !o.asNew && !!state.draftId && keysCompatible(state.draftKey, key);
+  const id = same ? state.draftId : null;
+  if (!o.manual) setSaveState('', same ? '保存中…' : '新建草稿…');
+  try{
+    const r = await fetch('/api/drafts', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(Object.assign({}, d, id ? {id} : {}))});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    const created = !id || j.id !== id;
+    bindDraft(j.id, key);
+    _autoJson = contentJson();
+    if (o.manual){
+      refreshDraftCount();
+      const n = (d.items || []).length;
+      const at = j.updated ? new Date(j.updated * 1000).toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'}) : '';
+      toast(same
+        ? `已更新这份草稿 · ${n} 条分镜 · ${at}`
+        : `已存为新草稿 · ${n} 条分镜 · ${at}（上一篇没动）`);
+    } else {
+      setSaveState('ok', '已存 ' + hhmm());
+      if (created) refreshDraftCount();
+    }
+    return j;
+  }catch(e){
+    if (o.manual){ toast('暂存失败：' + e.message); return null; }
+    setSaveState('err', '没存上 · 5 秒后重试');
+    clearTimeout(_autoT);
+    _autoT = setTimeout(()=> autoSave(true), 5000);
+    return null;
+  }
+}
+
+function autoSave(force){
+  // 内容和上次落盘的一模一样就不再发一次；force 用于失败重试
+  if (force !== true && contentJson() === _autoJson) return Promise.resolve(null);
+  return withSave(()=> persistDraft({}));
+}
+
+/* 所有「内容变了」的路径都往这里汇：手输、AI 生成、载入后修改、分镜增删 */
+function noteContentChanged(){
+  // 随机示例不算用户内容：不排自动暂存，省得草稿箱里冒出一堆没用的示例
+  if (state.demoPending) return;
+  if (contentJson() === _autoJson) return;
+  setSaveState('', '待保存…');
+  clearTimeout(_autoT);
+  _autoT = setTimeout(()=> autoSave(), AUTOSAVE_MS);
+}
+
+/* 切走页面 / 切到后台：立刻补一次，不等那 1.5 秒 */
+let _leaveJson = '';
+function flushOnLeave(){
+  clearTimeout(_autoT);
+  saveSession();                       // 本地兜底，同步写，切回来还在
+  if (state.demoPending) return;       // 随机示例不往草稿箱塞
+  const d = draftSnapshot();
+  const key = draftKeyOf(d);
+  if (!key && !d.body.trim() && !d.items.length) return;
+  const json = contentJson();
+  if (json === _autoJson || json === _leaveJson) return;   // 已经存过 / 这次离开已发过
+  let id = (!!state.draftId && keysCompatible(state.draftKey, key)) ? state.draftId : null;
+  // 首次保存就碰上离开：先把 id 定下来写进 localStorage，
+  // 不然下一次打开没有绑定，又会拿同样的内容建一份重复草稿
+  if (!id){
+    id = 'd' + Date.now().toString(16).slice(-6) + Math.random().toString(16).slice(2, 6);
+    bindDraft(id, key);
+  }
+  const body = JSON.stringify(Object.assign({}, d, {id}));
+  _leaveJson = json;
+  try{
+    const blob = new Blob([body], {type: 'application/json'});
+    if (navigator.sendBeacon && navigator.sendBeacon('/api/drafts', blob)) return;
+  }catch(e){}
+  try{
+    fetch('/api/drafts', {method:'POST', keepalive: true,
+      headers: {'Content-Type': 'application/json'}, body});
+  }catch(e){}
+}
+
+async function saveDraft(asNew){
+  await withSave(()=> persistDraft({manual: true, asNew: !!asNew}));
+}
+
+async function refreshDraftCount(){
+  try{
+    const d = await (await fetch('/api/drafts')).json();
+    $('#draftCount').textContent = d.total || 0;
+  }catch(e){}
+  const b = $('#saveDraft');
+  if (b) b.title = state.draftId
+    ? `内容会自动暂存；点这里是立刻存一次。同一篇会更新「${state.draftKey || '当前草稿'}」，换了选题才另存一份`
+    : '内容会自动暂存；点这里是立刻存一次（左边有内容时才会存）';
+}
+
+/* 点「批量出图」= 这份草稿的活干完了：从草稿箱移走，别让它一直堆在待办里。
+   内容不会丢——prompt / 正文都随这一批写进了历史，需要时从「历史记录」载入即可。 */
+async function consumeCurrentDraft(){
+  const id = state.draftId;
+  if (!id) return false;
+  try{
+    const r = await fetch('/api/drafts/' + encodeURIComponent(id), {method: 'DELETE'});
+    if (!r.ok) return false;
+  }catch(e){ return false; }
+  bindDraft(null, '');
+  // 内容已经出过图，别再当成「待保存」又自动建一份新草稿
+  markContentClean();
+  refreshDraftCount();
+  if ($('#draftsDlg').open) openDrafts();
+  return true;
+}
+
+async function openDrafts(){
+  const box = $('#draftList');
+  box.innerHTML = '<div class="task-empty">加载中…</div>';
+  if (!$('#draftsDlg').open) $('#draftsDlg').showModal();
+  let d;
+  try{ d = await (await fetch('/api/drafts')).json(); }
+  catch(e){ box.innerHTML = '<div class="task-empty">草稿加载失败</div>'; return; }
+  $('#draftCount').textContent = d.total || 0;
+  $('#draftEmpty').hidden = !!d.items.length;
+  box.innerHTML = '';
+  d.items.forEach(it=>{
+    const row = document.createElement('div');
+    row.className = 'draft-row';
+    /* 小字只留「N 条分镜 · 标题开头」，超出按码点截断加省略号；
+       不再把 titles 又拼一遍（封面标题常和文章标题重复，会把小字拖得极长） */
+    const brief = safeText(it.title) || safeText((it.titles || []).find(Boolean) || '');
+    const sub = clipText([it.count ? it.count + ' 条分镜' : '无分镜',
+                          brief ? clipText(brief, 12) : ''].filter(Boolean).join(' · '), 30);
+    const draftLabel = () => safeText(it.name || it.topic || it.title || '（无选题）');
+    row.innerHTML = `<span class="dc"><b data-role="label">${esc(draftLabel())}</b>`
+      + `<input class="rn-input" data-role="rn" type="text" maxlength="60" placeholder="输入草稿名称，留空恢复默认" style="display:none">`
+      + `<span class="ds">${esc(fmtTime(it.updated))} · ${esc(sub)}</span></span>`
+      + (state.draftId === it.id ? '<span class="chipx on">使用中</span>' : '')
+      + '<span class="dacts">'
+      + '<button class="btn ghost mini" data-act="rename" type="button">重命名</button>'
+      + '<button class="btn ghost mini" data-act="load" type="button">载入</button>'
+      + '<button class="btn ghost mini" data-act="del" type="button">删除</button>'
+      + '</span>';
+    const labelEl = row.querySelector('[data-role="label"]');
+    const rnEl = row.querySelector('[data-role="rn"]');
+    /* 回显「当前这个名字」：自定义名优先，没有自定义名就回显它现在显示的默认名
+       （选题 / 标题），用户在现有名字上改，而不是对着一个空框重想 */
+    const defaultName = () => safeText(it.topic || it.title || '');
+    const currentName = () => safeText(it.name || '') || defaultName();
+    rnEl.value = currentName();
+    row.querySelector('[data-act="rename"]').onclick = ()=>{
+      labelEl.style.display = 'none';
+      rnEl.style.display = 'block';
+      rnEl.value = currentName();       // 每次进来都回显最新名字
+      rnEl.focus();
+      // 光标放末尾，不是全选：全选后再打字会把原名整段冲掉，等于让人重打一遍
+      try{ rnEl.setSelectionRange(rnEl.value.length, rnEl.value.length); }catch(e){}
+      let done = false;
+      const finish = async (save)=>{
+        if (done) return;
+        done = true;
+        rnEl.style.display = 'none';
+        labelEl.style.display = 'block';
+        if (!save) { rnEl.value = currentName(); return; }
+        const val = Array.from(safeText(rnEl.value.trim())).slice(0, 60).join('');
+        /* 改完正好等于默认名（选题 / 标题）就存空串，让名字继续跟着选题走，
+           免得把它写死成一份静态名称 */
+        const nextName = val === defaultName() ? '' : val;
+        if (nextName === (it.name || '')) { rnEl.value = currentName(); return; }
+        try{
+          const r = await fetch('/api/drafts/' + it.id, {method:'PATCH',
+            headers:{'Content-Type':'application/json'}, body: JSON.stringify({name: nextName})});
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          it.name = nextName;
+          labelEl.textContent = draftLabel();
+          rnEl.value = currentName();
+          toast(nextName ? '已重命名草稿' : '已恢复默认标题');
+        }catch(e){ rnEl.value = currentName(); toast('重命名失败：' + e.message); }
+      };
+      rnEl.onkeydown = e=>{
+        if (e.key === 'Enter'){ e.preventDefault(); finish(true); }
+        else if (e.key === 'Escape'){ e.preventDefault(); finish(false); }
+      };
+      rnEl.onblur = ()=> finish(true);
+    };
+    row.querySelector('[data-act="load"]').onclick = async ()=>{
+      const has = $('#topic').value.trim() || $('#docTitle').value.trim() || $('#docBody').value.trim() || state.items.length;
+      if (has && !confirm('载入草稿会覆盖左侧当前内容，继续？')) return;
+      try{
+        const full = await (await fetch('/api/drafts/' + it.id)).json();
+        applyDraft(full);
+        $('#draftsDlg').close();
+        toast('已载入草稿');
+      }catch(e){ toast('载入失败'); }
+    };
+    row.querySelector('[data-act="del"]').onclick = async ()=>{
+      if (!confirm('删除这份草稿？')) return;
+      await fetch('/api/drafts/' + it.id, {method:'DELETE'});
+      // 删掉的可能正是当前绑定的那份，赶紧断绑，不然下次自动暂存又把它建回来
+      if (state.draftId === it.id) bindDraft(null, '');
+      row.remove();
+      refreshDraftCount();
+      toast('已删除');
+    };
+    box.appendChild(row);
+  });
+}
+
+$('#saveDraft').onclick = ()=> saveDraft(false);
+$('#openDrafts').onclick = openDrafts;
+$('#draftsClose').onclick = ()=> $('#draftsDlg').close();
+$('#draftNew').onclick = ()=>{ $('#draftsDlg').close(); saveDraft(true); };
+
+$('#openMonitor').onclick = openMonitor;
+$('#monClose').onclick = closeMonitor;
+$('#monitorDlg').addEventListener('close', ()=>{ clearTimeout(monTimer); monTimer = null; });
+$('#monRefresh').onclick = async ()=>{
+  await fetch('/api/pool/refresh', {method:'POST'});
+  await refreshMonitor(); refreshPool();
+};
+$('#monReset').onclick = async ()=>{
+  await fetch('/api/pool/reset', {method:'POST'});
+  await refreshMonitor(); refreshPool();
+  toast('已重置账号状态');
+};
+$('#monCheck').onclick = async ()=>{
+  $('#monCheck').disabled = true;
+  try{ await fetch('/api/pool/check', {method:'POST'}); toast('开始检测全部账号，约 3-5 分钟'); }
+  catch(e){ toast('检测启动失败'); }
+  await refreshMonitor();
+};
+
+/* 本标签页手动取消过勾选就尊重它，别刷新一下又勾回去 */
+try{
+  const _fu = sessionStorage.getItem('wb_fusion_user');
+  if (_fu !== null) $('#fusion').checked = (_fu === '1');
+}catch(e){}
+renderRedoBar();
+renderMoodChips();
+syncOmode();
+renderShootChips();
+syncInstr();
+syncRatioUi();
+renderItems();
+/* 窗口变宽变窄会重排换行，正文框的「两行上限」要跟着重算 */
+let _fitTimer = 0;
+window.addEventListener('resize', ()=>{
+  clearTimeout(_fitTimer);
+  _fitTimer = setTimeout(()=>{ document.querySelectorAll('.it-body').forEach(fitBody); }, 150);
+});
+loadCatalog().catch(e=>toast('目录加载失败：' + e.message))
+  .finally(()=>{
+    // 目录就绪后再恢复：风格/图型/配色的 id 要靠目录才对得上
+    restoreSession();
+    resumeBatch();
+    markContentClean();      // 开场内容算干净，别把恢复出来的东西又存一遍
+  });
+document.addEventListener('input', saveSessionSoon);
+/* 一旦真的动手改字，随机示例就变成用户自己的内容，恢复自动暂存 */
+document.addEventListener('input', ()=>{ state.demoPending = false; }, true);
+/* 切走 / 关标签 / 切到后台，先把没落盘的内容补存一次，别指望那 1.5 秒 */
+window.addEventListener('pagehide', flushOnLeave);
+window.addEventListener('beforeunload', flushOnLeave);
+document.addEventListener('visibilitychange', ()=>{
+  if (document.visibilityState === 'hidden'){ flushOnLeave(); return; }
+  // 出图跑完时人在别的标签页：气泡当时没弹出来，回来补一条
+  if (_bgNotice){
+    const n = _bgNotice; _bgNotice = null;
+    toast(n.msg, Object.assign({}, n.opt, {force: true}));
+  }
+});
+$('#saveState').onclick = ()=> saveDraft(false);
+refreshPool();
+loadAppName();          // 页头名字跟着配置走，不打开设置弹窗也生效
+refreshDraftCount();
+/* 旧版本只存了 draft_id，没记选题：补一次，免得升级后第一次暂存就多出一份 */
+if (state.draftId && !state.draftKey){
+  fetch('/api/drafts/' + encodeURIComponent(state.draftId))
+    .then(r=> r.ok ? r.json() : null)
+    .then(d=>{
+      if (d && state.draftId){
+        bindDraft(state.draftId, draftKeyOf(d));
+        refreshDraftCount();
+      }
+    })
+    .catch(()=>{});
+}
+setInterval(refreshPool, 10000);
+
+/* ---------- 弹窗打开时锁住背景滚动，滚轮不再穿透到下面的页面 ----------
+   用 open 属性变化做同步，自动覆盖 showModal / close / ESC / 表单关闭，
+   以及以后新增的弹窗，不用逐个改调用点。 */
+(()=>{
+  const root = document.documentElement, body = document.body;
+  let locked = false, savedPad = '';
+  function sync(){
+    const any = !!document.querySelector('dialog[open]');
+    if (any === locked) return;
+    locked = any;
+    if (any){
+      // 滚动条消失会让页面横向跳一下，补一段等宽 padding 抵消
+      const gap = window.innerWidth - root.clientWidth;
+      savedPad = body.style.paddingRight;
+      if (gap > 0) body.style.paddingRight = ((parseFloat(savedPad) || 0) + gap) + 'px';
+      root.classList.add('modal-lock');
+    } else {
+      root.classList.remove('modal-lock');
+      body.style.paddingRight = savedPad;
+    }
+  }
+  new MutationObserver(sync).observe(root,
+    {subtree:true, attributes:true, attributeFilter:['open']});
+
+  // observer 是微任务，滚轮可能抢在前面；这里补同步并挡掉落在弹窗外的滚轮。
+  // 只拦「弹窗外」的事件，弹窗内部原有的滚轮逻辑（大图缩放等）不受影响。
+  const outside = e => {
+    const dlg = document.querySelector('dialog[open]');
+    if (!dlg){ sync(); return; }
+    sync();
+    if (!dlg.contains(e.target)) e.preventDefault();
+  };
+  document.addEventListener('wheel', outside, {passive:false, capture:true});
+  document.addEventListener('touchmove', outside, {passive:false, capture:true});
+  sync();
+})();
+</script>
+</body>
+</html>

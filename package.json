@@ -1,0 +1,37 @@
+{
+  "name": "dsh-plugin-image-workbench",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Bluxe手绘工坊 · 生图工作台（图文 / 摄影）；号池服务端运行时随插件自带，首次启动自动初始化虚拟环境并签发密钥，可一键启动、掉线自动拉起、粘贴 access_token 导入账号，并对外提供 OpenAI 兼容接口地址与密钥，无需另装任何号池插件即可独立运行；也支持配置任意第三方 OpenAI 兼容接口（Base URL / API Key / 模型）；支持修改工作台名称和生成图片存储目录。",
+  "main": "./host.js",
+  "exports": {
+    ".": "./host.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-layout"
+      ]
+    }
+  },
+  "files": [
+    "host.js",
+    "client.js",
+    "cordis.patch.yml",
+    "install.mjs",
+    "server",
+    "vendor",
+    "scripts/vendor-snapshot.py"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}
