@@ -1,10 +1,7 @@
-# DSH profile patch：把生图工作台作为一条 loader 记录挂进当前 profile。
-# 路径一律由 host.js 自动探测，不在这里写死，方便整包迁移。
-# 注：本插件只负责拉起 / 守护工作台 8092；内置号池 38651 由工作台后端
-#     （server/pool_service.py）自己拉起与守护，不需要第二条 loader。
-#     号池服务端源码与 uv 在 vendor/chatgpt2api/，后端代码在 server/，
-#     整包拷到新机器即可独立运行，不依赖任何第三方号池插件。
-#     与 dsh-plugin-writing-workbench 管理的 38650 / 8091 完全独立，互不干扰。
+# DSH profile patch: register the workbench as a loader entry.
+# All paths are resolved at runtime by host.js; no absolute paths are stored here.
+# The DSH host manages the workbench backend on port 8092 only.
+# The account-pool process on port 38651 is managed by server/pool_service.py.
 - insert:
     - id: image-workbench
       name: dsh-plugin-image-workbench
@@ -12,7 +9,6 @@
         port: 8092
         poolPort: 38651
         autoStart: true
-        # 宿主侧守护：工作台后端端口掉了就自动拉起，不重载 iframe（不会冲掉正在做的工程）。
-        # 号池端口由后端自己的守护线程负责。想关掉守护，把 watchdog 改成 false，重启 DSH 生效。
+        # 宿主侧守护：探测失败时自动重启后端，不重载面板。设为 false 并重启 DSH 可关闭。
         watchdog: true
         watchdogIntervalMs: 15000

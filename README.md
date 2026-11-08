@@ -1,62 +1,76 @@
-# Bluxe手绘工坊 · 生图工作台（DSH 插件）
+# Bluxe手绘工坊 · 生图工作台
 
-[English](./README.en.md) · 简体中文
+[English](./README.en.md) · 简体中文 · [MIT License](./LICENSE)
 
-一个插件跑全套：把图文 / 摄影两种生图工作台挂进 DeepSeek Harness（DSH）侧栏。号池服务端运行时随插件自带，装完不需要再装第二个号池插件；出图接口也可以换成任意 OpenAI 兼容服务（Base URL / API Key / 模型）。
+面向 DeepSeek Harness（DSH）桌面端的图像生成工作台插件。插件以单一分发包提供 Web 工作台、FastAPI 后端服务与账号池运行时，在 DSH 侧栏中承载图文与摄影两类提示词生成流程。图像接口默认指向插件内置的本地账号池，亦可配置为任意 OpenAI 兼容服务。
 
-工作台后端脱离 DSH 也能跑，浏览器直接打开 `http://127.0.0.1:8092/` 即可。
+后端服务可脱离 DSH 独立运行，通过浏览器访问 `http://127.0.0.1:8092/`。
 
-> 本仓库只有代码和内置的图型风格定义，不含生成过的图片、历史记录、草稿、账号、token、密钥或代理配置。
+> 本仓库仅包含源代码及内置的图型、风格、版式与配色定义。生成的图片、历史记录、草稿、账号凭据、API Key 与代理配置等运行时数据均不纳入版本管理。
 
-## 功能
+## 目录
 
-| 模块 | 说明 |
+- [功能特性](#功能特性)
+- [系统架构](#系统架构)
+- [运行环境](#运行环境)
+- [安装](#安装)
+- [首次启动](#首次启动)
+- [接口接入与账号管理](#接口接入与账号管理)
+- [独立运行](#独立运行)
+- [配置项](#配置项)
+- [HTTP 接口](#http-接口)
+- [数据与隐私](#数据与隐私)
+- [故障排查](#故障排查)
+- [维护与卸载](#维护与卸载)
+- [许可与第三方代码](#许可与第三方代码)
+
+## 功能特性
+
+| 能力 | 说明 |
 | --- | --- |
-| 双模式出图 | 图文 / 摄影两种提示词生成路径，可切图型、风格、配色、版式；内置 `server/catalog.json` 含 368 条风格、170 条版式、36 条配色 |
-| 参考图 | 上传或拖入参考图，走 `/v1/images/edits`；接口不支持时可关掉该能力 |
-| 批量出图 | 批量导入分镜、排队生成；单张失败自动换号重试（最多 3 轮），任务不会因为一张图失败而中断 |
-| 出图比例 | `1:1`、`3:4`、`2:3`、`9:16`、`4:3`、`3:2`、`16:9`，以及 `2.35:1` 公众号封面（上游无原生尺寸，先按最宽出图再本地居中裁剪） |
-| 结果管理 | 生成历史、草稿箱、单张退出重做、打包下载 ZIP、缩略图与预览派生图、出图完成气泡提醒 |
-| 运行监控 | 账号数 / 可用数 / 配额、账号失败账本、任务队列状态 |
-| 接口与号池 | 一键复制接口地址与本地明文 API Key；启动 / 停止 / 重启号池、掉线自动拉起；粘贴 JSON 或裸 token 导入账号、停用 / 删除账号、重新生成 Key |
-| 自定义 | 工作台名称、生成图片保存目录、接口名称、模型名、返回格式、监控模式 |
+| 双模式提示词 | 图文与摄影两条生成路径，可组合图型、风格、配色与版式；内置 `server/catalog.json`，含 368 项风格、170 项版式、36 项配色 |
+| 参考图输入 | 支持上传或拖入参考图，经 `/v1/images/edits` 提交；接口不支持时可关闭该能力 |
+| 批量生成 | 批量导入分镜并排队执行。单张失败后自动切换账号重试（最多 3 轮），任务不因局部失败而中断 |
+| 画幅比例 | `1:1`、`3:4`、`2:3`、`9:16`、`4:3`、`3:2`、`16:9`，以及 `2.35:1` 公众号封面。上游无对应原生尺寸时，先按最宽尺寸出图，再在本地居中裁剪 |
+| 结果管理 | 生成历史、草稿箱、单张重做、ZIP 打包下载、缩略图与预览派生图、任务完成提醒 |
+| 运行监控 | 账号总数、可用数、配额、按账号统计的失败记录与任务队列状态 |
+| 接口与账号池 | 复制接口地址与本地 API Key；启动、停止、重启账号池并配置掉线自动拉起；导入账号、停用与删除账号、轮换密钥 |
+| 自定义项 | 工作台名称、图片保存目录、接口名称、模型名、返回格式与监控模式 |
 
-## 结构
+## 系统架构
 
 ```mermaid
 flowchart LR
-  U["DSH 侧栏 / 浏览器"] --> W["8092 工作台后端 FastAPI"]
-  H["host.js 宿主守护"] -. 拉起并守护 .-> W
-  W --> P["38651 内置号池"]
-  V["vendor/chatgpt2api 源码 + uv"] -. 首次初始化 .-> P
+  U["DSH 侧栏 / 浏览器"] --> W["工作台后端 FastAPI :8092"]
+  H["DSH 宿主进程 host.js"] -. 启动与守护 .-> W
+  V["vendor/chatgpt2api 源码与运行时"] -. 首次初始化 .-> P
+  W --> P["内置账号池 :38651"]
   P --> UP["上游图像服务"]
-  W -. 可改配 .-> API["任意 OpenAI 兼容接口"]
+  W -. 可选配置 .-> API["第三方 OpenAI 兼容接口"]
 ```
 
-| 路径 | 内容 |
+| 组件 | 职责 |
 | --- | --- |
-| `host.js` / `client.js` | DSH 宿主侧：拉起并守护 8092、侧栏面板、状态指示灯 |
-| `install.mjs` | 幂等安装脚本：挂载 profile、同步后端代码、摘除旧独立号池插件 |
-| `cordis.patch.yml` | DSH loader 配置（端口、守护间隔） |
-| `server/` | 工作台后端纯代码副本：`app.py`、`pool.py`、`pool_service.py`、`pool_admin.py`、`static/index.html`、`catalog.json` |
-| `vendor/chatgpt2api/` | 号池服务端源码快照 + `runtime/uv.exe` + MIT LICENSE + 清洗后的出厂配置 |
-| `scripts/vendor-snapshot.py` | 重新打包号池源码的脚本 |
+| `host.js` / `client.js` | DSH 宿主侧入口：启动并守护 8092 端口、渲染侧栏面板、提供状态指示 |
+| `install.mjs` | 幂等安装器：注册 profile、同步后端代码、卸载时清理注册项 |
+| `cordis.patch.yml` | DSH loader 配置：服务端口、守护开关与探测间隔 |
+| `server/` | 工作台后端代码、静态界面与图型风格定义 |
+| `vendor/chatgpt2api/` | 账号池服务端源码快照、`uv` 运行时、清洗后的默认配置及原始许可证 |
+| `scripts/vendor-snapshot.py` | 重新生成 `vendor/` 源码快照 |
 
-号池的所有权和进程生命周期都在 `server/pool_service.py`，宿主只负责 8092。`38650` 上的写作台号池属于另一套插件，本工作台不会启动、停止或改写它。
+账号池的进程生命周期由 `server/pool_service.py` 统一管理，DSH 宿主进程仅负责 8092 端口的工作台后端。账号池运行时随插件分发，不依赖外部账号池插件。
 
-## 快速开始
+## 运行环境
 
-### 前置条件
-
-| 条件 | 说明 |
+| 项目 | 要求 |
 | --- | --- |
-| DSH 桌面端 | 在 `desktop` profile 上验证；也可以跳过 DSH，见「独立运行」 |
-| Node.js >= 20 | 运行 `install.mjs` 与 `host.js` |
-| Python | 插件自带 `uv.exe`，首次启动会准备 Python 3.13 与依赖；也可回退到系统 Python（需自行安装 `server/requirements.txt`） |
-| 网络 | 首次初始化要联网取 Python 与 pip 包；号池访问上游通常需要自己配代理 |
-| 操作系统 | Windows 10 / 11 已实测。`vendor` 里的 `uv.exe` 是 Windows 二进制，Linux / macOS 需自备 uv 或系统 Python 环境 |
+| DSH 桌面端 | 已在 `desktop` profile 验证；DSH 为可选依赖，参见[独立运行](#独立运行) |
+| Node.js | 20 及以上，用于执行 `install.mjs` 与 `host.js` |
+| Python | 3.13。插件内置 `uv`，首次启动时自动准备运行时与依赖；亦可预装系统 Python 并手动安装 `server/requirements.txt` |
+| 操作系统 | Windows 10 / 11 已完成验证。`vendor/chatgpt2api/runtime/uv.exe` 为 Windows 二进制；Linux 与 macOS 需自备 `uv` 或 Python 3.13 运行环境 |
+| 网络 | 首次初始化需下载 Python 运行时与依赖包；账号池访问上游服务通常需要配置出网代理 |
 
-### 安装
+## 安装
 
 ```bash
 git clone https://github.com/guohwa/dsh-plugin-image-workbench.git
@@ -64,116 +78,141 @@ cd dsh-plugin-image-workbench
 node install.mjs
 ```
 
-`install.mjs` 做四件事：备份并更新 `~/.dsh/profiles/desktop/package.json` 的 `dependencies` 与 `dsh.profile.bundles`、同步 `pnpm-lock.yaml`、在 profile 的 `node_modules` 下建立指向插件目录的联接、把旧独立号池插件 `dsh-plugin-image-pool` 从加载清单里摘掉（只改配置，不删它的源码和账号数据）。脚本幂等，重复执行不会重复写入。
+安装器执行以下操作：
 
-**重启 DSH**，bundle 才会加载。侧栏出现「Bluxe手绘工坊 · 生图工作台」后点开，或直接在浏览器打开 `http://127.0.0.1:8092/`。
+- 备份并更新 `~/.dsh/profiles/desktop/package.json` 中的 `dependencies` 与 `dsh.profile.bundles`；
+- 同步 `pnpm-lock.yaml`，并在 profile 的 `node_modules` 下建立指向插件目录的目录联接；
+- 将 `server/` 同步为运行时后端代码副本；
+- 清除早期版本独立账号池插件在加载清单中的注册项，仅修改配置，不删除其数据目录。
 
-插件目录请保留在原位，它是以目录联接方式挂进 profile 的；移动之后重跑一次 `node install.mjs` 即可。
+安装器具备幂等性，重复执行不会重复写入注册项。DSH 的 bundle 在应用启动时加载，安装完成后需重启 DSH 使侧栏入口生效。插件目录通过目录联接被 profile 引用，变更插件路径后需重新执行安装器。
 
-### 首次启动会自动完成
+侧栏入口为「Bluxe手绘工坊 · 生图工作台」，亦可直接访问 `http://127.0.0.1:8092/`。
 
-1. 从 `vendor/chatgpt2api/` 释放号池源码到本机数据目录，不复制任何账号库；
-2. 用插件自带 uv 执行 `sync --frozen --no-dev` 建号池虚拟环境，再给工作台后端建环境（清华 PyPI 镜像）；
-3. 启动 `127.0.0.1:38651`，生成 `admin-key` 与首把用户 API Key；
-4. 号池起来后主动对账，页头统计不会先停在「1 号 / 配额 0」；
-5. 开启两条守护：宿主每 15 秒探 8092，后端每 15 秒探 38651，掉线自动拉起，不重载页面。
+## 首次启动
 
-首次初始化约 20 秒到 1 分钟，取决于本机是否已有 Python 3.13 缓存。
+1. 将 `vendor/chatgpt2api/` 中的账号池源码释放至本机数据目录，不复制任何账号数据；
+2. 使用内置 `uv` 执行 `sync --frozen --no-dev` 建立账号池虚拟环境，随后建立工作台后端虚拟环境；
+3. 启动 `127.0.0.1:38651`，生成管理密钥与首个用户 API Key；
+4. 账号池就绪后主动同步账号统计，确保页头数据与实际状态一致；
+5. 启动两级守护：宿主侧每 15 秒探测 8092，后端侧每 15 秒探测 38651，异常时自动拉起且不重载页面。
 
-### 出图前必须二选一
+初始化耗时取决于本机是否已缓存 Python 3.13 运行时，通常在 1 分钟内完成。
 
-全新号池**没有任何账号**，直接点生成会失败。选一条：
+## 接口接入与账号管理
 
-**A. 用内置号池**
+内置账号池的初始状态不包含任何账号。首次生成前需完成以下任一配置。
 
-打开「接口与号池 → 本地号池」，点「选择文件」上传 `txt` / `json` / `csv` 等文本文件（支持多选与拖入），或直接把内容贴进输入框，再点「导入并检测」。格式支持：
+### 方式 A：使用内置账号池
 
-- 号池 / 第三方工具导出的 JSON（`{"accounts":[...]}`、数组或单个对象），推荐，会连邮箱、密码等资料一起带上，token 过期后能自动重登；
-- 每行一个 `access_token`（`eyJ` 开头的长串）；
-- 老式导出行（邮箱,密码,token 或 `邮箱----密码----token`）。
+在「接口与号池 → 本地号池」中导入账号。支持上传 `.txt`、`.json`、`.csv`、`.tsv`、`.log` 等文本文件（可多选或拖入），亦可直接粘贴文本内容，随后执行导入与检测。
 
-`邮箱----密码----2FA 密钥` 这类没有 token 的账号料，本号池版本不会现场登录换 token，请改用带 `access_token` 的导出文件。
+| 格式 | 说明 |
+| --- | --- |
+| JSON 导出 | `{"accounts":[...]}`、数组或单个对象。保留邮箱、密码等账号资料，便于 token 失效后重新登录，推荐使用该格式 |
+| 纯文本 token | 每行一个 `access_token`（`eyJ` 开头的长字符串） |
+| 传统导出行 | `email,password,token` 或 `email----password----token` |
 
-再按自己的网络环境配好出网代理，确认面板显示在线，就可以出图。
+仅包含邮箱、密码与 2FA 密钥而不含 `access_token` 的条目不在支持范围内，本版本号池不执行登录换取 token 的操作。导入完成后，按网络环境配置出网代理，并确认面板显示在线状态。
 
-**B. 用第三方接口**
+### 方式 B：使用第三方接口
 
-打开「接口与号池 → 出图接口」，填 Base URL / API Key / 模型，保存并试连。这条路径不需要启动内置号池。
+在「接口与号池 → 出图接口」中填写 Base URL、API Key 与模型名，保存后执行连通性测试。该方式无需启动内置账号池。
 
-## 独立运行（不装 DSH）
+## 独立运行
 
-工作台后端自己会拉起并守护号池，所以可以只起后端：
+后端服务可自行启动并守护账号池，因此无需 DSH 亦可运行：
 
 ```bash
 cd server
 python -m venv .venv
+```
+
+```bash
 # Windows
 .venv/Scripts/pip install -r requirements.txt
 .venv/Scripts/python -m uvicorn app:app --host 127.0.0.1 --port 8092
+
 # Linux / macOS
 # .venv/bin/pip install -r requirements.txt
 # .venv/bin/python -m uvicorn app:app --host 127.0.0.1 --port 8092
 ```
 
-号池运行时仍由 `pool_service.py` 从插件 `vendor/` 释放并用自带 uv 初始化。Linux / macOS 若没有可用的 uv，需要先准备号池的 Python 3.13 环境。打开 `http://127.0.0.1:8092/` 即可使用。
+账号池运行时仍由 `pool_service.py` 从插件的 `vendor/` 目录释放。Linux 与 macOS 环境若无可用 `uv`，需预先准备账号池的 Python 3.13 运行环境。启动后访问 `http://127.0.0.1:8092/`。
 
-## 配置
+## 配置项
 
-页面里的「接口与号池 → 出图接口」可以改大部分项，落盘到 `server/config.local.json`（该文件不会入库）。
+大部分配置可在「接口与号池 → 出图接口」中修改，结果写入 `server/config.local.json`，该文件不纳入版本管理。
 
-| 项 | 默认值 | 改法 |
+| 配置项 | 默认值 | 修改方式 |
 | --- | --- | --- |
 | 工作台端口 | `8092` | `cordis.patch.yml` 的 `port`，或环境变量 `DSH_IMAGE_PORT` |
-| 号池端口 | `38651` | `cordis.patch.yml` 的 `poolPort`，或环境变量 `DSH_IMAGE_POOL_PORT` |
-| 接口地址 | `http://127.0.0.1:38651/v1` | 页面「出图接口」页签 |
-| 图像模型 | `gpt-image-2` | 页面「出图接口」页签 |
-| 图片保存目录 | `server/images/` | 页面「出图接口」页签，可填绝对路径 |
-| 工作台名称 | `Bluxe手绘工坊 · 生图工作台` | 页面「出图接口」页签 |
-| 号池数据目录 | `~/.dsh/chatgpt2api-image/` | 页面「本地号池」页签的目录提示；`admin-key`、`user-api-keys.json`、`source/config.json`、账号库都在这里 |
-| 守护间隔 | `15000` ms | `cordis.patch.yml` 的 `watchdogIntervalMs`；`watchdog: false` 可关掉宿主守护 |
-| 日志 | `~/.dsh/image-workbench/backend.log`、`~/.dsh/image-workbench/venv.log`、号池目录的 `pool-service.log` | 排障先看这三处 |
+| 账号池端口 | `38651` | `cordis.patch.yml` 的 `poolPort`，或环境变量 `DSH_IMAGE_POOL_PORT` |
+| 接口地址 | `http://127.0.0.1:38651/v1` | 出图接口页签 |
+| 图像模型 | `gpt-image-2` | 出图接口页签 |
+| 图片保存目录 | `server/images/` | 出图接口页签，支持绝对路径 |
+| 工作台名称 | `Bluxe手绘工坊 · 生图工作台` | 出图接口页签 |
+| 账号池数据目录 | `~/.dsh/chatgpt2api-image/` | 存放 `admin-key`、`user-api-keys.json`、`source/config.json` 与账号库 |
+| 守护间隔 | `15000` ms | `cordis.patch.yml` 的 `watchdogIntervalMs`；`watchdog: false` 可关闭宿主侧守护 |
+| 日志路径 | `~/.dsh/image-workbench/backend.log`、`~/.dsh/image-workbench/venv.log`、账号池目录下的 `pool-service.log` | 排障时按此顺序检查 |
 
-## 号池账号与出网
+## HTTP 接口
 
-- 面板里的「启动 / 停止 / 重启 / 掉线自动拉起」只作用于当前 Base URL 指向的本机号池；换成第三方接口后，这些控件不会出现。
-- 号池出厂配置 `vendor/chatgpt2api/source/config.default.json` 把 `auth-key`、`proxy`、`proxy_runtime.proxy_url` 等全部清空了。首次初始化后，按自己的网络环境编辑 `~/.dsh/chatgpt2api-image/source/config.json` 的 `proxy` 或 `proxy_runtime`，否则号池在线也调不通上游。
-- 号池内置严格 round-robin 选号，并对「限流」状态做了排除；单号失败会在监控里记一条，不会让整个批量任务中断。
-- 本地明文 API Key 只在本机号池目录与页面上显示，浏览器拿不到号池账号的 `access_token` 明文，只用摘要 id 操作。
+后端主要路由如下，完整定义见 `server/app.py`。
+
+| 路由 | 方法 | 用途 |
+| --- | --- | --- |
+| `/health` | GET | 后端存活探测 |
+| `/api/catalog` | GET | 图型、风格、版式与配色定义 |
+| `/api/config`、`/api/config/test` | GET / POST | 配置读取、更新与连通性测试 |
+| `/api/compose` | POST | 提示词合成 |
+| `/api/generate` | POST | 提交图像生成任务 |
+| `/api/tasks/{task_id}` | GET | 查询任务状态 |
+| `/api/history`、`/api/drafts` | GET / POST / DELETE | 生成历史与草稿 |
+| `/api/monitor` | GET | 运行监控数据 |
+| `/api/pool/panel` | GET | 账号与密钥概览 |
+| `/api/pool/accounts/import`、`/delete`、`/status` | POST | 账号导入、删除与启停 |
+| `/api/pool/key/ensure` | POST | 重新签发用户 API Key |
+| `/api/pool/service` | GET | 账号池进程状态 |
+| `/api/pool/service/start`、`/stop`、`/restart`、`/auto` | POST | 进程控制与自动拉起开关 |
 
 ## 数据与隐私
 
-- 仓库通过 `.gitignore` 明确排除 `images/`、`refs/`、`thumbs/`、`workbench/`、`*.db`、`history.json`、`drafts.json`、`config.local.json`、`user-api-keys.json`、`admin-key`、`*.log` 和所有 `*.bak_*` 备份。
-- 运行时生成的一切都留在本机：图片、历史、草稿在 `server/` 下，账号与密钥在号池数据目录。
-- 两个服务默认只监听 `127.0.0.1`，后端鉴权层是本地版空实现。**不要把 8092 / 38651 直接暴露到公网或局域网**；需要远程访问请自行套反向代理与认证。
-- 号池会持有你导入的账号凭据，请勿把号池数据目录同步到公开位置。
+- `.gitignore` 明确排除 `images/`、`refs/`、`thumbs/`、`workbench/`、`*.db`、`history.json`、`drafts.json`、`config.local.json`、`user-api-keys.json`、`admin-key`、`*.log` 及全部 `*.bak_*` 备份文件。
+- 运行时产物均保留在本机：图片、历史与草稿位于 `server/` 下，账号与密钥位于账号池数据目录。
+- 两个服务默认仅监听 `127.0.0.1`，后端鉴权层为本地版空实现。**请勿将 8092 或 38651 直接暴露至公网或共享网络**；如需远程访问，应自行配置反向代理与身份认证。
+- 账号池会持有导入的账号凭据，不应同步其数据目录至任何公开位置。
 
-## 常见问题
+## 故障排查
 
-| 现象 | 处理 |
+| 现象 | 处理方式 |
 | --- | --- |
-| 侧栏没有入口 | bundle 只在 DSH 启动时加载，重启 DSH |
-| 提示「内置号池未就绪」 | 打开「接口与号池 → 本地号池」点「启动号池」；首次要建环境，等 1 分钟 |
-| 生成返回 401 | 面板里点「重新生成」Key，或核对第三方接口的 API Key |
-| 号池显示在线但生成失败 | 多为代理未配或账号额度用尽，先导入账号、配 `source/config.json` 的代理，再看 `pool-service.log` |
-| 改了 `host.js` / `client.js` / `package.json` | 必须重启 DSH 才生效；只改 `static/index.html` 时刷新页面（Ctrl+F5）即可 |
-| 装完侧栏还留着旧号池入口 | `install.mjs` 已从加载清单摘掉，重启 DSH 后消失 |
+| 侧栏未出现入口 | bundle 仅在 DSH 启动时加载，重启 DSH |
+| 提示内置账号池未就绪 | 在「接口与号池 → 本地号池」执行启动；首次运行需等待环境初始化完成 |
+| 生成请求返回 401 | 在面板中重新签发 API Key，或核对第三方接口的密钥 |
+| 账号池在线但生成失败 | 通常为出网代理未配置或账号额度耗尽；检查 `source/config.json` 中的代理设置与 `pool-service.log` |
+| 修改宿主侧代码或 profile 配置 | 需重启 DSH；仅修改静态界面资源时刷新浏览器缓存即可 |
+| 侧栏仍显示旧版账号池入口 | 安装器已清理其加载清单注册项，重启 DSH 后移除 |
 
-## 升级号池源码与卸载
+## 维护与卸载
 
 ```bash
-# 改完本机号池源码后重新生成 vendor 快照（不含账号与密钥）
+# 修改本机账号池源码后重新生成 vendor 快照，不包含账号与密钥
 python scripts/vendor-snapshot.py
 
-# 从 profile 摘掉本插件，重启 DSH 生效；数据目录不会被删除
+# 后端接口冒烟测试，使用已安装依赖的 Python 执行
+cd server && python smoke_check.py --quick
+
+# 从 profile 移除本插件，重启 DSH 生效；数据目录保留
 node install.mjs --uninstall
 ```
 
-后端自测：在 `server/` 目录下用已装好依赖的 Python 运行 `python smoke_check.py --quick`。
+账号池采用严格轮询选号，并排除处于限流状态的账号；单账号失败会在监控中记录，不会中断批量任务。进程启动、停止、重启与自动拉起控件仅作用于当前 Base URL 指向的本机账号池，配置第三方接口时隐藏。
 
-## 第三方代码与许可
+## 许可与第三方代码
 
-`vendor/chatgpt2api/` 是 ChatGPT2API v1.8.0 的服务端代码快照，MIT License，Copyright (c) 2026 kunkun，许可证原文见 `vendor/chatgpt2api/source/LICENSE`。快照里保留了两处工作台所需补丁：round-robin 游标持久化、限流账号排除。它只提供「能跑起来的代码」，账号、密钥、代理配置一律不带。
+本仓库自研代码采用 [MIT License](./LICENSE)。
 
-本仓库自研部分尚未单独声明许可证；再次分发时请保留 vendor 目录内的 MIT 版权声明。
+`vendor/chatgpt2api/` 为 ChatGPT2API v1.8.0 服务端源码快照，依其原始 MIT License 分发，Copyright (c) 2026 kunkun，许可证原文见 `vendor/chatgpt2api/source/LICENSE`。快照包含工作台所需的两项补丁：轮询游标持久化与限流账号排除。快照仅提供可运行的源码，不包含账号、密钥或代理配置。再次分发时须保留 `vendor/` 目录内的版权声明。
 
-上游仓库与账号来源由使用者自行确认合规性，本项目不提供任何账号。
+上游项目的合规性以及所导入账号的来源由使用者自行确认。本仓库不提供任何账号。
