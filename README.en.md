@@ -86,11 +86,13 @@ A fresh pool has **no accounts**, so generating immediately will fail. Choose on
 
 **A. Use the built-in pool**
 
-Open "Endpoint & Pool -> Local Pool", paste accounts into the import box. Supported formats:
+Open "Endpoint & Pool -> Local Pool", click Choose File to upload `txt` / `json` / `csv` files (multi-select and drag-and-drop supported), or paste the content directly, then click Import & Check. Supported formats:
 
 - JSON exported from the pool or another tool (`{"accounts":[...]}`, an array, or a single object). Recommended: it keeps the email/password material needed for automatic re-login after token expiry.
 - One `access_token` per line (`eyJ...` strings).
 - Legacy export lines (`email,password,token` or `email----password----token`).
+
+Account material without a token (`email----password----2FA secret`) cannot be exchanged for a token by this pool version; export with `access_token` instead.
 
 Then configure an outbound proxy for your network, confirm the panel shows the pool online, and generate.
 

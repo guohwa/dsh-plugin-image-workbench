@@ -400,12 +400,13 @@ def _clean_import_item(it: dict) -> dict | None:
 def parse_import(text: str) -> tuple[list[str], list[dict], int]:
     """解析粘贴内容，返回 (裸 token 列表, 完整账号对象, 没认出来的行数)。
 
-    支持三种常见格式：
+    支持三种常见格式（txt / json / csv 上传后走同一条解析）：
     - 每行一个 token（最常见）
     - 号池 / 第三方工具导出的 JSON：数组、{accounts:[...]}、或单个对象
     - 老式导出行（邮箱,密码,token / 邮箱----密码----token）：按行扫 JWT
     """
-    raw = str(text or "")
+    # Windows 记事本存的 UTF-8 txt 常带 BOM，不清掉会把整段 JSON 判成纯文本
+    raw = str(text or "").lstrip("\ufeff")
     tokens: list[str] = []
     items: list[dict] = []
     bad = 0
@@ -449,6 +450,9 @@ def parse_import(text: str) -> tuple[list[str], list[dict], int]:
         found = TOKEN_RE.findall(line)
         if found:
             tokens.extend(found)
+        elif re.match(r"^\s*(email|user|account|access_token|token)\b", line, re.I) \
+                and re.search(r"[,;\t|]", line):
+            continue      # CSV / TSV 的表头行，不算没认出的账号
         else:
             bad += 1
     tokens = list(dict.fromkeys(tokens))
@@ -471,9 +475,13 @@ async def import_accounts(text: str) -> dict:
     tokens, items, bad = parse_import(text)
     all_tokens = list(dict.fromkeys([*tokens, *[d["access_token"] for d in items]]))
     if not all_tokens:
+        # 邮箱 / 密码 / 2FA 料（email----password----secret）里没有 token，
+        # 本号池版本不会用它现场登录换 token，别让用户以为导入成功了。
+        material = bool(re.search(r"[\w.+-]+@[\w.-]+\s*[-]{3,4}\s*\S", text))
         return {"ok": False,
-                "message": "没认出 access_token。每行贴一个（eyJ 开头的长串），"
-                           "或者把号池导出的 JSON 整段粘进来也行"}
+                "message": ("文件里是邮箱 / 密码料，没有 access_token"
+                            if material else
+                            "没读到 access_token：每行贴一个，或粘贴导出的账号 JSON")}
     note = ""
     if len(all_tokens) > MAX_IMPORT:
         items = items[:MAX_IMPORT]

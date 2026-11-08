@@ -414,7 +414,7 @@ async def api_pool_import(body: dict):
     if res.get("ok"):
         # 新号立刻进轮转：页头和监控不用等下一轮后台同步
         await POOL.refresh_accounts(force=True)
-    pool_admin.log(f"号池导入：{res.get('added', 0)} 个新增 / {res.get('skipped', 0)} 个已存在")
+    pool_mod.log(f"号池导入：{res.get('added', 0)} 个新增 / {res.get('skipped', 0)} 个已存在")
     return JSONResponse(res)
 
 

@@ -1006,20 +1006,23 @@
           <button class="btn ghost mini" type="button" data-copy="pKey">复制</button>
           <button class="btn ghost mini" type="button" id="pKeyNew">重新生成</button>
         </div>
-        <p class="phint">这两项就是号池对外的接口：填进脚本、n8n 或别的 OpenAI 兼容客户端都能直接调。</p>
-        <div class="prow">
+        <div class="prow" style="margin-top:4px">
           <button class="btn primary mini" type="button" id="pApply">用这个号池出图</button>
-          <span class="pmeta" id="pApplyHint"></span>
         </div>
         <p class="phint" id="pHome"></p>
-        <p class="phint">号池是工作台自带的：启动、掉线自动拉起、导入账号都在这里完成，不用另装号池插件。</p>
       </div>
 
-      <div class="psec"><b>导入账号</b><span class="tag">额度用完了，把新号贴进来</span></div>
-      <textarea id="pImport" rows="3" placeholder="推荐：把号池导出的 JSON 整段粘进来（会连密码和账号资料一起带上，token 过期后能自动重登）。也可以每行一个 access_token（eyJ 开头的长串），但只贴 token 时账号资料留不下"></textarea>
-      <p class="phint">从 ChatGPT2API 导出的账号 JSON 直接用；只有裸 token 时，导入后请留意后续是否需要重新导入。</p>
+      <div class="psec"><b>导入账号</b></div>
+      <div class="prow" style="margin:8px 0 6px">
+        <input id="pFile" type="file" multiple hidden accept=".txt,.json,.csv,.tsv,.log,text/plain,application/json">
+        <button class="btn ghost mini" type="button" id="pPick">选择文件</button>
+        <span class="pmeta" id="pFileName">未选择文件</span>
+        <span class="spacer"></span>
+        <button class="btn ghost mini" type="button" id="pClear">清空</button>
+      </div>
+      <textarea id="pImport" rows="4" placeholder="每行一个 access_token，或粘贴导出的账号 JSON&#10;支持 txt / json / csv，可直接拖文件进来"></textarea>
       <div class="prow" style="margin-top:8px">
-        <button class="btn" type="button" id="pImportBtn">导入并校验</button>
+        <button class="btn primary" type="button" id="pImportBtn">导入并检测</button>
         <span class="pmeta" id="pImportMsg"></span>
       </div>
 
@@ -2562,23 +2565,17 @@ function renderPool(d){
   $('#pBase').title = d.base_url || '';
   $('#pKey').textContent = d.api_key || (d.local ? '还没有用户 Key，点「重新生成」' : '—');
   $('#pKey').title = d.api_key || '';
-  $('#pApplyHint').textContent = d.local
-    ? (d.api_key ? '会把这套地址和密钥写进上面的出图接口' : '先生成一把密钥')
-    : '';
   // 本机可能同时开着两个号池，写清楚当前管的是哪个目录，免得改错池子
-  const runtimeTag = sv.vendor_bundled ? '　·　号池运行时随插件自带' : '　·　插件运行时缺失，请重装插件';
-  $('#pHome').textContent = d.home ? ('号池目录：' + d.home + runtimeTag) : '';
-  $('#pHome').title = (d.home || '') + (sv.vendor_path ? '　运行时：' + sv.vendor_path : '');
+  $('#pHome').textContent = d.home ? ('号池目录：' + d.home) : '';
+  $('#pHome').title = d.home || '';
 
   const warn = $('#pWarn'); const msgs = [];
   if (!d.local){
-    msgs.push('当前接口不是本机号池：Base URL 要指向 127.0.0.1 上的号池端口，且本机号池目录里要有 admin-key。导入账号只在直连本机号池时可用。');
+    msgs.push('当前接口不是本机号池，导入账号不可用。');
   } else if (!d.online){
     msgs.push(canManage
-      ? '号池进程没在跑。点上面的「启动号池」，工作台会自己拉起；开启「掉线自动拉起」后以后不用再管。'
-        + (sv.runtime_ready ? ''
-           : '首次启动会用插件自带的号池运行时初始化并装依赖，约 1–3 分钟，不需要另装任何号池插件。')
-      : (sv.message || '号池进程没在跑。'));
+      ? '号池没在跑，点「启动号池」。' + (sv.runtime_ready ? '' : '首次启动约 1–3 分钟。')
+      : (sv.message || '号池没在跑。'));
   }
   if (d.accounts_error) msgs.push(d.accounts_error);
   warn.hidden = msgs.length === 0;
@@ -2591,9 +2588,8 @@ function renderPool(d){
   if (!accs.length){
     const e = document.createElement('div'); e.className = 'pacc-empty';
     e.textContent = !d.local ? '读不到账号明细。'
-      : (canManage && !sv.running)
-        ? '号池没在跑，启动后这里会列出全部账号。'
-        : '还没有账号。把 access_token 贴到上面导入，第一个号进来就能出图。';
+      : (canManage && !sv.running) ? '号池没在跑。'
+        : '还没有账号。';
     list.appendChild(e);
   } else {
     accs.forEach(a => list.appendChild(poolAccRow(a)));
@@ -2683,14 +2679,49 @@ $('#pAuto').onchange = async (e)=>{
   }
 };
 
+/* 选择文件 / 拖入文件：读成文本填进输入框，再走同一个导入接口 */
+async function poolReadFiles(files){
+  const list = Array.from(files || []).filter(f => f && f.size <= 5 * 1024 * 1024);
+  if (!list.length) return;
+  const chunks = [];
+  for (const f of list){
+    try{
+      const s = (await f.text()).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trim();
+      if (s) chunks.push(s);
+    }catch(e){ /* 单个文件读失败就跳过，其余照常 */ }
+  }
+  const ta = $('#pImport');
+  const cur = ta.value.trim();
+  ta.value = [cur, ...chunks].filter(Boolean).join('\n');
+  $('#pFileName').textContent = list.length === 1 ? list[0].name : (list.length + ' 个文件');
+  $('#pFileName').title = list.map(f => f.name).join('、');
+  const m = $('#pImportMsg');
+  m.style.color = 'var(--ink-3)';
+  m.textContent = chunks.length ? '已读取，点「导入并检测」' : '文件里没有内容';
+}
+$('#pPick').onclick = ()=> $('#pFile').click();
+$('#pFile').onchange = async e => { await poolReadFiles(e.target.files); e.target.value = ''; };
+$('#pClear').onclick = ()=>{
+  $('#pImport').value = ''; $('#pFile').value = '';
+  $('#pFileName').textContent = '未选择文件'; $('#pFileName').title = '';
+  $('#pImportMsg').textContent = '';
+};
+const pDrop = $('#pImport');
+pDrop.addEventListener('dragover', e => { e.preventDefault(); pDrop.style.borderColor = 'var(--primary)'; });
+pDrop.addEventListener('dragleave', ()=> { pDrop.style.borderColor = ''; });
+pDrop.addEventListener('drop', async e => {
+  e.preventDefault(); pDrop.style.borderColor = '';
+  await poolReadFiles(e.dataTransfer && e.dataTransfer.files);
+});
+
 $('#pImportBtn').onclick = async ()=>{
   const msg = $('#pImportMsg');
   const text = $('#pImport').value.trim();
-  if (!text){ msg.style.color = '#d4380d'; msg.textContent = '先把 access_token 贴进来'; return; }
+  if (!text){ msg.style.color = '#d4380d'; msg.textContent = '先选文件或粘贴内容'; return; }
   const btn = $('#pImportBtn');
   btn.disabled = true;
   msg.style.color = 'var(--ink-3)';
-  msg.textContent = '正在导入并校验，每个号都要上游过一遍，几十秒正常…';
+  msg.textContent = '正在导入…';
   try{
     const d = await poolPost('/api/pool/accounts/import', {text});
     if (!d.ok){ msg.style.color = '#d4380d'; msg.textContent = d.message || '导入失败'; return; }
@@ -2703,7 +2734,10 @@ $('#pImportBtn').onclick = async ()=>{
     if (d.note) parts.push(d.note);
     msg.style.color = (d.errors && d.errors.length) ? '#d4380d' : '#1f9d6b';
     msg.textContent = parts.join(' · ') || '没有新增';
-    if (d.added){ $('#pImport').value = ''; toast(`号池新增 ${d.added} 个账号`, 'ok'); refreshPool(); }
+    if (d.added){
+      $('#pImport').value = ''; $('#pFileName').textContent = '未选择文件';
+      toast(`号池新增 ${d.added} 个账号`, 'ok'); refreshPool();
+    }
     await loadPoolPanel(true);
   }catch(e){
     msg.style.color = '#d4380d'; msg.textContent = '导入失败：' + e.message;

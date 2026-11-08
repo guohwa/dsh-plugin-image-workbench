@@ -124,6 +124,18 @@ function syncServer() {
   const skipFiles = new Set(['config.local.json', 'app.db', 'history.db', '.DS_Store']);
   const junk = n => skipFiles.has(n) || /\.(log|pyc|db|vps_original)$/.test(n)
                     || /\.bak_/.test(n);
+  // 开发机上的源文件可能是 CRLF，仓库里存的是 LF。不归一的话每次同步
+  // 都会把整个文件标成改动，commit 里几千行假 diff，历史没法看。
+  const textExt = new Set(['.py', '.html', '.js', '.mjs', '.json', '.txt',
+                           '.md', '.css', '.yml', '.yaml']);
+  const syncFile = (from, to) => {
+    if (!textExt.has(path.extname(from).toLowerCase())) {
+      fs.copyFileSync(from, to);
+      return;
+    }
+    const s = fs.readFileSync(from, 'utf8').replace(/\r\n?/g, '\n');
+    fs.writeFileSync(to, s, 'utf8');
+  };
   let copied = 0;
   const walk = (from, to) => {
     fs.mkdirSync(to, { recursive: true });
@@ -131,7 +143,7 @@ function syncServer() {
       const a = path.join(from, e.name), b = path.join(to, e.name);
       if (e.isDirectory()) { if (!skipDirs.has(e.name)) walk(a, b); continue; }
       if (!e.isFile() || junk(e.name)) continue;
-      fs.copyFileSync(a, b);
+      syncFile(a, b);
       copied += 1;
     }
   };

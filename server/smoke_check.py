@@ -188,6 +188,12 @@ try:
        len(_it2) == 1 and _t2 == [_tk2], f'obj={len(_it2)} raw={len(_t2)}')
     ok('导入解析：accessToken 别名归一',
        pool_admin.parse_import(json.dumps({'accessToken': _tk, 'password': 'pw'}))[1][0]['access_token'] == _tk)
+    ok('导入解析：带 BOM 的 txt 文件',
+       pool_admin.parse_import('\ufeff' + _tk)[0] == [_tk])
+    _csv = 'email,password,access_token\r\na@b.com,pw1,' + _tk + '\r\nc@d.com,pw2,' + _tk2
+    _ct, _, _cb = pool_admin.parse_import(_csv)
+    ok('导入解析：CSV 表头跳过、CRLF 兼容',
+       _ct == [_tk, _tk2] and _cb == 0, f'{len(_ct)} 条 / bad={_cb}')
 except Exception as e:
     ok('导入解析可用', False, str(e)[:120])
 
