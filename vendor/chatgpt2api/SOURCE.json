@@ -3,5 +3,9 @@
   "license": "MIT",
   "version": "1.8.0",
   "python": "3.13",
-  "files": 161
+  "files": 161,
+  "version_source": "source/VERSION",
+  "copyright": "Copyright (c) 2026 kunkun",
+  "upstream_backend": "https://github.com/basketikun/chatgpt2api",
+  "upstream_dsh_plugin": "https://github.com/yang0/chatgpt2api-dsh"
 }

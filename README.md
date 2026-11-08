@@ -4,7 +4,7 @@
 
 面向 DeepSeek Harness（DSH）桌面端的图像生成工作台插件。插件以单一分发包提供 Web 工作台、FastAPI 后端服务与账号池运行时，在 DSH 侧栏中承载图文与摄影两类提示词生成流程。图像接口默认指向插件内置的本地账号池，亦可配置为任意 OpenAI 兼容服务。
 
-后端服务可脱离 DSH 独立运行，通过浏览器访问 `http://127.0.0.1:8092/`。
+后端服务可脱离 DSH 独立运行，默认通过浏览器访问 `http://127.0.0.1:8092/`。
 
 > 本仓库仅包含源代码及内置的图型、风格、版式与配色定义。生成的图片、历史记录、草稿、账号凭据、API Key 与代理配置等运行时数据均不纳入版本管理。
 
@@ -41,10 +41,10 @@
 
 ```mermaid
 flowchart LR
-  U["DSH 侧栏 / 浏览器"] --> W["工作台后端 FastAPI :8092"]
+  U["DSH 侧栏 / 浏览器"] --> W["工作台后端 FastAPI（默认 :8092）"]
   H["DSH 宿主进程 host.js"] -. 启动与守护 .-> W
   V["vendor/chatgpt2api 源码与运行时"] -. 首次初始化 .-> P
-  W --> P["内置账号池 :38651"]
+  W --> P["内置账号池（默认 :38651）"]
   P --> UP["上游图像服务"]
   W -. 可选配置 .-> API["第三方 OpenAI 兼容接口"]
 ```
@@ -142,7 +142,7 @@ python -m venv .venv
 
 ## 配置项
 
-大部分配置可在「接口与号池 → 出图接口」中修改，结果写入 `server/config.local.json`，该文件不纳入版本管理。
+大部分配置可在「接口与号池 → 出图接口」中修改，结果写入 `server/config.local.json`，该文件不纳入版本管理。下表为出厂默认值，两个服务端口均可通过 `cordis.patch.yml` 或环境变量调整。修改账号池端口时，须同步更新出图接口的 Base URL；账号管理面板按默认端口 38651 验证，建议保留默认值。
 
 | 配置项 | 默认值 | 修改方式 |
 | --- | --- | --- |
@@ -213,6 +213,16 @@ node install.mjs --uninstall
 
 本仓库自研代码采用 [MIT License](./LICENSE)。
 
-`vendor/chatgpt2api/` 为 ChatGPT2API v1.8.0 服务端源码快照，依其原始 MIT License 分发，Copyright (c) 2026 kunkun，许可证原文见 `vendor/chatgpt2api/source/LICENSE`。快照包含工作台所需的两项补丁：轮询游标持久化与限流账号排除。快照仅提供可运行的源码，不包含账号、密钥或代理配置。再次分发时须保留 `vendor/` 目录内的版权声明。
+内置账号池的服务端代码并非本仓库原创，其来源层级如下：
 
-上游项目的合规性以及所导入账号的来源由使用者自行确认。本仓库不提供任何账号。
+| 层级 | 项目 | 说明 |
+| --- | --- | --- |
+| 后端上游 | [basketikun/chatgpt2api](https://github.com/basketikun/chatgpt2api) | ChatGPT2API 号池服务端。其 `VERSION` 文件为 `1.8.0`，即本仓库快照所记录的版本号 |
+| DSH 插件封装 | [yang0/chatgpt2api-dsh](https://github.com/yang0/chatgpt2api-dsh) | 将上述后端打包为 DSH 插件，插件自身使用独立版本号 |
+| 本仓库快照 | `vendor/chatgpt2api/` | 仅包含后端 Python 源码、静态资源与依赖锁文件，不含 DSH 插件外壳、账号数据或密钥 |
+
+`vendor/chatgpt2api/SOURCE.json` 中的 `version: 1.8.0` 取自快照内的 `source/VERSION`，用于标识后端源码版本，不代表本插件版本；`source/pyproject.toml` 中的包元数据版本号与之不同。快照依上游 MIT License 分发，Copyright (c) 2026 kunkun，许可证原文见 `vendor/chatgpt2api/source/LICENSE`。
+
+快照包含本工作台所需的两处补丁：轮询游标持久化与限流账号排除。快照仅提供可运行的源码，不包含账号、密钥或代理配置。再次分发时须保留 `vendor/` 目录内的版权声明。
+
+> 上游项目声明为对第三方网站接口的逆向研究，并对其使用范围设有额外限制。使用者应自行阅读上游项目的许可证与免责声明，并自行确认所导入账号的来源及合规性。本仓库仅分发源码，不提供账号，亦不对上游项目的可用性或合规性作出保证。

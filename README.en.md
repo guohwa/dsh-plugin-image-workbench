@@ -4,7 +4,7 @@
 
 An image generation workbench plugin for the DeepSeek Harness (DSH) desktop application. A single distributable package provides the web workbench, a FastAPI backend, and an account-pool runtime, exposing illustration and photography prompt pipelines in the DSH sidebar. The generation endpoint points to the bundled local account pool by default and can be reconfigured to any OpenAI-compatible service.
 
-The backend also operates without DSH. Open `http://127.0.0.1:8092/` in a browser.
+The backend also operates without DSH. By default, open `http://127.0.0.1:8092/` in a browser.
 
 > This repository contains source code and the built-in format, style, layout and palette catalogs only. Generated images, history, drafts, account credentials, API keys and proxy settings are excluded from version control.
 
@@ -41,10 +41,10 @@ The backend also operates without DSH. Open `http://127.0.0.1:8092/` in a browse
 
 ```mermaid
 flowchart LR
-  U["DSH sidebar / browser"] --> W["Workbench backend FastAPI :8092"]
+  U["DSH sidebar / browser"] --> W["Workbench backend FastAPI (default :8092)"]
   H["DSH host process host.js"] -. starts and guards .-> W
   V["vendor/chatgpt2api source and runtime"] -. first-run bootstrap .-> P
-  W --> P["Built-in account pool :38651"]
+  W --> P["Built-in account pool (default :38651)"]
   P --> UP["Upstream image service"]
   W -. optional .-> API["Third-party OpenAI-compatible endpoint"]
 ```
@@ -142,7 +142,7 @@ python -m venv .venv
 
 ## Configuration
 
-Most settings are available under "Endpoint & Pool -> Generation Endpoint" and are written to `server/config.local.json`, which is not committed.
+Most settings are available under "Endpoint & Pool -> Generation Endpoint" and are written to `server/config.local.json`, which is not committed. The table below lists factory defaults; both service ports can be changed through `cordis.patch.yml` or environment variables. When changing the pool port, update the generation endpoint Base URL accordingly. The account management panel is verified against the default port 38651, so retaining the default is recommended.
 
 | Setting | Default | How to change |
 | --- | --- | --- |
@@ -213,6 +213,16 @@ The pool uses strict round-robin account selection and excludes rate-limited acc
 
 Original code in this repository is distributed under the [MIT License](./LICENSE).
 
-`vendor/chatgpt2api/` is a source snapshot of the ChatGPT2API v1.8.0 server, distributed under its original MIT License, Copyright (c) 2026 kunkun. The full text is in `vendor/chatgpt2api/source/LICENSE`. The snapshot retains two patches required by this workbench: persistent round-robin cursor and exclusion of rate-limited accounts. It provides runnable source only, without accounts, keys or proxy settings. Preserve the copyright notices inside `vendor/` when redistributing.
+The account-pool server code bundled in `vendor/` is not original to this repository. Its provenance is as follows:
 
-Users are responsible for verifying the compliance of the upstream project and of any accounts they import. This repository ships no accounts.
+| Layer | Project | Details |
+| --- | --- | --- |
+| Upstream backend | [basketikun/chatgpt2api](https://github.com/basketikun/chatgpt2api) | ChatGPT2API account-pool server. Its `VERSION` file reads `1.8.0`, which is the version recorded by this snapshot |
+| DSH plugin wrapper | [yang0/chatgpt2api-dsh](https://github.com/yang0/chatgpt2api-dsh) | Packages the backend as a DSH plugin; the plugin carries its own version number |
+| Snapshot in this repository | `vendor/chatgpt2api/` | Backend Python source, static assets and lockfiles only; no DSH plugin shell, account data or keys |
+
+The `version: 1.8.0` entry in `vendor/chatgpt2api/SOURCE.json` is read from `source/VERSION` inside the snapshot and identifies the backend source version, not this plugin's version. The package metadata version in `source/pyproject.toml` differs. The snapshot is distributed under the upstream MIT License, Copyright (c) 2026 kunkun; the full text is in `vendor/chatgpt2api/source/LICENSE`.
+
+The snapshot retains two patches required by this workbench: persistent round-robin cursor and exclusion of rate-limited accounts. It provides runnable source only, without accounts, keys or proxy settings. Preserve the copyright notices inside `vendor/` when redistributing.
+
+> The upstream project describes itself as reverse engineering of third-party web interfaces and imposes additional restrictions on its use. Users should read the upstream license and disclaimer themselves and verify the origin and compliance of any accounts they import. This repository distributes source code only, ships no accounts, and makes no warranty regarding the availability or compliance of the upstream project.
