@@ -2452,10 +2452,7 @@ async function refreshPool(){
                            : Number(pool.active || 0);
       const total = hasAcc ? d.accounts.filter(a=>a.env_id).length
                            : Number(pool.total || 0);
-      const limited = hasAcc ? d.accounts.filter(a=>a.status==='limited').length
-                             : Number(pool.limited || 0);
-      $('#poolText').textContent = `号池 ${ready}/${total} 可用`
-        + (limited ? ` · ${limited} 个额度已满` : '')
+      $('#poolText').textContent = `号池 ${ready} 可用`
         + (run ? ` · 并行 ${run}/${d.workers || 1}` : '')
         + ((d.queued || 0) ? ` · 排队 ${d.queued}` : '');
       $('#poolDot').className = 'dot' + (ready ? '' : ' off');
@@ -3754,9 +3751,8 @@ function renderMonitor(d){
   // 明细拉不到时（换接口后 admin-key 对不上）用号池自报的可用数，别显示成 0/0
   const poolS = d.pool || {};
   const kReady = accs.length ? d.ready : Number(poolS.active || 0);
-  const kTotal = accs.length ? d.total : Number(poolS.total || 0);
   $('#monSum').innerHTML =
-      kpi('账号可用', `${kReady}/${kTotal}`, kReady ? 'ok' : 'err')
+      kpi('账号可用', `${kReady}`, kReady ? 'ok' : 'err')
     + kpi('并行任务', `${run.length}/${d.workers || 1}`, run.length ? 'warn' : '')
     + kpi('排队', d.queued || 0, d.queued ? 'warn' : '')
     + kpi('今日成功', hist.today_done || 0, 'ok')
@@ -3767,13 +3763,9 @@ function renderMonitor(d){
   for (const a of accs){
     if (a.env_id && a.last_used && (!lastUsedAcc || a.last_used > lastUsedAcc.last_used)) lastUsedAcc = a;
   }
-  const nLimited = accs.filter(a=> a.status === 'limited').length;
   $('#monAccHint').textContent = accs.length
     ? `已绑定 ${d.bound}/${d.total} 个环境`
       + (lastUsedAcc ? ` · 上次用 #${lastUsedAcc.env_id}，下次顺延` : '')
-      // 限流不是报错：号池给每个号记着 24 小时出图额度，用满就把这个号摘出轮转，
-      // 等它自己的时间窗滚出来才回池。失败数 0 的限流行就是这种情况。
-      + (nLimited ? ` · ${nLimited} 个号今日额度已满（限流 ≠ 出图失败）` : '')
     // 空表不能当成「0 个账号」：换接口后 admin-key 对不上就是这个样子，得说清原因
     : (d.accounts_error || (d.pool && d.pool.mode === 'single'
         ? '当前是通用接口模式，没有账号明细'
