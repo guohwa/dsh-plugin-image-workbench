@@ -74,15 +74,17 @@ The account-pool process lifecycle is managed by `server/pool_service.py`; the D
 
 ### Install from DSH (recommended)
 
-Open "Plugins -> Add Plugin", enter the repository URL, choose the source matching your network, click Install, then restart DSH:
+Open "Plugins -> Add Plugin", enter the repository URL, choose the source matching your network, click Install:
 
 ```text
 https://github.com/guohwa/dsh-plugin-image-workbench
 ```
 
+The plugin manager needs access to GitHub. If it hangs on connecting or reports a timeout, use [Install from source](#install-from-source) instead — a mirror package registered with the same installer works identically.
+
 ### Install from source
 
-For development or migration from an older version:
+For development, restricted networks, or migration from an older version:
 
 ```bash
 git clone https://github.com/guohwa/dsh-plugin-image-workbench.git
@@ -90,19 +92,17 @@ cd dsh-plugin-image-workbench
 node install.mjs
 ```
 
-`install.mjs` registers the profile, syncs backend code and removes the legacy standalone pool plugin from the load list. It is idempotent; restart DSH afterwards.
+If GitHub is unreachable, download the repository archive from any GitHub mirror, extract it, and run `node install.mjs` inside that directory; the registration result is the same.
+
+The installer creates the profile directory junction, registers the bundle, syncs backend code and removes the legacy standalone pool plugin from the load list. It is idempotent. DSH usually picks up the new bundle directly; if no sidebar entry appears, quit DSH completely and start it again.
+
+> Do not move or delete the installation directory. The profile stores a junction pointing at it, and DSH cannot resolve the plugin once the directory moves. To relocate, run `node install.mjs --uninstall` in the old directory first, then install from the new one. Re-running the installer also repairs a junction that still points at an old path.
 
 Open "Bluxe手绘工坊 · 生图工作台" from the sidebar, or navigate directly to `http://127.0.0.1:8092/`.
 
 ## First launch
 
-1. The account-pool source is unpacked from `vendor/chatgpt2api/` into the local data directory; no account database is copied.
-2. The bundled `uv` runs `sync --frozen --no-dev` to build the pool environment, followed by the workbench backend environment.
-3. `127.0.0.1:38651` starts, and an admin key plus the first user API key are issued.
-4. Account statistics are reconciled once the pool is ready, keeping header figures consistent with actual state.
-5. Two watchdogs start: the host probes 8092 every 15 seconds and the backend probes 38651 every 15 seconds. Both restart on failure without reloading the page.
-
-Bootstrap duration depends on whether the Python 3.13 runtime is already cached locally and is typically under one minute.
+The first launch prepares the backend and account-pool runtime automatically and is usually ready within a minute, with no manual steps required. The pool then starts on its own, and can also be started from "Endpoint & Pool -> Local Pool".
 
 ## Endpoint setup and account management
 
@@ -205,7 +205,9 @@ Principal backend routes are listed below. The complete definitions are in `serv
 
 | Symptom | Resolution |
 | --- | --- |
-| No sidebar entry | Bundles load only at DSH startup; restart DSH |
+| No sidebar entry | Bundles load only at DSH startup; quit DSH completely and start it again |
+| Plugin manager reports a GitHub connection timeout | Download the repository archive from a mirror and run `node install.mjs` inside it |
+| Code stops taking effect after moving the installation directory | Re-run `node install.mjs`; the directory junction is rebuilt to the current path |
 | "Built-in pool not ready" | Start the pool under "Endpoint & Pool -> Local Pool"; allow time for first-run environment initialization |
 | Generation returns 401 | Reissue the API key in the panel, or verify the third-party endpoint key |
 | Pool online but generation fails | Usually a missing outbound proxy or exhausted quota; check the proxy in `source/config.json` and read `pool-service.log` |
@@ -221,9 +223,14 @@ python scripts/vendor-snapshot.py
 # Backend smoke test; run with dependencies installed
 cd server && python smoke_check.py --quick
 
-# Remove the plugin from the profile; restart DSH. Data directories are preserved.
+# Update: overwrite the source in place (or git pull), then re-run the installer
+node install.mjs
+
+# Remove the plugin from the profile and drop the directory junction; restart DSH
 node install.mjs --uninstall
 ```
+
+Uninstalling removes only the profile registration and the directory junction. The plugin source directory, the account data under `~/.dsh/chatgpt2api-image` and generated images are all preserved; delete them yourself once you are sure they are no longer needed.
 
 The pool uses strict round-robin account selection and excludes rate-limited accounts. A failed account is recorded in monitoring without aborting the batch. Start, stop, restart and auto-restart controls affect only the local pool addressed by the current Base URL and are hidden when a third-party endpoint is configured.
 
