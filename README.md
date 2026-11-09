@@ -80,6 +80,14 @@ flowchart LR
 https://github.com/guohwa/dsh-plugin-image-workbench
 ```
 
+### 交给 AI Agent 安装（最省事）
+
+如果你正在使用支持插件安装指令的 AI 助手（如 WorkBuddy），直接把仓库地址丢给它，说一句就行，不用自己敲命令：
+
+> 帮我安装 https://github.com/guohwa/dsh-plugin-image-workbench 这个 DSH 插件
+
+Agent 会自动执行克隆、运行 `node install.mjs` 并完成 profile 注册，装完提示你重启 DSH。整个过程与下方的[从源码安装](#从源码安装)完全一致，只是由 Agent 代为操作；首次初始化、账号导入与代理配置的步骤仍需你按界面提示完成。
+
 ### 从源码安装
 
 适用于开发环境或从旧版本迁移：
