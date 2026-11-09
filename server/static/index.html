@@ -21,6 +21,16 @@
     letter-spacing:0;line-height:1.6;color:#1f9d6b;background:#e8f6ef;border:1px solid #bfe8d4;
     text-decoration:none;white-space:nowrap;transition:background .15s,color .15s}
   header .gh-link:hover{background:#d7efe2;color:#17845a}
+  /* 顶部竖滚轮播提示条：标题右侧、操作按钮左侧的空白区 */
+  .header-ad{flex:1 1 200px;min-width:0;max-width:440px;display:flex;align-items:center;gap:8px;
+    margin:0 4px;height:30px;padding:0 10px;background:#f3fbf7;border:1px solid #d7efe2;border-radius:8px;overflow:hidden}
+  .header-ad .ad-tag{flex:none;font-size:10px;font-weight:600;color:#fff;background:#1f9d6b;
+    padding:2px 7px;border-radius:10px;letter-spacing:.5px}
+  .header-ad .ad-view{flex:1;min-width:0;height:20px;overflow:hidden;position:relative}
+  .header-ad .ad-track{display:flex;flex-direction:column;transition:transform .5s ease}
+  .header-ad .ad-item{height:20px;line-height:20px;font-size:12px;color:#2f6b50;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  @media (max-width:1240px){.header-ad{order:2;flex:1 0 100%;max-width:none}}
   .pool-chip{display:flex;align-items:center;gap:8px;background:var(--chip);margin-left:8px;
     color:var(--primary);border:1px solid #ddd6fb;border-radius:20px;padding:5px 12px;font-size:12px}
   .dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
@@ -585,6 +595,14 @@
     <h1><span id="appName">Bluxe手绘工坊 · 生图工作台</span><a class="gh-link" href="https://mp.weixin.qq.com/s/dQ48uZSEurgBD3py1YwPNQ"
       target="_blank" rel="noopener noreferrer" title="微信公众号：Bluxe的AI办公笔记">#Bluxe的AI办公笔记</a></h1>
     <div class="sub">选题和文案 → 拆分镜 → handraw-style 配图 → 生成提示词 → 批量出图 → 排版预览</div>
+  </div>
+  <div class="header-ad" id="headerAd" title="使用提示">
+    <span class="ad-tag">提示</span>
+    <div class="ad-view"><div class="ad-track" id="adTrack">
+      <div class="ad-item">如果不知道怎么上手，可以试着直接点击「批量出图」</div>
+      <div class="ad-item">使用过程中有任何问题，可以多看看公众号详细介绍</div>
+      <div class="ad-item">如果发现其他问题，估计作者也搞不定，就直接问 AI 吧</div>
+    </div></div>
   </div>
   <div class="head-acts">
     <span class="status" id="imageStatus"></span>
@@ -4529,6 +4547,31 @@ setInterval(refreshPool, 10000);
   document.addEventListener('wheel', outside, {passive:false, capture:true});
   document.addEventListener('touchmove', outside, {passive:false, capture:true});
   sync();
+})();
+</script>
+
+<script>
+/* 顶部竖滚轮播提示 */
+(function(){
+  var track = document.getElementById('adTrack');
+  if(!track) return;
+  var items = track.children.length;
+  if(items < 2) return;
+  track.appendChild(track.children[0].cloneNode(true)); // 克隆首条，衔接更顺
+  var h = 20, idx = 0;
+  setInterval(function(){
+    idx++;
+    track.style.transform = 'translateY(' + (-idx*h) + 'px)';
+    if(idx === items){
+      setTimeout(function(){
+        track.style.transition = 'none';
+        idx = 0;
+        track.style.transform = 'translateY(0)';
+        void track.offsetHeight; // 强制回流后恢复过渡
+        track.style.transition = '';
+      }, 500);
+    }
+  }, 3500);
 })();
 </script>
 </body>
