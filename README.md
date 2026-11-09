@@ -78,8 +78,10 @@ flowchart LR
 | 方式 | 填什么 | 说明 |
 | --- | --- | --- |
 | npm 包名（首选） | `dsh-plugin-image-workbench` | 走 CDN，装得快且不会中途断；插件管理器会同时探测 npmjs 与 npmmirror，取先响应的那个 |
-| Gitee 镜像 | `https://gitee.com/guohwa/dsh-plugin-image-workbench` | 国内直连，浅克隆实测 9 秒左右 |
-| GitHub 原仓库 | `https://github.com/guohwa/dsh-plugin-image-workbench` | 内容源头，国内常卡在 31 MB 的 uv 运行时传输上 |
+| Gitee 镜像 | `https://gitee.com/guohwa/dsh-plugin-image-workbench.git` | 国内直连，浅克隆实测 9 秒左右 |
+| GitHub 原仓库 | `https://github.com/guohwa/dsh-plugin-image-workbench.git` | 内容源头，国内常卡在 31 MB 的 uv 运行时传输上 |
+
+> 填 Git 地址时**结尾必须带 `.git`**。插件管理器调用 pnpm，不带后缀时 pnpm 会把它当作 tarball 链接去抓页面，报 `ERR_PNPM_FETCH_403` 并附一句「No authorization header was set」——那跟权限无关，只是地址形式不对。
 
 三处是同源内容：GitHub 上每次 push 和打 tag 会自动镜像到 Gitee，npm 也由 tag 触发发布。插件里带一个约 31 MB 的 uv 运行时，这正是从 GitHub 克隆时最容易超时的那一块，所以国内优先用包名或 Gitee 地址。
 
@@ -209,7 +211,7 @@ python -m venv .venv
 | 现象 | 处理方式 |
 | --- | --- |
 | 侧栏未出现入口 | bundle 仅在 DSH 启动时加载，完全退出 DSH 再启动 |
-| 插件管理器提示连接 GitHub 超时 | 换成 Gitee 地址 `https://gitee.com/guohwa/dsh-plugin-image-workbench`，国内直连 |
+| 插件管理器提示连接 GitHub 超时 | 换成 Gitee 地址 `https://gitee.com/guohwa/dsh-plugin-image-workbench.git`（**带 `.git`**），国内直连 |
 | 安装报 `ERR_PNPM_EPERM ... rename '...dsh-plugin-image-workbench_tmp_...'` | 上一个版本还在运行，后端进程把插件目录锁住了，Windows 不允许重命名。完全退出 DSH（托盘菜单 → 退出），在任务管理器结束残留的 `python.exe`，删掉 `node_modules\dsh-plugin-image-workbench` 后重装。1.1.4 起装在 `node_modules` 里时运行时会自动搬到 `~/.dsh/image-workbench`，不再出现 |
 | 移动过插件目录后代码不再生效 | 重跑 `node install.mjs`，安装器会把目录联接重建到当前路径 |
 | 提示「工作台后端未运行」 | 面板会直接显示原因：多为本机没有 Python 3.10+ 且自动下载失败。装一个 Python 3.13 后点「立即启动并重试」；有代理时插件会自动识别并使用 |
