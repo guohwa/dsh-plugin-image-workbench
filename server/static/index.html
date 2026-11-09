@@ -612,6 +612,7 @@
   <div class="header-ad" id="headerAd" title="使用提示">
     <span class="ad-tag">提示</span>
     <div class="ad-view"><div class="ad-track" id="adTrack">
+      <div class="ad-item" id="adSamples" title="刚安装成功时，缩略图会在后台自动补齐，补完刷新就是真图">缩略图先同步，渐变是占位</div>
       <div class="ad-item">如果不知道怎么上手，可以试着直接点击「批量出图」。</div>
       <div class="ad-item">使用过程中有任何问题，可以多看看公众号详细介绍。</div>
       <div class="ad-item">如果发现其他问题，估计作者也搞不定，就直接问 AI 吧。</div>
@@ -4694,6 +4695,20 @@ setInterval(refreshPool, 10000);
       }, EASE);
     }
   }, HOLD);
+
+  /* 缩略图那条只改 hover 文案、不动文字和节点：条数一变，上面的计数就错位，
+     文字一长就被 440px 的框截成省略号。具体差多少张放在 title 里。 */
+  var el = document.getElementById('adSamples');
+  if(!el) return;
+  fetch('/api/samples', {cache: 'no-store'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(s){
+      if(!s || !s.total) return;
+      el.title = s.missing > 0
+        ? '缩略图后台同步中：已 ' + s.have + ' / ' + s.total + ' 张，还差 ' + s.missing + ' 张，补完刷新即可。'
+        : '缩略图已全部就位（共 ' + s.total + ' 张）。';
+    })
+    .catch(function(){}); // 状态读不到就保持默认说明，不影响轮播
 })();
 </script>
 

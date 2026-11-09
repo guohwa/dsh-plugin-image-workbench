@@ -425,6 +425,48 @@ async def api_catalog():
     return JSONResponse(CATALOG)
 
 
+_SAMPLES_CACHE = {"at": 0.0, "data": None}
+
+
+def _sample_progress() -> dict:
+    """数一遍缩略图准备到哪了。
+
+    首次安装时 repo_images 是空的（这 500 多张图不进发布包），插件在后台慢慢补。
+    前端拿这个数字决定要不要在顶部提示条里说一句「先看到渐变占位是正常的」，
+    补完自动撤掉，不做成永久横幅。
+    """
+    expected = have = 0
+    for key in ("styles", "layouts", "colors"):
+        for item in CATALOG.get(key) or []:
+            # catalog 里写成 images/individual/...，落到磁盘时去掉 images/ 前缀，
+            # 和前端 imgUrl() 的拼法、/img 路由的取法保持一致，否则永远数成 0 张。
+            rel = re.sub(r"^images/", "", str((item or {}).get("img") or "").strip())
+            if not rel:
+                continue
+            expected += 1
+            if (REPO_IMAGES / rel).is_file():
+                have += 1
+    return {
+        "total": expected,
+        "have": have,
+        "missing": expected - have,
+        "ready": expected == 0 or have >= expected,
+    }
+
+
+@app.get("/api/samples")
+async def api_samples(fresh: int = 0):
+    """缩略图同步进度（只读）。补图是后台进行的，这里只报数。"""
+    now = time.time()
+    cached = _SAMPLES_CACHE["data"]
+    if cached is not None and not fresh and now - _SAMPLES_CACHE["at"] < 10:
+        return JSONResponse(cached)
+    data = await run_in_threadpool(_sample_progress)
+    _SAMPLES_CACHE["at"] = now
+    _SAMPLES_CACHE["data"] = data
+    return JSONResponse(data)
+
+
 @app.get("/api/pool")
 async def api_pool():
     # 前端每 10 秒轮询一次，顺手在这里做离线自愈：号池后起也能自己从「离线」翻成在线

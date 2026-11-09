@@ -102,7 +102,7 @@ except Exception as e:
 print('\n=== 2. 读接口 ===')
 client = httpx.Client(base_url=BASE, trust_env=False, timeout=30)
 routes = [
-    ('/', 200), ('/health', 200), ('/api/catalog', 200), ('/api/pool', 200),
+    ('/', 200), ('/health', 200), ('/api/catalog', 200), ('/api/samples', 200), ('/api/pool', 200),
     ('/api/monitor', 200), ('/api/recent', 200), ('/api/history', 200),
     ('/api/tasks', 200), ('/api/drafts', 200), ('/api/pool/check', 200),
     ('/api/pool/fails', 200), ('/api/pool/panel', 200),
