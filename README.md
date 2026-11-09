@@ -73,20 +73,21 @@ flowchart LR
 
 ### 在 DSH 中安装（推荐）
 
-打开「插件 → 添加插件」，填入仓库地址，点击安装：
+打开「插件 → 添加插件」，三种填法任选一种：
 
-| 来源 | 地址 |
-| --- | --- |
-| Gitee（国内推荐） | `https://gitee.com/guohwa/dsh-plugin-image-workbench` |
-| GitHub | `https://github.com/guohwa/dsh-plugin-image-workbench` |
+| 方式 | 填什么 | 说明 |
+| --- | --- | --- |
+| npm 包名（首选） | `dsh-plugin-image-workbench` | 走 CDN，装得快且不会中途断；插件管理器会同时探测 npmjs 与 npmmirror，取先响应的那个 |
+| Gitee 镜像 | `https://gitee.com/guohwa/dsh-plugin-image-workbench` | 国内直连，浅克隆实测 9 秒左右 |
+| GitHub 原仓库 | `https://github.com/guohwa/dsh-plugin-image-workbench` | 内容源头，国内常卡在 31 MB 的 uv 运行时传输上 |
 
-两边内容完全一致：GitHub 上每次 push 和打 tag 都会自动镜像到 Gitee。插件里带一个约 31 MB 的 uv 运行时，从 GitHub 克隆时这一大块最容易卡在传输阶段或直接超时；Gitee 国内直连，浅克隆实测 9 秒左右。插件管理器若长时间停留在连接状态，改用 Gitee 地址即可。
+三处是同源内容：GitHub 上每次 push 和打 tag 会自动镜像到 Gitee，npm 也由 tag 触发发布。插件里带一个约 31 MB 的 uv 运行时，这正是从 GitHub 克隆时最容易超时的那一块，所以国内优先用包名或 Gitee 地址。
 
 ### 交给 AI Agent 安装（最省事）
 
 如果你正在使用支持插件安装指令的 AI 助手（如 WorkBuddy），直接把仓库地址丢给它，说一句就行，不用自己敲命令：
 
-> 帮我安装 https://gitee.com/guohwa/dsh-plugin-image-workbench 这个 DSH 插件
+> 帮我安装 dsh-plugin-image-workbench 这个 DSH 插件
 
 Agent 会自动执行克隆、运行 `node install.mjs` 并完成 profile 注册，装完提示你重启 DSH。整个过程与下方的[从源码安装](#从源码安装)完全一致，只是由 Agent 代为操作；首次初始化、账号导入与代理配置的步骤仍需你按界面提示完成。
 

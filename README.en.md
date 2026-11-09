@@ -74,14 +74,15 @@ The account-pool process lifecycle is managed by `server/pool_service.py`; the D
 
 ### Install from DSH (recommended)
 
-Open "Plugins -> Add Plugin", enter one of the repository URLs, click Install:
+Open "Plugins -> Add Plugin" and use any one of these:
 
-| Source | URL |
-| --- | --- |
-| Gitee (recommended in mainland China) | `https://gitee.com/guohwa/dsh-plugin-image-workbench` |
-| GitHub | `https://github.com/guohwa/dsh-plugin-image-workbench` |
+| Method | Enter | Notes |
+| --- | --- | --- |
+| npm package (preferred) | `dsh-plugin-image-workbench` | Served from a CDN, fast and interruption-free; the plugin manager probes npmjs and npmmirror in parallel and takes whichever answers first |
+| Gitee mirror | `https://gitee.com/guohwa/dsh-plugin-image-workbench` | Reachable directly from mainland China, shallow clone takes about 9 seconds |
+| GitHub upstream | `https://github.com/guohwa/dsh-plugin-image-workbench` | Source of truth; cloning often stalls on the 31 MB uv runtime |
 
-Both mirror each other: every push and tag on GitHub is synced to Gitee automatically. The plugin ships a roughly 31 MB uv runtime, which is the part that stalls or times out when cloning from GitHub; Gitee is reachable directly from mainland China and a shallow clone takes about 9 seconds. If the plugin manager hangs on connecting, switch to the Gitee URL.
+All three carry the same content: every push and tag on GitHub is mirrored to Gitee, and tags also trigger an npm release. The plugin ships a roughly 31 MB uv runtime, which is exactly the part that stalls or times out when cloning from GitHub — so prefer the package name or the Gitee URL in mainland China.
 
 ### Install from source
 
