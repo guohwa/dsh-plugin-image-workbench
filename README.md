@@ -140,20 +140,6 @@ node install.mjs
 
 配置代理后，号池经该出口访问上游，生成任务方可成功；未配置且网络受限时，表现为面板在线但生成失败、日志提示连接超时。
 
-### 预览图（风格 / 图型 / 主题色）
-
-风格、版式与配色的结构化定义内置在仓库中；预览缩略图不随包发布，以保持仓库轻量。真实预览图来自上游 [`yang0/handraw-style`](https://github.com/yang0/handraw-style) 的图床 CDN：`https://img.handraw-style.com`。
-
-- **主来源**：`https://img.handraw-style.com/...`（路径与 `catalog` 的 `img` 字段一致）
-- **备选来源**：[`gitee` 镜像](https://gitee.com/yang02010/handraw-style) 与 [`github`](https://github.com/yang0/handraw-style) 的原始文件，作为主源不可达时的兜底
-
-下载清单来自 `catalog.build()`，与画廊数据一致；已存在的文件自动跳过，支持断点续传。
-
-- **安装时自动拉取**：`node install.mjs` 在安装阶段即用 Node 直接下载（不依赖 Python 环境），自动拉齐**风格、图型、主题色三类**共 574 张真实样图，并打印 `已下 / 跳过 / 失败` 进度。失败不阻断安装，重跑 `node install.mjs` 即可补齐（自动跳过已存在的）。
-- **离线兜底**：若全部来源均不可达，后端 `/img/...` 对缺失图返回一张 SVG 占位图（渐变 + 编号，且 `Cache-Control: no-store` 不进缓存），任何一次安装都不会破图。网络恢复后重跑 `node install.mjs` 即可补齐真图。
-
-手动替换：将 `.webp` 按 `catalog` 引用的路径放入 `server/repo_images/`（如 `individual/FA/FA-001.webp`）即自动生效。
-
 ### 方式 B：使用第三方接口
 
 在「接口与号池 → 出图接口」中填写 Base URL、API Key 与模型名，保存后执行连通性测试。该方式无需启动内置账号池。
