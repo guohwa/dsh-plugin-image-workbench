@@ -31,6 +31,16 @@
   .header-ad .ad-item{height:20px;line-height:20px;font-size:12px;color:#2f6b50;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis}
   @media (max-width:1240px){.header-ad{order:2;flex:1 0 100%;max-width:none}}
+  /* 右上角「更多功能」下拉 */
+  .dropdown{position:relative}
+  .dropdown-list{position:absolute;right:0;top:calc(100% + 6px);min-width:168px;background:#fff;
+    border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(20,20,40,.12);
+    padding:6px;display:flex;flex-direction:column;gap:2px;z-index:50}
+  .dropdown-list[hidden]{display:none}
+  .dd-item{display:block;width:100%;text-align:left;background:none;border:none;cursor:pointer;
+    padding:9px 12px;border-radius:8px;font-size:13px;color:var(--ink-1);font-family:inherit;white-space:nowrap}
+  .dd-item:hover{background:#f3f7ff}
+  #moreToggle .caret{font-size:10px;margin-left:2px;opacity:.7}
   .pool-chip{display:flex;align-items:center;gap:8px;background:var(--chip);margin-left:8px;
     color:var(--primary);border:1px solid #ddd6fb;border-radius:20px;padding:5px 12px;font-size:12px}
   .dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
@@ -613,9 +623,14 @@
     <button class="btn stop" id="stopGen" type="button" title="停止当前正在出图与排队中的任务" disabled>停止生图</button>
     <button class="btn ghost" id="randomCombo" type="button">随机组合</button>
     <span class="ha-sep"></span>
-    <button class="btn ghost mini" id="openHistory" type="button">历史记录</button>
-    <button class="btn ghost mini" id="openMonitor" type="button">运行监控</button>
-    <button class="btn ghost mini" id="openConfig" type="button" title="出图接口、本地号池与账号导入">接口与号池</button>
+    <div class="dropdown" id="moreMenu">
+      <button class="btn ghost mini" id="moreToggle" type="button" aria-haspopup="true" aria-expanded="false">更多功能 <span class="caret">▾</span></button>
+      <div class="dropdown-list" id="moreList" hidden>
+        <button class="dd-item" id="openHistory" type="button">历史记录</button>
+        <button class="dd-item" id="openMonitor" type="button">运行监控</button>
+        <button class="dd-item" id="openConfig" type="button" title="出图接口、本地号池与账号导入">接口与号池</button>
+      </div>
+    </div>
   </div>
   <div class="pool-chip"><span class="dot" id="poolDot"></span><span id="poolText">号池连接中…</span></div>
 </header>
@@ -4572,6 +4587,31 @@ setInterval(refreshPool, 10000);
       }, 500);
     }
   }, 3500);
+})();
+</script>
+
+<script>
+/* 右上角「更多功能」下拉菜单 */
+(function(){
+  var toggle = document.getElementById('moreToggle');
+  var list = document.getElementById('moreList');
+  var menu = document.getElementById('moreMenu');
+  if(!toggle || !list || !menu) return;
+  function close(){ list.hidden = true; toggle.setAttribute('aria-expanded', 'false'); }
+  function open(){ list.hidden = false; toggle.setAttribute('aria-expanded', 'true'); }
+  toggle.addEventListener('click', function(e){
+    e.stopPropagation();
+    list.hidden ? open() : close();
+  });
+  // 点菜单项后收起（历史/监控/号池各自的弹窗逻辑不变）
+  list.addEventListener('click', function(){ close(); });
+  // 点外部收起
+  document.addEventListener('click', function(e){
+    if(!list.hidden && !menu.contains(e.target)) close();
+  });
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && !list.hidden) close();
+  });
 })();
 </script>
 </body>
