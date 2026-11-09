@@ -9,7 +9,8 @@
  * 所以工作台脱离 DSH、直接在浏览器打开 8092 也能独立运行。
  * 只探端口、只重启自己拉起的进程，绝不重载 client 的 iframe。
  */
-import { existsSync, appendFileSync, mkdirSync, openSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, appendFileSync, mkdirSync, openSync, readdirSync, readFileSync,
+         copyFileSync, statSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import http from 'node:http';
 import net from 'node:net';
@@ -21,7 +22,8 @@ export const inject = ['connection'];
 
 const PLUGIN_DIR = fileURLToPath(new URL('.', import.meta.url));
 const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh');
-const LOG_DIR = join(DSH_HOME, 'image-workbench');
+/** 插件运行时根目录：日志、后端代码副本、号池源码快照都放这里，与插件包本身解耦。 */
+const RUNTIME_DIR = join(DSH_HOME, 'image-workbench');
 const PLUGIN_NAME = 'dsh-plugin-image-workbench';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -31,18 +33,79 @@ function firstFile(list) {
   return '';
 }
 
+/** 一个目录是否构成可运行的工作台后端。 */
+function isServerDir(dir) {
+  return !!dir && existsSync(join(dir, 'app.py')) && existsSync(join(dir, 'static', 'index.html'));
+}
+
+/** 这些是运行时产物，不参与代码同步，升级时保留。 */
+const SERVER_RUNTIME = new Set([
+  '.venv', 'images', 'thumbs', 'refs', 'repo_images', 'workbench', 'data',
+  '__pycache__', 'config.local.json', 'views.json',
+]);
+const VENDOR_SKIP = new Set(['.venv', '__pycache__', 'node_modules']);
+
+/** 把代码目录覆盖到运行时目录：变了才复制，只碰代码，不动 venv、图片和账号数据。 */
+function syncTree(src, dst, skip) {
+  mkdirSync(dst, { recursive: true });
+  for (const ent of readdirSync(src, { withFileTypes: true })) {
+    if (skip && skip.has(ent.name)) continue;
+    const s = join(src, ent.name);
+    const d = join(dst, ent.name);
+    if (ent.isDirectory()) { syncTree(s, d, skip); continue; }
+    const st = statSync(s);
+    if (existsSync(d)) {
+      const dt = statSync(d);
+      if (dt.size === st.size && dt.mtimeMs >= st.mtimeMs - 1000) continue;
+    }
+    copyFileSync(s, d);
+  }
+}
+
+/**
+ * 装在 node_modules 里的插件目录会被包管理器整体替换，运行时不能留在里面：
+ * 一是升级会把 .venv、生成的图片、账号数据一起冲掉；二是后端进程以该目录为
+ * 工作目录运行时 Windows 会锁住整个目录，pnpm 重装时报 ERR_PNPM_EPERM rename。
+ * 这类安装把代码复制到 ~/.dsh/image-workbench/ 再跑，node_modules 保持只读。
+ */
+function isolatedServer(bundled) {
+  const dst = join(RUNTIME_DIR, 'server');
+  try {
+    syncTree(bundled, dst, SERVER_RUNTIME);
+    // 号池源码快照放到 server 的同级 vendor/，pool_service 会从那里找
+    const vendSrc = join(PLUGIN_DIR, 'vendor', 'chatgpt2api');
+    if (existsSync(join(vendSrc, 'source', 'main.py'))) {
+      syncTree(vendSrc, join(RUNTIME_DIR, 'vendor', 'chatgpt2api'), VENDOR_SKIP);
+    }
+    // 1.1.3 及更早版本把运行时直接写在插件目录里，搬一次，别让用户丢图
+    for (const name of ['images', 'data', 'workbench', 'refs', 'config.local.json']) {
+      const s = join(bundled, name);
+      const d = join(dst, name);
+      if (!existsSync(s) || existsSync(d)) continue;
+      if (statSync(s).isDirectory()) syncTree(s, d);
+      else copyFileSync(s, d);
+    }
+  } catch (e) {
+    console.error('[image-workbench] 同步后端代码失败，改用插件目录：' + e.message);
+    return bundled;
+  }
+  return isServerDir(dst) ? dst : bundled;
+}
+
 /** 工作台目录：环境变量 > patch 配置 > 插件同级 image-local > 插件自带 server/。 */
 export function locateServer(config = {}) {
   const candidates = [
     process.env.DSH_IMAGE_SERVER_DIR,
     config.serverDir,
     resolve(PLUGIN_DIR, '..', 'image-local'),
-    resolve(PLUGIN_DIR, 'server'),
   ].filter(Boolean);
-  for (const dir of candidates) {
-    if (existsSync(join(dir, 'app.py')) && existsSync(join(dir, 'static', 'index.html'))) return dir;
-  }
-  return '';
+  for (const dir of candidates) if (isServerDir(dir)) return dir;
+
+  const bundled = resolve(PLUGIN_DIR, 'server');
+  if (!isServerDir(bundled)) return '';
+  // 插件被装进 node_modules 时，目录归包管理器管，运行时要搬出去
+  if (bundled.split(/[\\/]/).includes('node_modules')) return isolatedServer(bundled);
+  return bundled;
 }
 
 /** 工作台 Python：自带 venv 优先，其次系统 Python。 */
@@ -166,8 +229,8 @@ export function apply(ctx, config = {}) {
   if (typeof ctx.effect === 'function') ctx.effect(() => cleanup, PLUGIN_NAME + ': backend lifecycle');
 
   function logFd(name) {
-    mkdirSync(LOG_DIR, { recursive: true });
-    return openSync(join(LOG_DIR, name), 'a');
+    mkdirSync(RUNTIME_DIR, { recursive: true });
+    return openSync(join(RUNTIME_DIR, name), 'a');
   }
 
   /** 读日志末尾若干字符，排障时直接看，不用去翻文件。读不到就返回空串。 */
@@ -359,8 +422,8 @@ export function apply(ctx, config = {}) {
     };
     if (!uv || !existsSync(req)) { fail('插件里缺 uv 或 server/requirements.txt，无法自动初始化环境'); return; }
 
-    const venvLog = join(LOG_DIR, 'venv.log');
-    mkdirSync(LOG_DIR, { recursive: true });
+    const venvLog = join(RUNTIME_DIR, 'venv.log');
+    mkdirSync(RUNTIME_DIR, { recursive: true });
     const logLine = s => { try { appendFileSync(venvLog, s + '\n'); } catch { /* 日志而已 */ } };
 
     const sys = await findSystemPython();
@@ -471,7 +534,7 @@ export function apply(ctx, config = {}) {
       if (await probe(state.port)) return { running: true, started: true };
       if (!state.serverChild) break;
     }
-    return { running: false, started: true, reason: state.lastServerStart || '工作台启动超时，请看 ' + join(LOG_DIR, 'backend.log') };
+    return { running: false, started: true, reason: state.lastServerStart || '工作台启动超时，请看 ' + join(RUNTIME_DIR, 'backend.log') };
   }
 
   if (state.autoStart) void ensureServer().then(r => {
@@ -553,12 +616,12 @@ export function apply(ctx, config = {}) {
           attempts: venvState.attempts,
           message: venvState.message,
           error: venvState.error,
-          log: join(LOG_DIR, 'venv.log'),
+          log: join(RUNTIME_DIR, 'venv.log'),
           retryInMs: Math.max(0, venvState.nextRetryAt - Date.now()),
         },
         lastError: state.lastServerStart,
         // 进程起来又退出时，真正的原因在 backend.log 末尾（缺依赖、端口被占…）
-        backendTail: tailOf(join(LOG_DIR, 'backend.log'), 900),
+        backendTail: tailOf(join(RUNTIME_DIR, 'backend.log'), 900),
         lastAction,
         engine: '内置专用生图号池 /v1/images/generations（运行时随插件自带，全新机器自动初始化；工作台自拉起、自守护）',
         watchdog: {
@@ -569,7 +632,7 @@ export function apply(ctx, config = {}) {
           retryInMs: Math.max(0, watchdog.nextAllowedAt - Date.now()),
           lastRestart: watchdog.lastRestart,
         },
-        log: join(LOG_DIR, 'backend.log'),
+        log: join(RUNTIME_DIR, 'backend.log'),
       }, { headers: { 'Cache-Control': 'no-store' } });
     },
   };

@@ -111,6 +111,8 @@ node install.mjs
 
 首次启动会自动准备后端与账号池的运行环境，通常 1 分钟内完成，无需手动操作；环境就绪后账号池会自动拉起，也可在「接口与号池 → 本地号池」手动启动。
 
+插件以 `node_modules` 形式安装时，后端代码会同步到 `~/.dsh/image-workbench/server`，号池源码快照同步到同级的 `vendor/`，Python 环境、生成图片、账号与历史数据都留在这个目录里。插件包本身保持只读，升级插件不会冲掉环境和图片。用 `link:` 指向源码目录（开发场景）时不复制，直接用源码目录。
+
 ## 接口接入与账号管理
 
 工作台支持两类接入方式：使用你已有的号池或任意第三方 OpenAI 兼容接口（方式 A）、使用本插件内置账号池（方式 B）。首次生成前需完成以下任一配置。
@@ -206,6 +208,7 @@ python -m venv .venv
 | --- | --- |
 | 侧栏未出现入口 | bundle 仅在 DSH 启动时加载，完全退出 DSH 再启动 |
 | 插件管理器提示连接 GitHub 超时 | 改用镜像下载仓库压缩包，解压后执行 `node install.mjs` |
+| 安装报 `ERR_PNPM_EPERM ... rename '...dsh-plugin-image-workbench_tmp_...'` | 上一个版本还在运行，后端进程把插件目录锁住了，Windows 不允许重命名。完全退出 DSH（托盘菜单 → 退出），在任务管理器结束残留的 `python.exe`，删掉 `node_modules\dsh-plugin-image-workbench` 后重装。1.1.4 起装在 `node_modules` 里时运行时会自动搬到 `~/.dsh/image-workbench`，不再出现 |
 | 移动过插件目录后代码不再生效 | 重跑 `node install.mjs`，安装器会把目录联接重建到当前路径 |
 | 提示「工作台后端未运行」 | 面板会直接显示原因：多为本机没有 Python 3.10+ 且自动下载失败。装一个 Python 3.13 后点「立即启动并重试」；有代理时插件会自动识别并使用 |
 | 装依赖时报 `fastapi was not found in the package registry`，或提示镜像返回 403 | 代理把镜像站拦了。插件会自动换源（镜像直连 → 官方 PyPI 走代理 → 官方直连）；仍失败时可用 `DSH_IMAGE_PYPI_INDEX` 指定一个能直连的源 |

@@ -208,6 +208,7 @@ Principal backend routes are listed below. The complete definitions are in `serv
 | --- | --- |
 | No sidebar entry | Bundles load only at DSH startup; quit DSH completely and start it again |
 | Plugin manager reports a GitHub connection timeout | Download the repository archive from a mirror and run `node install.mjs` inside it |
+| Install fails with `ERR_PNPM_EPERM ... rename '...dsh-plugin-image-workbench_tmp_...'` | The previous version is still running and the backend process holds the plugin directory, so Windows refuses the rename. Quit DSH completely (tray menu -> Quit), end any leftover `python.exe` in Task Manager, delete `node_modules\dsh-plugin-image-workbench`, then install again. From 1.1.4 on, installs under `node_modules` relocate their runtime to `~/.dsh/image-workbench`, so this no longer happens |
 | Code stops taking effect after moving the installation directory | Re-run `node install.mjs`; the directory junction is rebuilt to the current path |
 | "Built-in pool not ready" | Start the pool under "Endpoint & Pool -> Local Pool"; allow time for first-run environment initialization |
 | Dependency install reports `fastapi was not found in the package registry` or an index returns 403 | The proxy is blocking the mirror. Sources are tried in order automatically (mirrors direct -> official PyPI via proxy -> official PyPI direct); if all fail, point `DSH_IMAGE_PYPI_INDEX` at a reachable index |
