@@ -126,6 +126,19 @@ node install.mjs
 
 > 未配置任何号池就点击「出图」时，工作台会明确提示「尚未配置生图号池」，并指引前往「接口与号池」面板填写地址与 Key，而非笼统报错。
 
+### 方式 B：使用内置账号池
+
+在「接口与号池 → 本地号池」中导入账号。点击文件选择框或拖入 `.txt`、`.json`、`.csv`、`.tsv`、`.log` 等文本文件（可多选），亦可直接粘贴文本内容，然后点击「导入并授权入池」。
+
+| 格式 | 说明 |
+| --- | --- |
+| JSON 导出 | `{"accounts":[...]}`、数组或单个对象。保留邮箱、密码等账号资料，便于 token 失效后重新登录，推荐使用该格式 |
+| 五段式发料 | `email----password----client_id----mail_refresh_token----access_token`。邮箱 Client ID 与邮箱刷新令牌随账号留档，不会被当作号池的 `refresh_token` 使用 |
+| 纯文本 token | 每行一个 `access_token`（`eyJ` 开头的长字符串） |
+| 传统导出行 | `email,password,token` 或 `email----password----token` |
+
+仅包含邮箱、密码与 2FA 密钥而不含 `access_token` 的条目不在支持范围内，本版本号池不执行登录换取 token 的操作。导入完成后，按网络环境配置出网代理，并确认面板显示在线状态。
+
 ### 配置项
 
 大部分配置可在「接口与号池 → 出图接口」中修改，结果写入 `server/config.local.json`，该文件不纳入版本管理。下表为出厂默认值，两个服务端口均可通过 `cordis.patch.yml` 或环境变量调整。修改账号池端口时，须同步更新出图接口的 Base URL；账号管理面板按默认端口 38651 验证，建议保留默认值。
@@ -141,19 +154,6 @@ node install.mjs
 | 账号池数据目录 | `~/.dsh/chatgpt2api-image/` | 存放 `admin-key`、`user-api-keys.json`、`source/config.json` 与账号库 |
 | 守护间隔 | `15000` ms | `cordis.patch.yml` 的 `watchdogIntervalMs`；`watchdog: false` 可关闭宿主侧守护 |
 | 日志路径 | `~/.dsh/image-workbench/backend.log`、`~/.dsh/image-workbench/venv.log`、账号池目录下的 `pool-service.log` | 排障时按此顺序检查 |
-
-### 方式 B：使用内置账号池
-
-在「接口与号池 → 本地号池」中导入账号。点击文件选择框或拖入 `.txt`、`.json`、`.csv`、`.tsv`、`.log` 等文本文件（可多选），亦可直接粘贴文本内容，然后点击「导入并授权入池」。
-
-| 格式 | 说明 |
-| --- | --- |
-| JSON 导出 | `{"accounts":[...]}`、数组或单个对象。保留邮箱、密码等账号资料，便于 token 失效后重新登录，推荐使用该格式 |
-| 五段式发料 | `email----password----client_id----mail_refresh_token----access_token`。邮箱 Client ID 与邮箱刷新令牌随账号留档，不会被当作号池的 `refresh_token` 使用 |
-| 纯文本 token | 每行一个 `access_token`（`eyJ` 开头的长字符串） |
-| 传统导出行 | `email,password,token` 或 `email----password----token` |
-
-仅包含邮箱、密码与 2FA 密钥而不含 `access_token` 的条目不在支持范围内，本版本号池不执行登录换取 token 的操作。导入完成后，按网络环境配置出网代理，并确认面板显示在线状态。
 
 ### 出网代理配置
 
