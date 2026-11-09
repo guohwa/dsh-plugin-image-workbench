@@ -2317,9 +2317,13 @@ async function runImage(){
     await pollBatch(ids, topics, statusEl);
     if (state.results.length) clearRedo(true);
   }catch(e){
-    statusEl.className = 'status err';
+    statusEl.className = _stopRequested ? 'status' : 'status err';
     statusEl.textContent = _stopRequested ? '已停止生图' : e.message;
-    if (!_stopRequested) toast(e.message, 'err');
+    if (_stopRequested){
+      setTimeout(()=>{ if (statusEl.textContent === '已停止生图') statusEl.textContent = ''; }, 20000);
+    } else {
+      toast(e.message, 'err');
+    }
   }finally{
     btn.disabled = false;
     _batchRunning = false;
@@ -2329,7 +2333,7 @@ async function runImage(){
 async function pollBatch(ids, topics, statusEl){
   const t0 = Date.now();
   const pending = new Set(ids.map((_,i)=>i));
-  let finished = 0, failed = 0, lastErr = '';
+  let finished = 0, failed = 0, cancelled = 0, lastErr = '';
   const retrying = new Set();
   const retryCount = new Map();   // 第 N 张已经换到第几轮
   const failAcc = new Set();      // 这批里失败过的账号，汇总时如实点名
@@ -2339,7 +2343,8 @@ async function pollBatch(ids, topics, statusEl){
   const maxTicks = 300 * ids.length;
   for (let tick=0; tick<maxTicks && pending.size; tick++){
     if (_stopRequested){
-      statusEl.className = 'status err'; statusEl.textContent = '已停止生图';
+      statusEl.className = 'status'; statusEl.textContent = '已停止生图';
+      setTimeout(()=>{ if (statusEl.textContent === '已停止生图') statusEl.textContent = ''; }, 20000);
       clearBatch();
       return;
     }
@@ -2365,7 +2370,8 @@ async function pollBatch(ids, topics, statusEl){
       gone.delete(i);
       if (d.status === 'running'){ runningAccount = d.account || ''; continue; }
       if (d.status === 'cancelled'){
-        pending.delete(i); failed++; lastErr = '已手动停止出图';
+        // 手动停止不是失败：单独计数，汇总文案里说「未出」而不是「失败」
+        pending.delete(i); cancelled++; lastErr = '已手动停止出图';
         continue;
       }
       if (d.status !== 'done' && d.status !== 'error'){
@@ -2416,15 +2422,28 @@ async function pollBatch(ids, topics, statusEl){
         (rt.length ? ` · ${rt.join('，')}` : '');
     }
   }
-  statusEl.className = failed ? 'status err' : 'status ok';
-  statusEl.textContent = `完成 ${finished}/${ids.length} 张` +
-    (failed ? ` · 失败 ${failed}（${lastErr}）` : '') +
-    (pending.size ? ` · ${pending.size} 张超时` : '');
+  if (cancelled){
+    // 手动停止：中性提示，不算失败；20 秒后自动收掉，免得一行字一直挂着
+    statusEl.className = 'status';
+    const txt = `已停止 · 完成 ${finished}/${ids.length} 张` +
+      (cancelled ? `，${cancelled} 张未出` : '') +
+      (failed ? `，${failed} 张失败` : '');
+    statusEl.textContent = txt;
+    setTimeout(()=>{ if (statusEl.textContent === txt) statusEl.textContent = ''; }, 20000);
+  } else {
+    statusEl.className = failed ? 'status err' : 'status ok';
+    statusEl.textContent = `完成 ${finished}/${ids.length} 张` +
+      (failed ? ` · 失败 ${failed}（${lastErr}）` : '') +
+      (pending.size ? ` · ${pending.size} 张超时` : '');
+  }
   if (!pending.size) clearBatch();
   // 一整批跑完单独给一次总气泡：中间每张只是轻提示，容易被下一条盖掉
   if (!state.results.length){
-    toast(failAcc.size ? `失败账号：${[...failAcc].join('、')}` : '一张都没出来，检查号池状态或稍后重试',
-          {type: 'err', title: '本轮出图失败'});
+    // 手动停止时不该弹「出图失败」，那是自己关的
+    if (!(cancelled && !failed)){
+      toast(failAcc.size ? `失败账号：${[...failAcc].join('、')}` : '一张都没出来，检查号池状态或稍后重试',
+            {type: 'err', title: '本轮出图失败'});
+    }
   } else {
     const allOk = failed === 0 && !pending.size;
     const swapNote = swappedOk ? ` · ${swappedOk} 张换号后出图` : '';
