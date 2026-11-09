@@ -495,6 +495,16 @@ def _ensure_venv(home: Path, src: Path, uv: str) -> dict:
     env["UV_CACHE_DIR"] = str(home / "uv-cache")
     env["UV_PYTHON_DOWNLOADS"] = "automatic"   # 全新机器允许 uv 自己取 Python 3.13
     env.setdefault("UV_HTTP_TIMEOUT", "120")
+    # 国内网络下 pypi.org 直连不稳，依赖走清华镜像（与 host.js 初始化后端依赖一致）。
+    # 用 setdefault 不覆盖用户已自定义的环境变量。
+    env.setdefault("UV_DEFAULT_INDEX_URL", "https://pypi.tuna.tsinghua.edu.cn/simple")
+    # 系统未设出口代理时，探测本机常见代理（Shadowsocks/Clash/privoxy 等）并注入 uv，
+    # 让 uv 能经代理下载 Python 3.13 运行时，覆盖“开了代理但没设环境变量”的典型场景。
+    if not _env_egress_proxy():
+        for cand in _local_proxy_candidates():
+            env["HTTPS_PROXY"] = cand
+            env["HTTP_PROXY"] = cand
+            break
     cmd = [uv, "sync", "--frozen", "--no-dev"]
     py = _find_python313()
     if py:
