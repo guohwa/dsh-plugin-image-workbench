@@ -32,6 +32,11 @@ window.__ModuleLoader__.load({
 .iw-empty p{margin:0;max-width:560px;font-size:13px;line-height:1.8}
 .iw-empty code{background:#dfe4ea;padding:2px 6px;border-radius:4px;font-size:12px}
 .iw-error{margin:8px 18px 0;padding:9px 12px;border-radius:7px;background:#fff3ef;border:1px solid #f3cfc4;color:#a13c28;font-size:12px;flex:none}
+.iw-empty .iw-why{margin:0;max-width:560px;padding:9px 12px;border-radius:7px;background:#fff3ef;
+  border:1px solid #f3cfc4;color:#a13c28;font-size:12.5px;line-height:1.7;text-align:left}
+.iw-empty .iw-why .iw-tail{margin:6px 0 0;padding:8px;max-height:150px;overflow:auto;background:#fff;
+  border:1px solid #f0d8d1;border-radius:5px;color:#6b3a30;font-size:11.5px;line-height:1.55;
+  white-space:pre-wrap;word-break:break-all;font-family:ui-monospace,Consolas,monospace}
 .iw-note{flex:0 1 auto;min-width:0;max-width:min(420px,38vw);padding:4px 10px;border-radius:7px;
   font-size:12px;line-height:1.55;background:#eef4ff;border:1px solid #cddffb;color:#1b4d8f;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -104,6 +109,36 @@ window.__ModuleLoader__.load({
       // 不做定时轮询：iframe 一旦重载，正在编辑的工程会被打断。
       useEffect(() => { call(); }, [call]);
 
+      // 后端没起来时（首次装环境、刚被拉起）轻量轮询，起来就自动切成 iframe。
+      // 只在没有 iframe 的时候轮询，所以不会打断正在编辑的内容；最多盯 2 分钟。
+      useEffect(() => {
+        if (Boolean(status?.running)) return undefined;
+        let tick = 0;
+        const timer = setInterval(() => {
+          tick += 1;
+          if (tick > 40) { clearInterval(timer); return; }
+          void call();
+        }, 3000);
+        return () => clearInterval(timer);
+      }, [status?.running, call]);
+
+      // 后端起不来时，把真实原因复制出来，不用让用户去翻日志文件
+      const copyDiag = useCallback(async () => {
+        const d = {
+          time: new Date().toISOString(),
+          running: status?.running, port: status?.port,
+          serverDir: status?.serverDir, python: status?.python,
+          venv: status?.venv, lastError: status?.lastError,
+          watchdog: status?.watchdog, log: status?.log,
+        };
+        try {
+          await navigator.clipboard.writeText(JSON.stringify(d, null, 2));
+          setNotice({ ok: true, text: '诊断信息已复制', hint: '已复制到剪贴板，可直接发给作者' });
+        } catch {
+          setNotice({ ok: false, text: '复制失败', hint: JSON.stringify(d) });
+        }
+      }, [status]);
+
       const running = Boolean(status?.running);
       const appUrl = status?.url || 'http://127.0.0.1:8092/';
       const guard = status?.watchdog;
@@ -155,7 +190,24 @@ window.__ModuleLoader__.load({
                 h('code', null, String(status?.port || 8092)),
                 '）。若这里一直是空白，请确认 DSH 已重启加载插件，或点「用系统浏览器打开」直接访问。'),
               status?.serverDir && h('p', null, '后端目录：', h('code', null, status.serverDir)),
-              Button(busy ? '正在处理' : '立即启动并重试', () => call('start'), { primary: true, disabled: !!busy }),
+              // 初始化中 / 失败原因：以前这里只说「未运行」，用户完全看不出卡在哪一步
+              !status ? null
+                : (status.venv?.message || status.lastError)
+                  ? h('div', { className: 'iw-why' },
+                      h('div', null, '原因：' + (status.venv?.message || status.lastError)),
+                      status.backendTail
+                        ? h('pre', { className: 'iw-tail' }, status.backendTail)
+                        : null)
+                  : (status.venv?.tried && !status.venv?.ready)
+                    ? h('p', null, '正在初始化运行环境（首次启动约 1 分钟），装好后这里会自动刷新。')
+                    : null,
+              h('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } },
+                Button(busy ? '正在处理' : '立即启动并重试', () => call('start'), { primary: true, disabled: !!busy }),
+                Button('复制诊断信息', copyDiag),
+                status?.venv?.log && h('span', {
+                  style: { fontSize: '12px', color: '#6b7280', alignSelf: 'center' },
+                  title: status.venv.log,
+                }, '日志：' + status.venv.log)),
             ),
       );
     }

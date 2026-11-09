@@ -9,7 +9,7 @@
  * 所以工作台脱离 DSH、直接在浏览器打开 8092 也能独立运行。
  * 只探端口、只重启自己拉起的进程，绝不重载 client 的 iframe。
  */
-import { existsSync, appendFileSync, mkdirSync, openSync } from 'node:fs';
+import { existsSync, appendFileSync, mkdirSync, openSync, readdirSync, readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import http from 'node:http';
 import net from 'node:net';
@@ -170,6 +170,15 @@ export function apply(ctx, config = {}) {
     return openSync(join(LOG_DIR, name), 'a');
   }
 
+  /** 读日志末尾若干字符，排障时直接看，不用去翻文件。读不到就返回空串。 */
+  function tailOf(file, limit = 800) {
+    try {
+      const text = readFileSync(file, 'utf8');
+      const rows = text.trimEnd().split('\n');
+      return rows.slice(-12).join('\n').slice(-limit);
+    } catch { return ''; }
+  }
+
   /** 整包拷到新机器时，server/ 里没有 .venv，用插件自带的 uv 现建一个。 */
   function bundledUv() {
     return firstFile([
@@ -184,10 +193,11 @@ export function apply(ctx, config = {}) {
       join(dir, '.venv', 'bin', 'python'),
     ]);
   }
-  function runCmd(command, args, cwd, timeoutMs = 240000) {
+  function runCmd(command, args, cwd, timeoutMs = 240000, env = null) {
     return new Promise(done => {
       const child = spawn(command, args, { cwd, windowsHide: true,
-                                           stdio: ['ignore', 'pipe', 'pipe'] });
+                                           stdio: ['ignore', 'pipe', 'pipe'],
+                                           ...(env ? { env } : {}) });
       let tail = '';
       const collect = c => { tail = (tail + c.toString()).slice(-4000); };
       child.stdout?.on('data', collect);
@@ -198,32 +208,148 @@ export function apply(ctx, config = {}) {
         done({ ok: code === 0, tail: code === 0 ? '' : tail.slice(-600) }); });
     });
   }
-  const venvState = { tried: false, ok: false, message: '' };
-  async function ensureServerVenv() {
-    if (venvState.tried || !state.serverDir) return;
+
+  /** 本机常见代理端口：uv 要出网下 Python 运行时，国内不开代理基本下不动。 */
+  const PROXY_SPECS = [['http', 7890], ['socks5', 1080], ['http', 7891],
+                       ['http', 8118], ['socks5', 1087], ['http', 10809]];
+  async function egressProxy() {
+    for (const k of ['HTTPS_PROXY', 'https_proxy', 'ALL_PROXY', 'all_proxy',
+                     'HTTP_PROXY', 'http_proxy']) {
+      const v = (process.env[k] || '').trim();
+      if (v) return v;
+    }
+    for (const [scheme, port] of PROXY_SPECS) {
+      if (await probe(port, 250)) return scheme + '://127.0.0.1:' + port;
+    }
+    return '';
+  }
+
+  /** 判断某个解释器能不能用（版本 >= 3.10）。py 启动器要带 -3，返回的版本号同此。 */
+  async function pythonVersion(exe, prefix = []) {
+    const r = await runCmd(exe, [...prefix, '-c',
+      'import sys;print(sys.version_info[0]*100+sys.version_info[1])'], homedir(), 12000);
+    if (!r.ok) return 0;
+    const n = Number(String(r.tail || '').trim().split('\n').pop());
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  /**
+   * 找一台机器上现成的 Python 3.10+。
+   *
+   * 全新电脑如果没有任何 Python，uv 会去 GitHub 下载 python-build-standalone，
+   * 国内网络经常下不动，于是整个后端起不来。所以先找现成的，找不到才交给 uv。
+   */
+  async function findSystemPython() {
+    const seeds = [];
+    const push = (exe, prefix = []) => { if (exe) seeds.push([exe, prefix]); };
+    push(process.env.DSH_IMAGE_PYTHON);
+    push(config.python);
+    if (process.platform === 'win32') {
+      push(join(process.env.ProgramFiles || 'C:\\Program Files', 'Python313', 'python.exe'));
+      push(join(process.env.ProgramFiles || 'C:\\Program Files', 'Python312', 'python.exe'));
+      push(join(process.env.ProgramFiles || 'C:\\Program Files', 'Python311', 'python.exe'));
+      const roots = [
+        join(process.env.LOCALAPPDATA || '', 'Programs', 'Python'),
+        join(homedir(), '.workbuddy', 'binaries', 'python', 'versions'),  // 宿主自带运行时
+        'C:\\Python313', 'C:\\Python312', 'C:\\Python311', 'C:\\Python310',
+      ];
+      for (const root of roots) {
+        let names = [];
+        try { names = readdirSync(root).sort().reverse(); } catch { /* 目录不存在 */ }
+        for (const n of names) push(join(root, n, 'python.exe'));
+        push(join(root, 'python.exe'));
+      }
+      // py 启动器放到最后：它可能指向 3.12，而上面已排过 3.13 的绝对路径
+      push('py', ['-3']);
+    }
+    push('python3');
+    push('python');
+    push(join(homedir(), 'AppData', 'Local', 'Programs', 'Python', 'Python312', 'python.exe'));
+
+    const seen = new Set();
+    for (const [exe, prefix] of seeds) {
+      const key = exe + ' ' + prefix.join(' ');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const v = await pythonVersion(exe, prefix);
+      if (v >= 310) return { exe, prefix, version: v };
+    }
+    return null;
+  }
+
+  const venvState = { tried: false, ok: false, message: '', error: '', attempts: 0, nextRetryAt: 0 };
+  let venvTask = null;   // 同一时刻只允许一次初始化，宿主自启 / 守护 / 用户点按钮会撞车
+
+  /** 初始化后端虚拟环境。失败后 60 秒可再试，用户点「立即启动并重试」则立刻重试。 */
+  async function ensureServerVenv(force = false) {
+    if (!state.serverDir || venvState.ok) return;
+    if (!force && venvState.tried && Date.now() < venvState.nextRetryAt) return;
+    if (venvTask) return venvTask;
+    venvTask = runVenvInit().finally(() => { venvTask = null; });
+    return venvTask;
+  }
+
+  async function runVenvInit() {
     venvState.tried = true;
-    if (venvPython(state.serverDir)) { venvState.ok = true; return; }
-    if (process.env.DSH_IMAGE_SKIP_VENV === '1') return;
-    const uv = bundledUv();
-    const req = join(state.serverDir, 'requirements.txt');
-    if (!uv || !existsSync(req)) {
-      venvState.message = '插件里缺 uv 或 server/requirements.txt，退回系统 Python';
+    venvState.attempts += 1;
+
+    const existing = venvPython(state.serverDir);
+    if (existing) { venvState.ok = true; venvState.message = ''; state.python = existing; return; }
+    if (process.env.DSH_IMAGE_SKIP_VENV === '1') {
+      venvState.message = '已按 DSH_IMAGE_SKIP_VENV 跳过环境初始化';
       return;
     }
+    const uv = bundledUv();
+    const req = join(state.serverDir, 'requirements.txt');
+    const fail = msg => {
+      venvState.message = msg;
+      venvState.nextRetryAt = Date.now() + 60000;
+    };
+    if (!uv || !existsSync(req)) { fail('插件里缺 uv 或 server/requirements.txt，无法自动初始化环境'); return; }
+
     const venvLog = join(LOG_DIR, 'venv.log');
     mkdirSync(LOG_DIR, { recursive: true });
     const logLine = s => { try { appendFileSync(venvLog, s + '\n'); } catch { /* 日志而已 */ } };
-    logLine('用插件自带 uv 初始化工作台后端环境：' + state.serverDir);
-    const v = await runCmd(uv, ['venv', join(state.serverDir, '.venv')], state.serverDir, 120000);
-    if (!v.ok) { logLine('uv venv 失败：' + v.tail); venvState.message = '建虚拟环境失败，退回系统 Python'; return; }
+
+    const sys = await findSystemPython();
+    const proxy = await egressProxy();
+    const uvEnv = { ...process.env };
+    uvEnv.UV_HTTP_TIMEOUT = uvEnv.UV_HTTP_TIMEOUT || '120';
+    if (proxy) { uvEnv.HTTPS_PROXY = proxy; uvEnv.HTTP_PROXY = proxy; }
+    if (process.env.DSH_IMAGE_PYTHON_MIRROR) {
+      uvEnv.UV_PYTHON_INSTALL_MIRROR = process.env.DSH_IMAGE_PYTHON_MIRROR;
+    }
+    logLine(`[${new Date().toISOString()}] 初始化后端环境（第 ${venvState.attempts} 次）`
+      + `，系统 Python=${sys ? sys.exe + ' (' + sys.version + ')' : '未找到'}`
+      + `，代理=${proxy || '无'}`);
+
+    const vArgs = ['venv', join(state.serverDir, '.venv')];
+    if (sys) vArgs.push('--python', sys.exe);
+    const v = await runCmd(uv, vArgs, state.serverDir, 180000, uvEnv);
+    if (!v.ok) {
+      logLine('uv venv 失败：' + v.tail);
+      venvState.error = (v.tail || '').slice(-400);
+      fail('创建 Python 环境失败' + (sys ? '' : '：本机没找到 Python 3.10+，自动下载也没成功')
+           + '（详见 venv.log）');
+      return;
+    }
     const py = venvPython(state.serverDir);
-    if (!py) { venvState.message = 'venv 里没找到 python，退回系统 Python'; return; }
+    if (!py) {
+      venvState.error = 'venv 目录里没有 python 可执行文件';
+      fail('环境目录建好了但里面没有 python（详见 venv.log）');
+      return;
+    }
     const i = await runCmd(uv, ['pip', 'install', '--python', py, '-r', req,
                                 '--index-url', 'https://pypi.tuna.tsinghua.edu.cn/simple'],
-                           state.serverDir);
-    logLine(i.ok ? '工作台后端依赖已装好' : ('依赖安装失败：' + i.tail));
-    if (i.ok) { state.python = py; venvState.ok = true; }
-    else venvState.message = '依赖安装失败，退回系统 Python（详见 venv.log）';
+                           state.serverDir, 240000, uvEnv);
+    if (i.ok) {
+      logLine('工作台后端依赖已装好');
+      venvState.ok = true; venvState.message = ''; venvState.error = ''; state.python = py;
+    } else {
+      logLine('依赖安装失败：' + i.tail);
+      venvState.error = (i.tail || '').slice(-400);
+      fail('安装后端依赖失败（多为网络问题，详见 venv.log）');
+    }
   }
 
   /** 拉起生图工作台后端（8092）。 */
@@ -232,7 +358,16 @@ export function apply(ctx, config = {}) {
     if (!state.autoStart) return { running: false, started: false, reason: 'autoStart 已关闭' };
     if (!state.serverDir) return { running: false, started: false, reason: '未找到 image-local 工作台目录' };
     if (state.serverChild && !state.serverChild.killed) return { running: false, started: true, reason: '工作台正在启动中' };
-    await ensureServerVenv();
+    await ensureServerVenv(force);
+    if (!venvState.ok) {
+      // 环境没建好时，只能用现成的解释器兜底；连它都没有就别 spawn 了，
+      // 否则报的是 ENOENT，看不出真正的原因。
+      const usable = await pythonVersion(state.python);
+      if (!usable) {
+        return { running: false, started: false,
+                 reason: (venvState.message || '本机没有可用的 Python 3.10+') + '，后端无法启动' };
+      }
+    }
     if (force) stopChild();
     try {
       const fd = logFd('backend.log');
@@ -334,7 +469,18 @@ export function apply(ctx, config = {}) {
         serverDir: state.serverDir,
         python: state.python,
         ownedProcess: Boolean(state.serverChild),
-        venv: { ready: venvState.ok, tried: venvState.tried, message: venvState.message },
+        venv: {
+          ready: venvState.ok,
+          tried: venvState.tried,
+          attempts: venvState.attempts,
+          message: venvState.message,
+          error: venvState.error,
+          log: join(LOG_DIR, 'venv.log'),
+          retryInMs: Math.max(0, venvState.nextRetryAt - Date.now()),
+        },
+        lastError: state.lastServerStart,
+        // 进程起来又退出时，真正的原因在 backend.log 末尾（缺依赖、端口被占…）
+        backendTail: tailOf(join(LOG_DIR, 'backend.log'), 900),
         lastAction,
         engine: '内置专用生图号池 /v1/images/generations（运行时随插件自带，全新机器自动初始化；工作台自拉起、自守护）',
         watchdog: {
