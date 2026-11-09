@@ -126,10 +126,10 @@ Entries containing only an email, password and 2FA secret without an `access_tok
 The built-in pool must reach OpenAI / ChatGPT. Whether you need a proxy depends on your network:
 
 - **Unrestricted network**: leave it empty (default) for a direct connection, no setup required.
-- **Restricted network** (e.g. some regions where direct access times out): open "Endpoint & Pool -> Local Pool -> Pool outbound proxy", enter your own outbound proxy such as `socks5://127.0.0.1:1080` or `http://127.0.0.1:7890`, click "Save proxy", then use "Test" to verify connectivity. **No address is hardcoded** — enter the proxy actually running on your machine.
+- **Restricted network** (e.g. some regions where direct access times out): open "Endpoint & Pool -> Local Pool -> Pool outbound proxy", enter your own outbound proxy such as `socks5://127.0.0.1:1080` or `http://127.0.0.1:7890`, and click "Save proxy". Saving runs a connectivity check immediately: if it fails, the panel names the address that could not be reached, which is almost always a wrong port or a proxy that is not running. Once the check passes, account quotas are recalculated automatically. **No address is hardcoded** — enter the proxy actually running on your machine.
 - Environment variable: set `CHATGPT2API_PROXY_RUNTIME_PROXY_URL` (e.g. `socks5://127.0.0.1:1080`) before launch; the pool reads it during bootstrap.
 
-With a proxy configured, the pool reaches its upstream through that egress and generation succeeds. Without one on a restricted network, the panel shows online but generation fails with connection timeouts in the log.
+With a proxy configured, the pool reaches its upstream through that egress and generation succeeds. Without one on a restricted network, the panel shows online but generation fails with connection timeouts in the log, and account quotas stay at 0 (displayed as "used up").
 
 ### Option B: Use a third-party endpoint
 
@@ -209,6 +209,7 @@ Principal backend routes are listed below. The complete definitions are in `serv
 | Plugin manager reports a GitHub connection timeout | Download the repository archive from a mirror and run `node install.mjs` inside it |
 | Code stops taking effect after moving the installation directory | Re-run `node install.mjs`; the directory junction is rebuilt to the current path |
 | "Built-in pool not ready" | Start the pool under "Endpoint & Pool -> Local Pool"; allow time for first-run environment initialization |
+| Account quotas stay at 0 and show "used up" | The outbound proxy is not in effect or the port is wrong. Re-enter the address under "Local Pool -> Pool outbound proxy" and save; the connectivity check runs on save and quotas are recalculated once it passes |
 | Generation returns 401 | Reissue the API key in the panel, or verify the third-party endpoint key |
 | Pool online but generation fails | Usually a missing outbound proxy or exhausted quota; check the proxy in `source/config.json` and read `pool-service.log` |
 | Changed host-side code or profile configuration | Restart DSH; static interface resource changes require a browser cache refresh |

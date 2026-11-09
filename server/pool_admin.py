@@ -165,6 +165,24 @@ async def get_pool_proxy() -> dict:
     return {"ok": True, "runtime": j.get("runtime", {}), "status": j.get("status", {})}
 
 
+def _proxy_error_hint(text: str) -> str:
+    """把 curl 的原始报错压成一句能指导操作的话。
+
+    用户在受限网络里最先踩的坑就是「端口填错 / 代理没开」，
+    原始报错是一整段英文 curl 说明，说了等于没说。
+    """
+    t = str(text or "")
+    m = re.search(r"connect to ([^\s]+) port (\d+)", t, re.I)
+    if m:
+        return "连不上 %s:%s，代理没启动或端口填错了" % (m.group(1), m.group(2))
+    low = t.lower()
+    if "timed out" in low or "timeout" in low:
+        return "连接超时，代理没启动或端口填错了"
+    if "resolve" in low:
+        return "代理地址解析不了，检查填写的地址"
+    return t[:120] or "未知原因"
+
+
 async def set_pool_proxy(payload: dict) -> dict:
     """把用户填的出口代理写进本机号池（默认直连；受限网络填自己的代理）。
 
@@ -191,8 +209,21 @@ async def set_pool_proxy(payload: dict) -> dict:
         j = r.json()
     except Exception:
         j = {}
+    # 保存后立刻用号池自己的测试接口验一次：端口填错、代理没启动是最常见的
+    # 失败原因，当场说清楚，比等用户点出图再超时好。
+    check: dict = {}
+    proxy_ok = True
+    if body["proxy_url"]:
+        check = await test_pool_proxy("")
+        proxy_ok = bool(check.get("ok"))
+    if not body["proxy_url"]:
+        msg = "已改为直连（不使用出口代理）"
+    elif proxy_ok:
+        msg = "代理已保存，连通性正常"
+    else:
+        msg = "代理已保存，但" + _proxy_error_hint(str(check.get("error") or check.get("msg") or ""))
     return {"ok": True, "runtime": (j.get("runtime") if isinstance(j, dict) else None),
-            "msg": "代理已保存，号池将使用新出口"}
+            "check": check, "proxy_ok": proxy_ok, "msg": msg}
 
 
 async def test_pool_proxy(url: str = "") -> dict:
@@ -216,6 +247,53 @@ async def test_pool_proxy(url: str = "") -> dict:
     except Exception:
         return {"ok": False, "reason": "json", "msg": "号池返回非 JSON"}
     return {"ok": True, **(j.get("result") if isinstance(j.get("result"), dict) else {})}
+
+
+# ---------- 重新拉取账号额度（换代理后额度要重算） ----------
+async def refresh_accounts() -> dict:
+    """让号池重新向 OpenAI 拉一遍每个账号的额度。
+
+    号池侧是异步任务，立即返回 progress_id；调用方轮询进度即可。
+    换出口代理后额度必然要重算，否则界面会一直停在旧的 0。
+    """
+    tgt = target()
+    if not tgt["local"]:
+        return {"ok": False, "reason": "non_local", "msg": "当前接口不是本机号池"}
+    try:
+        # 空列表 = 刷新全部账号（号池侧会取 list_tokens）
+        r = await _req("POST", tgt, "api/accounts/refresh", {"access_tokens": []}, timeout=30)
+    except Exception as e:
+        return {"ok": False, "reason": "net", "msg": str(e)[:160]}
+    if r.status_code != 200:
+        return {"ok": False, "reason": "http", "status": r.status_code, "msg": _err_text(r)}
+    try:
+        j = r.json()
+    except Exception:
+        j = {}
+    return {"ok": True, "progress_id": str((j or {}).get("progress_id") or "")}
+
+
+async def refresh_progress(progress_id: str) -> dict:
+    """查询刷新进度：{total, processed, done, error, status_counts, total_quota}。"""
+    tgt = target()
+    if not tgt["local"]:
+        return {"ok": False, "reason": "non_local", "msg": "当前接口不是本机号池"}
+    pid = str(progress_id or "").strip()
+    if not pid:
+        return {"ok": False, "reason": "bad", "msg": "缺少 progress_id"}
+    try:
+        r = await _req("GET", tgt, f"api/accounts/refresh/progress/{pid}", timeout=15)
+    except Exception as e:
+        return {"ok": False, "reason": "net", "msg": str(e)[:160]}
+    if r.status_code == 404:
+        return {"ok": False, "reason": "gone", "msg": "刷新任务已结束"}
+    if r.status_code != 200:
+        return {"ok": False, "reason": "http", "status": r.status_code, "msg": _err_text(r)}
+    try:
+        j = r.json()
+    except Exception:
+        return {"ok": False, "reason": "json", "msg": "号池返回非 JSON"}
+    return {"ok": True, **(j if isinstance(j, dict) else {})}
 
 
 # ---------- 用户 Key（对外提供 API 就靠它） ----------

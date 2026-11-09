@@ -38,7 +38,7 @@ STOP_FLAG = ".workbench-pool-stop"
 STATE_FILE = ".workbench-pool-state.json"
 RR_MARK = "# [dsh-patch:rr-persist]"
 
-_LOCK = threading.Lock()
+_LOCK = threading.RLock()   # 可重入：start() 内部会递归调用自身来完成重启
 _WATCHDOG_STARTED = False
 _LAST = {"action": "", "ok": True, "message": "", "at": 0.0}
 # 号池启动成功后通知工作台刷新账号统计（由 app.py 在 lifespan 里挂上）。
@@ -454,6 +454,96 @@ def _rr_patch(source: Path) -> str:
     return ""
 
 
+PROXY_MARK = "# workbench:upstream-proxy"
+
+_PROXY_PATCHES = (
+    (
+        "services/openai_backend_api.py",
+        '            impersonate=self.fp["impersonate"],\n'
+        '            verify=True,\n'
+        '        ))',
+        '            impersonate=self.fp["impersonate"],\n'
+        '            verify=True,\n'
+        '            upstream=True,  ' + PROXY_MARK + '\n'
+        '        ))',
+    ),
+    (
+        "services/account_service.py",
+        'build_session_kwargs(account=account, impersonate="chrome110", verify=True))',
+        'build_session_kwargs(account=account, impersonate="chrome110", verify=True, '
+        'upstream=True))  ' + PROXY_MARK,
+    ),
+    (
+        "services/oauth_login_service.py",
+        'build_session_kwargs(impersonate="chrome", verify=False)',
+        'build_session_kwargs(impersonate="chrome", verify=False, upstream=True)  ' + PROXY_MARK,
+    ),
+)
+
+
+def _proxy_patch(source: Path) -> str:
+    """让界面里配置的出口代理在真实上游请求中生效（幂等，可反复执行）。
+
+    上游 proxy_service.get_profile() 只有在 upstream=True 时才启用
+    proxy_runtime 的 single_proxy；而访问 ChatGPT 的调用点全都没传这个参数，
+    于是「接口与号池 → 号池出口代理」填好地址、点测试也通过，真实请求却
+    一律直连。受限网络下就是超时，额度永远刷不回来，账号被显示成「已用完」。
+
+    只补三处真正访问上游的调用：
+      openai_backend_api   拉额度与出图的核心客户端
+      account_service      refresh_token 换 access_token
+      oauth_login_service  登录码换 token
+    内容审核、CPA、用户图片下载走的是第三方地址，保持原样，
+    避免把本来能直连的请求也塞进出网代理。
+
+    补丁写回前先做语法校验，校验不过就放弃该文件，不影响号池启动。
+    返回空串表示无需改动或未应用；返回 applied:N 表示本次真的改了 N 个文件。
+    """
+    applied, skipped = [], []
+    for rel, old, new in _PROXY_PATCHES:
+        f = source / rel
+        if not f.is_file():
+            skipped.append(rel + " 缺文件")
+            continue
+        try:
+            text = f.read_bytes().decode("utf-8")
+        except Exception:
+            skipped.append(rel + " 读取失败")
+            continue
+        # 上游文件混用 LF 与 CRLF，跨行锚点必须按归一化后的文本匹配，
+        # 写回时再还原原有行尾，避免整个文件被改写。
+        crlf = "\r\n" in text
+        norm = text.replace("\r\n", "\n")
+        if PROXY_MARK in norm:
+            continue
+        if norm.count(old) != 1:
+            skipped.append(rel + " 锚点不匹配")
+            continue
+        patched = norm.replace(old, new)
+        try:
+            compile(patched, str(f), "exec")
+        except SyntaxError:
+            skipped.append(rel + " 补丁后语法异常")
+            continue
+        out = patched.replace("\n", "\r\n") if crlf else patched
+        try:
+            # 留一份原件，需要回滚时直接覆盖回去即可
+            bak = f.with_name(f.name + ".bak_proxy")
+            if not bak.exists():
+                shutil.copy2(f, bak)
+            f.write_bytes(out.encode("utf-8"))
+            applied.append(rel)
+        except Exception:
+            skipped.append(rel + " 写入失败")
+    if not applied and not skipped:
+        return ""
+    if applied:
+        log("出口代理补丁已应用 %d 处：%s" % (len(applied), "、".join(applied)))
+    if skipped:
+        log("出口代理补丁跳过 %d 处：%s" % (len(skipped), "、".join(skipped)))
+    return ("applied:%d" % len(applied)) if applied else ("skipped:%d" % len(skipped))
+
+
 def _venv_python(src: Path) -> str:
     for p in (src / ".venv" / "Scripts" / "python.exe",
               src / ".venv" / "bin" / "python"):
@@ -578,6 +668,9 @@ def bootstrap(home: Path) -> dict:
         note = _rr_patch(src)
         if note:
             log(note)
+        proxy_note = _proxy_patch(src)
+        if proxy_note:
+            log(proxy_note)
     except Exception as e:
         return {"ok": False, "message": "初始化号池失败：" + pool_mod.mask(e)[:140]}
 
@@ -674,6 +767,13 @@ def start(force: bool = False) -> dict:
                 auto_detect_proxy(home, port)
             except Exception as e:
                 log("出口代理自动探测异常：" + pool_mod.mask(e)[:120])
+            # 运行中的进程加载的是打补丁之前的代码。刚打完补丁就重启一次，
+            # 否则界面里配好的出口代理要等用户手动重启才真正生效。
+            if _proxy_patch(home / "source").startswith("applied:"):
+                log("出口代理补丁首次应用，重启号池使其生效")
+                stop(mark_user_stop=False)
+                time.sleep(0.6)
+                return start()
             return {"ok": True, "message": msg, "already": True}
         if force and probe(port):
             stop(mark_user_stop=False)
@@ -685,6 +785,8 @@ def start(force: bool = False) -> dict:
                 _record("start", False, b["message"])
                 return {"ok": False, "message": b["message"]}
             rt = runtime(home)
+        # 已装好的号池不会重跑 bootstrap，这里再补一次幂等补丁
+        _proxy_patch(Path(rt["source"]))
         admin = ensure_admin_key(home)
         if not admin:
             msg = "admin-key 读不到也写不进，检查号池目录权限：" + str(home)
@@ -768,14 +870,16 @@ def start(force: bool = False) -> dict:
 
 
 def restart() -> dict:
-    v = view()
-    if not v["manageable"]:
-        msg = "当前接口不是本工作台管理的号池，未做任何操作"
-        _record("restart", False, msg)
-        return {"ok": False, "message": msg}
-    stop(mark_user_stop=False)
-    time.sleep(0.6)
-    return start()
+    # 整个停-等-启放在同一把锁里，避免守护线程在这 0.6 秒的窗口里插一脚
+    with _LOCK:
+        v = view()
+        if not v["manageable"]:
+            msg = "当前接口不是本工作台管理的号池，未做任何操作"
+            _record("restart", False, msg)
+            return {"ok": False, "message": msg}
+        stop(mark_user_stop=False)
+        time.sleep(0.6)
+        return start()
 
 
 # ---------- 掉线守护 ----------

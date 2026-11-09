@@ -118,7 +118,23 @@ async def lifespan(app: FastAPI):
             pass
 
     pool_service.ON_STARTED = _on_pool_started
+
+    async def _patch_running_pool():
+        """号池可能在上次会话里就活着（插件升级后很常见），此时 watchdog 不会碰它，
+        源码补丁也就永远落不了地。这里主动走一次 start()：它会补打补丁，
+        并在补丁刚应用时重启号池，让新代码真正加载。"""
+        try:
+            await asyncio.sleep(3)          # 先让 watchdog 的首次巡检跑完
+            v = pool_service.view()
+            if not v.get("manageable") or not pool_service.probe(v["port"], 0.5):
+                return                      # 没在跑就交给 watchdog，那条路径同样会打补丁
+            r = await run_in_threadpool(pool_service.start)
+            pool_mod.log("号池启动自检：" + str(r.get("message") or ""))
+        except Exception as e:
+            pool_mod.log("号池启动自检异常：" + str(e)[:110])
+
     pool_service.start_watchdog()
+    asyncio.create_task(_patch_running_pool())
     await POOL.start()
     yield
     await POOL.stop()
@@ -509,6 +525,18 @@ async def api_pool_proxy_save(body: dict):
 async def api_pool_proxy_test(body: dict):
     """用号池已保存的代理测连通性。"""
     return JSONResponse(await pool_admin.test_pool_proxy(str((body or {}).get("url", ""))))
+
+
+@app.post("/api/pool/accounts/refresh")
+async def api_pool_accounts_refresh():
+    """换出口代理后重算额度：让号池重新拉一遍每个账号的可用次数。"""
+    return JSONResponse(await pool_admin.refresh_accounts())
+
+
+@app.get("/api/pool/accounts/refresh/{progress_id}")
+async def api_pool_accounts_refresh_progress(progress_id: str):
+    """刷新进度：total / processed / done / status_counts / total_quota。"""
+    return JSONResponse(await pool_admin.refresh_progress(progress_id))
 
 
 # ---------- 工作台自带号池：进程生命周期 ----------

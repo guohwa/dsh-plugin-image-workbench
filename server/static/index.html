@@ -2822,17 +2822,50 @@ async function loadPoolProxy(){
     $('#pProxyMsg').textContent = '';
   }catch(e){ /* 面板照常，代理框留空即可 */ }
 }
+/* 换出口代理后额度必须重算：号池自身 5 分钟才轮询一次，这里立刻推一把 */
+async function refreshQuotaAfterProxy(){
+  try{
+    const r = await poolPost('/api/pool/accounts/refresh', {});
+    if (!r.ok || !r.progress_id) return;
+    for (let i = 0; i < 90; i++){
+      await new Promise(t => setTimeout(t, 2000));
+      const resp = await fetch('/api/pool/accounts/refresh/' + encodeURIComponent(r.progress_id), {cache: 'no-store'});
+      const p = await resp.json();
+      if (!p.ok) return;
+      $('#pProxyMsg').textContent = '正在重新拉取额度… ' + (p.processed || 0) + '/' + (p.total || 0);
+      if (p.done){
+        await loadPoolPanel(true);
+        const q = p.total_quota || 0;
+        const txt = '额度已刷新：剩余 ' + q + ' 次';
+        $('#pProxyMsg').textContent = txt;
+        toast(txt, q > 0 ? 'ok' : 'err');
+        return;
+      }
+    }
+  }catch(e){ /* 刷新失败不影响代理已保存，watcher 会在 5 分钟内兜底 */ }
+}
 $('#pProxySave').onclick = async ()=>{
   const btn = $('#pProxySave'); btn.disabled = true;
+  const old = btn.textContent; btn.textContent = '保存并校验…';
   try{
     const d = await poolPost('/api/pool/proxy', {
       enabled: true, egress_mode: 'single_proxy',
       proxy_url: $('#pProxy').value.trim(),
     });
-    if (d.ok){ $('#pProxyMsg').textContent = '已保存，号池将用新出口'; toast('代理已保存', 'ok'); }
-    else { $('#pProxyMsg').textContent = d.msg || '保存失败'; toast('保存失败', 'err'); }
+    if (!d.ok){
+      $('#pProxyMsg').textContent = d.msg || '保存失败';
+      toast('保存失败', 'err');
+    } else if (d.proxy_ok === false){
+      // 填了地址却连不上：多半是端口不对或代理没启动，当场说清楚
+      $('#pProxyMsg').textContent = d.msg || '已保存，但连不上';
+      toast('代理连不上，检查端口或代理是否在运行', 'err');
+    } else {
+      $('#pProxyMsg').textContent = d.msg || '已保存';
+      toast(d.msg || '代理已保存', 'ok');
+      if ($('#pProxy').value.trim()) refreshQuotaAfterProxy();
+    }
   }catch(e){ $('#pProxyMsg').textContent = e.message; }
-  finally{ btn.disabled = false; await loadPoolPanel(true); }
+  finally{ btn.disabled = false; btn.textContent = old; await loadPoolPanel(true); }
 };
 $('#pProxyTest').onclick = async ()=>{
   const btn = $('#pProxyTest'); btn.disabled = true;
