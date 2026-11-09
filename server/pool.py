@@ -603,13 +603,16 @@ class PoolManager:
 
     # ---------- 并行数（用户可调） ----------
     def valid_accounts(self) -> int:
-        """有效账号数 = 状态为可用（非限流/离线）的号。
+        """有效账号数 = 能出图的号（可用 + 正在出图中）。
 
-        明细拿不到时退回号池自报的 active（/health 汇总）；都拿不到就是 0。
+        「正在出图」也是有效账号，不能因为它在忙就从上限里扣掉：否则一边出图
+        一边上限往下掉，用户刚设好的并行数会被自己压回去。
+        限流 / 已下线 / 未绑定 / 待验证 / 异常这些才算无效。
         """
-        ready = sum(1 for a in self.accounts if a.get("status") == "ready")
-        if ready:
-            return ready
+        if self.accounts:
+            return sum(1 for a in self.accounts
+                       if a.get("status") in ("ready", "busy"))
+        # 账号明细拿不到时退回号池自报的可用数
         try:
             return int(self.pool_stat.get("active") or 0)
         except Exception:
@@ -650,10 +653,10 @@ class PoolManager:
             save_config({"workers": target})
             if target != old:
                 log(f"并行数 {old} → {target}"
-                    + (f"（请求 {want}，按可用账号 {cap} 收紧）" if target != want else ""))
+                    + (f"（请求 {want}，按有效账号 {cap} 收紧）" if target != want else ""))
         msg = f"并行上限已设为 {target}"
         if want > cap:
-            msg = f"最多 {cap} 个：并行数不能超过可用账号数，已按 {cap} 执行"
+            msg = f"最多 {cap} 个：并行数不能超过有效账号数，已按 {cap} 执行"
         return {"ok": True, "workers": target, "max": cap, "requested": want,
                 "prev": old, "clamped": want > cap, "message": msg}
 

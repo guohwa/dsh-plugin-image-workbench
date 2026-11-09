@@ -1003,7 +1003,7 @@
       <button class="btn ghost mini" id="monClose" type="button">关闭</button>
     </div>
     <div class="mon-sum" id="monSum"></div>
-    <!-- 并行上限：默认 3，可自行加减。上限跟着可用账号数走，超了自动压回来 -->
+    <!-- 并行上限：默认 3，可自行加减。上限跟着有效账号数走（在出图的号也算），超了自动压回来 -->
     <div class="mon-wbar">
       <span class="wlbl">并行上限</span>
       <div class="wctl">
@@ -1011,7 +1011,7 @@
         <input id="monW" type="number" min="1" step="1" inputmode="numeric" aria-label="并行上限">
         <button type="button" class="wbtn" id="monWUp" title="加 1" aria-label="并行上限加 1">+</button>
       </div>
-      <span class="whint" id="monWHint">默认 3，最多不超过可用账号数</span>
+      <span class="whint" id="monWHint">默认 3，最多不超过有效账号数</span>
     </div>
     <div class="mon-sec"><b>账号状态</b><span id="monAccHint"></span><span class="spacer"></span><span id="monCheckHint"></span></div>
     <div class="mon-box">
@@ -3944,7 +3944,7 @@ async function stopAllJobs(){
 const ST_LABEL = {ready:'可用', busy:'出图中', limited:'限流', unhealthy:'已下线', unbound:'未绑定', pending:'待验证', error:'异常'};
 let monTimer = null;
 
-/* ---------- 并行上限：默认 3，用户可调，封顶 = 可用账号数 ---------- */
+/* ---------- 并行上限：默认 3，用户可调，封顶 = 有效账号数（在出图的号也算有效） ---------- */
 let _wBusy = false, _wLast = null, _wHintTimer = null;
 
 function syncWorkersCtl(d){
@@ -3966,8 +3966,8 @@ function syncWorkersCtl(d){
   const over = cur > cap;
   hint.className = 'whint' + (over ? ' warn' : '');
   hint.textContent = over
-    ? `当前 ${cur} 个，已超过可用账号 ${cap} 个，建议调低`
-    : `默认 3，最多 ${cap} 个${valid ? `（可用账号 ${valid} 个）` : ''}`;
+    ? `当前 ${cur} 个，已超过有效账号 ${cap} 个，建议调低`
+    : `默认 3，最多 ${cap} 个${valid ? `（有效账号 ${valid} 个）` : ''}`;
 }
 
 function flashWorkersHint(ms){
@@ -4058,7 +4058,7 @@ function renderMonitor(d){
   $('#monSum').innerHTML =
       kpi('账号可用', `${kReady}/${kTotal}`, kReady ? 'ok' : 'err')
     + kpi('并行任务', `${run.length}/${d.workers || 1}`, run.length ? 'warn' : '',
-          '并行上限可调：改下面那条「并行上限」的 − / + 或直接填数字，最多不超过可用账号数')
+          '并行上限可调：改下面那条「并行上限」的 − / + 或直接填数字，最多不超过有效账号数')
     + kpi('排队', d.queued || 0, d.queued ? 'warn' : '')
     + kpi('今日成功', hist.today_done || 0, 'ok')
     + kpi('今日失败', hist.today_error || 0, hist.today_error ? 'err' : '')
