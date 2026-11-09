@@ -45,4 +45,11 @@ jobs:
             echo "::warning::未配置 NPM_TOKEN，跳过发布"
             exit 0
           fi
+          PKG=$(node -p "require('./package.json').version")
+          NAME=$(node -p "require('./package.json').name")
+          # 该版本已经发过就直接跳过，避免手工补发后打 tag 时因重复版本报错
+          if npm view "$NAME@$PKG" version >/dev/null 2>&1; then
+            echo "::notice::$NAME@$PKG 已发布，跳过"
+            exit 0
+          fi
           npm publish --access public
