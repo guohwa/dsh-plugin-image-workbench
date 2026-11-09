@@ -175,7 +175,10 @@ export function apply(ctx, config = {}) {
     try {
       const text = readFileSync(file, 'utf8');
       const rows = text.trimEnd().split('\n');
-      return rows.slice(-12).join('\n').slice(-limit);
+      // 同一行反复出现（后端每次退出都写一条）时只留一条，否则日志等于噪音
+      const out = [];
+      for (const r of rows) if (out[out.length - 1] !== r) out.push(r);
+      return out.slice(-12).join('\n').slice(-limit);
     } catch { return ''; }
   }
 
@@ -192,6 +195,52 @@ export function apply(ctx, config = {}) {
       join(dir, '.venv', 'Scripts', 'python.exe'),
       join(dir, '.venv', 'bin', 'python'),
     ]);
+  }
+
+  /**
+   * 这个解释器能不能真跑起后端。
+   *
+   * 只看 python.exe 存在是不够的：上一轮装依赖失败时 venv 目录已经建好，
+   * 里面却没有 uvicorn，于是每次启动都报 "No module named uvicorn"，
+   * 而代码以为环境已就绪，永远不会去补装。
+   */
+  async function venvUsable(py, cwd) {
+    if (!py) return false;
+    const r = await runCmd(py, ['-c', 'import fastapi, uvicorn'], cwd, 30000);
+    return r.ok;
+  }
+
+  /**
+   * 依赖源候选，按「国内镜像直连 → 官方 PyPI 走代理 → 官方直连」排列。
+   *
+   * 关键点：镜像站不能走代理。走代理访问清华镜像会拿到 403，
+   * uv 看到的就是 "fastapi was not found in the package registry"，
+   * 报错完全指不到真正原因（实测第三次装机就是这么卡住的）。
+   */
+  function indexCandidates(proxy) {
+    const custom = (process.env.DSH_IMAGE_PYPI_INDEX || '').trim();
+    const list = [];
+    if (custom) list.push({ url: custom, label: '自定义源', proxy: false });
+    list.push({ url: 'https://pypi.tuna.tsinghua.edu.cn/simple', label: '清华镜像', proxy: false });
+    list.push({ url: 'https://mirrors.aliyun.com/pypi/simple', label: '阿里云镜像', proxy: false });
+    if (proxy) list.push({ url: 'https://pypi.org/simple', label: '官方 PyPI', proxy: true });
+    list.push({ url: 'https://pypi.org/simple', label: '官方 PyPI', proxy: false });
+    return list;
+  }
+
+  /** 按候选源准备 env：镜像直连（清掉代理变量），官方源才挂代理。 */
+  function envForIndex(base, cand, proxy) {
+    const env = { ...base };
+    env.UV_DEFAULT_INDEX_URL = cand.url;   // 覆盖宿主可能带进来同名变量
+    const keys = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy'];
+    if (cand.proxy && proxy) {
+      env.HTTPS_PROXY = proxy; env.HTTP_PROXY = proxy;
+    } else {
+      for (const k of keys) delete env[k];
+    }
+    env.NO_PROXY = env.no_proxy =
+      'pypi.tuna.tsinghua.edu.cn,mirrors.aliyun.com,pypi.org,files.pythonhosted.org,127.0.0.1,localhost';
+    return env;
   }
   function runCmd(command, args, cwd, timeoutMs = 240000, env = null) {
     return new Promise(done => {
@@ -294,7 +343,10 @@ export function apply(ctx, config = {}) {
     venvState.attempts += 1;
 
     const existing = venvPython(state.serverDir);
-    if (existing) { venvState.ok = true; venvState.message = ''; state.python = existing; return; }
+    if (existing && await venvUsable(existing, state.serverDir)) {
+      venvState.ok = true; venvState.message = ''; venvState.error = ''; state.python = existing;
+      return;
+    }
     if (process.env.DSH_IMAGE_SKIP_VENV === '1') {
       venvState.message = '已按 DSH_IMAGE_SKIP_VENV 跳过环境初始化';
       return;
@@ -323,33 +375,57 @@ export function apply(ctx, config = {}) {
       + `，系统 Python=${sys ? sys.exe + ' (' + sys.version + ')' : '未找到'}`
       + `，代理=${proxy || '无'}`);
 
-    const vArgs = ['venv', join(state.serverDir, '.venv')];
-    if (sys) vArgs.push('--python', sys.exe);
-    const v = await runCmd(uv, vArgs, state.serverDir, 180000, uvEnv);
-    if (!v.ok) {
-      logLine('uv venv 失败：' + v.tail);
-      venvState.error = (v.tail || '').slice(-400);
-      fail('创建 Python 环境失败' + (sys ? '' : '：本机没找到 Python 3.10+，自动下载也没成功')
-           + '（详见 venv.log）');
-      return;
+    // 已有 python 就直接补装依赖：最常见的失败是 venv 建好了、包没装上，
+    // 这时重建多余，还可能被 uv 的「目录已存在」拦下来。
+    let py = existing;
+    if (!py) {
+      const venvDir = join(state.serverDir, '.venv');
+      const vArgs = ['venv', venvDir];
+      if (existsSync(venvDir)) vArgs.push('--clear');   // 目录在却没有 python：清掉重建
+      if (sys) vArgs.push('--python', sys.exe);
+      const v = await runCmd(uv, vArgs, state.serverDir, 180000, uvEnv);
+      if (!v.ok) {
+        logLine('uv venv 失败：' + v.tail);
+        venvState.error = (v.tail || '').slice(-400);
+        fail('创建 Python 环境失败' + (sys ? '' : '：本机没找到 Python 3.10+，自动下载也没成功')
+             + '（详见 venv.log）');
+        return;
+      }
+      py = venvPython(state.serverDir);
     }
-    const py = venvPython(state.serverDir);
     if (!py) {
       venvState.error = 'venv 目录里没有 python 可执行文件';
       fail('环境目录建好了但里面没有 python（详见 venv.log）');
       return;
     }
-    const i = await runCmd(uv, ['pip', 'install', '--python', py, '-r', req,
-                                '--index-url', 'https://pypi.tuna.tsinghua.edu.cn/simple'],
-                           state.serverDir, 240000, uvEnv);
-    if (i.ok) {
-      logLine('工作台后端依赖已装好');
-      venvState.ok = true; venvState.message = ''; venvState.error = ''; state.python = py;
-    } else {
-      logLine('依赖安装失败：' + i.tail);
-      venvState.error = (i.tail || '').slice(-400);
-      fail('安装后端依赖失败（多为网络问题，详见 venv.log）');
+    state.python = py;
+
+    // 依赖安装：国内镜像直连 → 官方源（有代理就经代理）→ 官方直连。
+    // 逐个试；装完必须真能 import 才算成功，uv 返回 0 却没装上的情况见过。
+    let lastTail = '', used = '';
+    for (const cand of indexCandidates(proxy)) {
+      logLine('安装后端依赖：' + cand.label + '（' + (cand.proxy ? '经代理 ' + proxy : '直连') + '）');
+      const r = await runCmd(uv, ['pip', 'install', '--python', py, '-r', req,
+                                  '--index-url', cand.url],
+                             state.serverDir, 300000, envForIndex(uvEnv, cand, proxy));
+      if (r.ok && await venvUsable(py, state.serverDir)) { used = cand.label; break; }
+      lastTail = r.ok ? '依赖装完仍无法 import fastapi/uvicorn' : (r.tail || '').slice(-400);
+      logLine('  ' + cand.label + ' 失败：'
+        + (r.tail || '装完仍无法 import uvicorn').replace(/\s+/g, ' ').slice(-200));
+      if (/403|forbidden/i.test(r.tail || '')) {
+        logLine('  ↑ 镜像站被代理拦了（403），下一个源改用直连');
+      }
     }
+    if (used) {
+      logLine('工作台后端依赖已装好（' + used + '）');
+      venvState.ok = true; venvState.message = ''; venvState.error = ''; state.python = py;
+      return;
+    }
+    venvState.error = lastTail;
+    fail(/403|forbidden/i.test(lastTail)
+      ? '镜像站被代理拦住（403）导致依赖装不上。可先关掉代理重试，'
+        + '或用 DSH_IMAGE_PYPI_INDEX 指定一个能直连的源（详见 venv.log）'
+      : '安装后端依赖失败（网络不通或依赖源不可用，详见 venv.log）');
   }
 
   /** 拉起生图工作台后端（8092）。 */
@@ -360,13 +436,15 @@ export function apply(ctx, config = {}) {
     if (state.serverChild && !state.serverChild.killed) return { running: false, started: true, reason: '工作台正在启动中' };
     await ensureServerVenv(force);
     if (!venvState.ok) {
-      // 环境没建好时，只能用现成的解释器兜底；连它都没有就别 spawn 了，
-      // 否则报的是 ENOENT，看不出真正的原因。
-      const usable = await pythonVersion(state.python);
-      if (!usable) {
+      // 环境没建好时只能用现成解释器兜底，但它必须真有 fastapi/uvicorn，
+      // 否则 spawn 出来只会得到 "No module named uvicorn"，用户看不出根因。
+      const ver = await pythonVersion(state.python);
+      const pkg = ver ? await venvUsable(state.python, state.serverDir) : false;
+      if (!pkg) {
         return { running: false, started: false,
                  reason: (venvState.message || '本机没有可用的 Python 3.10+') + '，后端无法启动' };
       }
+      venvState.ok = true;
     }
     if (force) stopChild();
     try {

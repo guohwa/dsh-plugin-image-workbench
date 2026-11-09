@@ -660,51 +660,104 @@ def _find_python313() -> str:
     return ""
 
 
+def _venv_ready(src: Path) -> bool:
+    """虚拟环境是否真的能跑号池。
+
+    只看 python.exe 存在不够：上一轮装依赖失败时目录已经建好、包却没装上，
+    之后每次启动都是 "No module named uvicorn"，而代码以为环境已就绪。
+    """
+    py = _venv_python(src)
+    if not py:
+        return False
+    try:
+        r = subprocess.run([py, "-c", "import fastapi, uvicorn"], cwd=str(src),
+                           capture_output=True, text=True, timeout=90,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def _index_candidates(proxy: str) -> list[tuple[str, str, bool]]:
+    """依赖源候选：(标签, 索引地址, 是否走代理)。
+
+    镜像站必须直连。经代理访问清华镜像会返回 403，uv 只会说
+    「fastapi 不在 registry 里」，报错完全指不到真正原因。
+    """
+    out: list[tuple[str, str, bool]] = []
+    custom = (os.environ.get("DSH_IMAGE_PYPI_INDEX") or "").strip()
+    if custom:
+        out.append(("自定义源", custom, False))
+    out.append(("清华镜像", "https://pypi.tuna.tsinghua.edu.cn/simple", False))
+    out.append(("阿里云镜像", "https://mirrors.aliyun.com/pypi/simple", False))
+    if proxy:
+        out.append(("官方 PyPI", "https://pypi.org/simple", True))
+    out.append(("官方 PyPI", "https://pypi.org/simple", False))
+    return out
+
+
 def _ensure_venv(home: Path, src: Path, uv: str) -> dict:
     """用插件自带的 uv 按 lock 建独立虚拟环境，全程不需要第三方插件。"""
-    if _venv_python(src):
+    if _venv_ready(src):
         return {"ok": True, "message": ""}
     if not uv:
         return {"ok": False, "message": "号池运行时缺 uv，且系统 PATH 里也找不到 uv。"
                                        "请重新完整安装工作台插件（vendor/chatgpt2api/runtime/）。"}
-    env = os.environ.copy()
-    env["UV_CACHE_DIR"] = str(home / "uv-cache")
-    env["UV_PYTHON_DOWNLOADS"] = "automatic"   # 全新机器允许 uv 自己取 Python 3.13
-    env.setdefault("UV_HTTP_TIMEOUT", "120")
-    # 国内网络下 pypi.org 直连不稳，依赖走清华镜像（与 host.js 初始化后端依赖一致）。
-    # 用 setdefault 不覆盖用户已自定义的环境变量。
-    env.setdefault("UV_DEFAULT_INDEX_URL", "https://pypi.tuna.tsinghua.edu.cn/simple")
+    base = os.environ.copy()
+    base["UV_CACHE_DIR"] = str(home / "uv-cache")
+    base["UV_PYTHON_DOWNLOADS"] = "automatic"   # 全新机器允许 uv 自己取 Python 3.13
+    base.setdefault("UV_HTTP_TIMEOUT", "120")
     # 允许用户指定 Python 运行时的下载镜像（UV_PYTHON_INSTALL_MIRROR）。
     # 国内直连 GitHub Releases 经常下不动 3.13，这里跟 host.js 用同一个开关。
     mirror = (os.environ.get("DSH_IMAGE_PYTHON_MIRROR") or "").strip()
     if mirror:
-        env["UV_PYTHON_INSTALL_MIRROR"] = mirror
+        base["UV_PYTHON_INSTALL_MIRROR"] = mirror
     # 系统未设出口代理时，探测本机常见代理（Shadowsocks/Clash/privoxy 等）并注入 uv，
-    # 让 uv 能经代理下载 Python 3.13 运行时，覆盖“开了代理但没设环境变量”的典型场景。
-    if not _env_egress_proxy():
+    # 让 uv 能经代理下载 Python 3.13 运行时，覆盖「开了代理但没设环境变量」的典型场景。
+    proxy = _env_egress_proxy()
+    if not proxy:
         for cand in _local_proxy_candidates():
-            env["HTTPS_PROXY"] = cand
-            env["HTTP_PROXY"] = cand
+            proxy = cand
             break
+
     cmd = [uv, "sync", "--frozen", "--no-dev"]
     py = _find_python313()
     if py:
         cmd += ["--python", py]
     log("开始建号池虚拟环境：" + " ".join(cmd[1:]))
-    try:
-        r = subprocess.run(cmd, cwd=str(src), env=env, capture_output=True,
-                           text=True, timeout=600,
-                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    except Exception as e:
-        return {"ok": False, "message": "号池依赖安装失败：" + pool_mod.mask(e)[:140]}
-    if not _venv_python(src):
-        tail = ((r.stderr or "") + "\n" + (r.stdout or "")).strip()[-400:]
-        log("uv sync 失败：" + tail.replace("\n", " ")[:300])
-        return {"ok": False,
-                "message": "号池虚拟环境没建起来。多半是 Python 3.13 或网络问题，"
-                           "日志见 pool-service.log。原始输出：" + tail}
-    log("号池虚拟环境已就绪：" + _venv_python(src))
-    return {"ok": True, "message": ""}
+    proxy_keys = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy",
+                  "ALL_PROXY", "all_proxy")
+    no_proxy = ("pypi.tuna.tsinghua.edu.cn,mirrors.aliyun.com,pypi.org,"
+                "files.pythonhosted.org,127.0.0.1,localhost")
+    last = ""
+    for label, index, via_proxy in _index_candidates(proxy):
+        env = dict(base)
+        env["UV_DEFAULT_INDEX_URL"] = index
+        if via_proxy and proxy:
+            env["HTTPS_PROXY"] = proxy
+            env["HTTP_PROXY"] = proxy
+        else:
+            for k in proxy_keys:
+                env.pop(k, None)
+        env["NO_PROXY"] = env["no_proxy"] = no_proxy
+        log("号池依赖源：%s（%s）" % (label, ("经代理 " + proxy) if (via_proxy and proxy) else "直连"))
+        try:
+            r = subprocess.run(cmd, cwd=str(src), env=env, capture_output=True,
+                               text=True, timeout=600,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except Exception as e:
+            last = pool_mod.mask(e)[:160]
+            log("号池依赖安装异常：" + last)
+            continue
+        if _venv_ready(src):
+            log("号池虚拟环境已就绪：" + str(_venv_python(src)) + "（" + label + "）")
+            return {"ok": True, "message": ""}
+        last = (((r.stderr or "") + "\n" + (r.stdout or "")).strip()[-400:]
+                or "装完仍缺 fastapi/uvicorn")
+        log("  " + label + " 失败：" + last.replace("\n", " ")[:280])
+    return {"ok": False,
+            "message": "号池虚拟环境没建起来（依赖源被拒或网络不通）。"
+                       "日志见 pool-service.log。原始输出：" + last}
 
 
 def bootstrap(home: Path) -> dict:
@@ -865,6 +918,9 @@ def start(force: bool = False) -> dict:
             stop(mark_user_stop=False)
 
         rt = runtime(home)
+        # 目录存在不等于依赖齐了：半装的 venv 会让号池一起来就报 No module named uvicorn
+        if rt["ready"] and not _venv_ready(Path(rt["source"])):
+            rt = dict(rt, ready=False, reason="号池虚拟环境缺依赖，正在补齐")
         if not rt["ready"]:
             b = bootstrap(home)
             if not b["ok"]:

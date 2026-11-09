@@ -210,6 +210,8 @@ Principal backend routes are listed below. The complete definitions are in `serv
 | Plugin manager reports a GitHub connection timeout | Download the repository archive from a mirror and run `node install.mjs` inside it |
 | Code stops taking effect after moving the installation directory | Re-run `node install.mjs`; the directory junction is rebuilt to the current path |
 | "Built-in pool not ready" | Start the pool under "Endpoint & Pool -> Local Pool"; allow time for first-run environment initialization |
+| Dependency install reports `fastapi was not found in the package registry` or an index returns 403 | The proxy is blocking the mirror. Sources are tried in order automatically (mirrors direct -> official PyPI via proxy -> official PyPI direct); if all fail, point `DSH_IMAGE_PYPI_INDEX` at a reachable index |
+| Repeats `No module named uvicorn` | An empty environment left behind by a failed install. 1.1.2 detects and repairs it automatically; on older versions delete `server/.venv` and restart DSH |
 | Account quotas stay at 0 and show "used up" | The outbound proxy is not in effect or the port is wrong. Re-enter the address under "Local Pool -> Pool outbound proxy" and save; the connectivity check runs on save and quotas are recalculated once it passes |
 | Generation returns 401 | Reissue the API key in the panel, or verify the third-party endpoint key |
 | Pool online but generation fails | Usually a missing outbound proxy or exhausted quota; check the proxy in `source/config.json` and read `pool-service.log` |
