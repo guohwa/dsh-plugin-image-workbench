@@ -517,6 +517,20 @@ async def api_pool_refresh():
     return JSONResponse(POOL.snapshot())
 
 
+# 并行数：默认 3，可调，上限 = 可用账号数。调完立即生效（不重启）
+class WorkersBody(BaseModel):
+    workers: int = 0
+
+
+@app.post("/api/pool/workers")
+async def api_pool_workers(body: WorkersBody):
+    res = await POOL.set_workers(body.workers)
+    # 带一份最新快照回去，前端不用再等下一轮轮询
+    res["snapshot"] = {"workers": POOL.workers, "workers_max": POOL.workers_cap(),
+                       "queued": POOL.snapshot()["queued"]}
+    return JSONResponse(res)
+
+
 @app.get("/api/pool/fails")
 async def api_pool_fails(days: int = 7):
     """账号失败账本：今天每个号失败几次、最近几天各失败几次。

@@ -457,6 +457,24 @@
   .mon-kpi span{display:block;font-size:10.5px;color:var(--ink-3)}
   .mon-kpi b{font-size:17px;letter-spacing:.4px}
   .mon-kpi b.ok{color:var(--ok)} .mon-kpi b.warn{color:var(--warn)} .mon-kpi b.err{color:var(--err)}
+  /* 并行上限控制条：夹在 KPI 和账号表之间，一行放下，窄屏自动换行 */
+  .mon-wbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    border:1px solid var(--line);border-radius:11px;padding:6px 10px;background:#fbfaff;margin:0 0 2px}
+  .mon-wbar .wlbl{font-size:11px;color:var(--ink-3)}
+  .mon-wbar .wctl{display:flex;align-items:center;gap:1px;border:1px solid var(--line);
+    background:#fff;border-radius:9px;padding:2px}
+  .mon-wbar .wbtn{width:22px;height:22px;border:0;background:transparent;color:var(--ink-2);
+    font-size:14px;line-height:1;border-radius:7px;cursor:pointer;padding:0}
+  .mon-wbar .wbtn:hover:not(:disabled){background:var(--chip);color:var(--primary)}
+  .mon-wbar .wbtn:disabled{opacity:.35;cursor:not-allowed}
+  .mon-wbar #monW{width:42px;height:22px;border:0;background:transparent;text-align:center;
+    font:600 13px/1 inherit;color:var(--primary);outline:none;padding:0}
+  .mon-wbar #monW::-webkit-outer-spin-button,.mon-wbar #monW::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  .mon-wbar #monW:focus{background:var(--chip);border-radius:7px}
+  .mon-wbar .whint{font-size:10.5px;color:var(--ink-3);line-height:1.5}
+  .mon-wbar .whint.ok{color:var(--ok)}
+  .mon-wbar .whint.err{color:var(--err)}
+  .mon-wbar .whint.warn{color:var(--warn)}
   .mon-sec{display:flex;align-items:center;gap:8px;margin:12px 0 6px;font-size:12px}
   .mon-sec span{font-size:11px;color:var(--ink-3)}
   .mon-sec .spacer{flex:1}
@@ -985,6 +1003,16 @@
       <button class="btn ghost mini" id="monClose" type="button">关闭</button>
     </div>
     <div class="mon-sum" id="monSum"></div>
+    <!-- 并行上限：默认 3，可自行加减。上限跟着可用账号数走，超了自动压回来 -->
+    <div class="mon-wbar">
+      <span class="wlbl">并行上限</span>
+      <div class="wctl">
+        <button type="button" class="wbtn" id="monWDown" title="减 1" aria-label="并行上限减 1">−</button>
+        <input id="monW" type="number" min="1" step="1" inputmode="numeric" aria-label="并行上限">
+        <button type="button" class="wbtn" id="monWUp" title="加 1" aria-label="并行上限加 1">+</button>
+      </div>
+      <span class="whint" id="monWHint">默认 3，最多不超过可用账号数</span>
+    </div>
     <div class="mon-sec"><b>账号状态</b><span id="monAccHint"></span><span class="spacer"></span><span id="monCheckHint"></span></div>
     <div class="mon-box">
       <table class="mon">
@@ -3916,8 +3944,92 @@ async function stopAllJobs(){
 const ST_LABEL = {ready:'可用', busy:'出图中', limited:'限流', unhealthy:'已下线', unbound:'未绑定', pending:'待验证', error:'异常'};
 let monTimer = null;
 
-function kpi(label, val, cls){
-  return `<div class="mon-kpi"><span>${label}</span><b class="${cls || ''}">${val}</b></div>`;
+/* ---------- 并行上限：默认 3，用户可调，封顶 = 可用账号数 ---------- */
+let _wBusy = false, _wLast = null, _wHintTimer = null;
+
+function syncWorkersCtl(d){
+  _wLast = d;
+  const inp = $('#monW'); if (!inp) return;
+  const cap = Math.max(1, Number(d.workers_max || d.workers || 3));
+  const cur = Math.max(1, Number(d.workers || 3));
+  const valid = Number(d.valid_accounts || 0);
+  inp.max = cap;
+  // 正在输入或正在提交时不覆盖，免得把用户打到一半的数字顶掉
+  if (document.activeElement !== inp && !_wBusy){
+    inp.value = cur;
+    inp.dataset.saved = cur;
+  }
+  $('#monWDown').disabled = cur <= 1;
+  $('#monWUp').disabled = cur >= cap;
+  if (_wHintTimer) return;            // 刚保存过，提示文字留给它自己过期
+  const hint = $('#monWHint');
+  const over = cur > cap;
+  hint.className = 'whint' + (over ? ' warn' : '');
+  hint.textContent = over
+    ? `当前 ${cur} 个，已超过可用账号 ${cap} 个，建议调低`
+    : `默认 3，最多 ${cap} 个${valid ? `（可用账号 ${valid} 个）` : ''}`;
+}
+
+function flashWorkersHint(ms){
+  clearTimeout(_wHintTimer);
+  _wHintTimer = setTimeout(()=>{
+    _wHintTimer = null;
+    if (_wLast) syncWorkersCtl(_wLast);
+  }, ms);
+}
+
+async function saveWorkers(v){
+  const inp = $('#monW'), hint = $('#monWHint');
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n) || n < 1){
+    hint.className = 'whint err'; hint.textContent = '并行数至少 1';
+    flashWorkersHint(2600); return;
+  }
+  if (_wBusy) return;
+  _wBusy = true;
+  hint.className = 'whint'; hint.textContent = '保存中…';
+  try{
+    const r = await fetch('/api/pool/workers', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({workers:n})});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+    inp.value = d.workers;
+    inp.dataset.saved = d.workers;
+    hint.className = 'whint ' + (d.clamped ? 'warn' : 'ok');
+    hint.textContent = d.message || ('并行上限已设为 ' + d.workers);
+    flashWorkersHint(4200);
+  }catch(e){
+    hint.className = 'whint err';
+    hint.textContent = '没存上：' + ((e && e.message) || e);
+    flashWorkersHint(5200);
+  }finally{
+    _wBusy = false;
+  }
+}
+
+function bindWorkersCtl(){
+  const inp = $('#monW'); if (!inp || inp._bound) return;
+  inp._bound = 1;
+  const step = (delta) => {
+    const v = Math.round(Number(inp.value) || 0) + delta;
+    inp.value = v;
+    saveWorkers(v);
+  };
+  $('#monWUp').onclick = () => step(1);
+  $('#monWDown').onclick = () => step(-1);
+  inp.addEventListener('change', () => {
+    // 回车已经存过一遍，失焦时别再发一次
+    if (Number(inp.value) === Number(inp.dataset.saved || 0)) return;
+    saveWorkers(inp.value);
+  });
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter'){ e.preventDefault(); saveWorkers(inp.value); inp.blur(); }
+    if (e.key === 'Escape'){ e.preventDefault(); inp.blur(); }
+  });
+}
+
+function kpi(label, val, cls, tip){
+  return `<div class="mon-kpi"${tip ? ` title="${tip}"` : ''}><span>${label}</span><b class="${cls || ''}">${val}</b></div>`;
 }
 
 function agoText(ts){
@@ -3945,11 +4057,13 @@ function renderMonitor(d){
   const kTotal = accs.length ? accs.filter(a=>a.env_id).length : Number(poolS.total || 0);
   $('#monSum').innerHTML =
       kpi('账号可用', `${kReady}/${kTotal}`, kReady ? 'ok' : 'err')
-    + kpi('并行任务', `${run.length}/${d.workers || 1}`, run.length ? 'warn' : '')
+    + kpi('并行任务', `${run.length}/${d.workers || 1}`, run.length ? 'warn' : '',
+          '并行上限可调：改下面那条「并行上限」的 − / + 或直接填数字，最多不超过可用账号数')
     + kpi('排队', d.queued || 0, d.queued ? 'warn' : '')
     + kpi('今日成功', hist.today_done || 0, 'ok')
     + kpi('今日失败', hist.today_error || 0, hist.today_error ? 'err' : '')
     + kpi('历史总量', hist.total || 0, '');
+  syncWorkersCtl(d);
 
   let lastUsedAcc = null;
   for (const a of accs){
@@ -4073,6 +4187,7 @@ async function refreshMonitor(){
 }
 
 async function openMonitor(){
+  bindWorkersCtl();
   $('#monitorDlg').showModal();
   await refreshMonitor();
   scheduleMonitor();

@@ -35,9 +35,17 @@ STATE_FILE = BASE / "workbench" / "pending_jobs.json"
 DEFAULT_POOL_DIR = Path(os.environ.get(
     "DSH_IMAGE_POOL_DIR", str(Path.home() / ".dsh" / "chatgpt2api-image")))
 
-# 号池 config.json 里 image_account_concurrency=3，本地 worker 与它对齐，
-# 再多也不会更快，只会让上游排队。
-WORKERS = max(1, min(3, int(os.environ.get("WORKBENCH_WORKERS", "3") or 3)))
+# 并行数（worker 个数）现在由用户自己定：默认 3，写进 config.local.json 的 workers。
+# 上限 = 有效账号数（可用账号），一个号同时只出一张图；账号明细读不到时退回默认值，
+# 不会因为一次探测失败就把用户设置判成非法。绝对硬顶防止手抖填出四位数。
+WORKERS_DEFAULT = 3
+WORKERS_ABS_MAX = 40
+# 兼容旧引用（环境变量仍可给个初值）
+WORKERS = max(1, min(WORKERS_ABS_MAX,
+                     int(os.environ.get("WORKBENCH_WORKERS", WORKERS_DEFAULT) or WORKERS_DEFAULT)))
+# 队列里的「提前下班」令牌：并行上限下调时塞进队列，worker 取到它就退出。
+# 用令牌而不是 cancel 任务，是为了不打断正在出图的那张（cancel 会连带杀掉在途请求）
+RETIRE_TOKEN = "__wb_retire__"
 IMAGE_TIMEOUT = 300      # 实测单张 45~62 秒，留足余量
 TEXT_TIMEOUT = 180
 # 失败不中断任务：重新排队就是换号（号池按 round-robin 取号），最多换 3 轮。
@@ -333,6 +341,8 @@ def load_config() -> dict:
         "edits_style": "auto",            # auto | json | multipart | off
         "image_response_format": "auto",  # auto | b64_json | url
         "monitor_mode": "auto",           # auto | pool | single
+        # 并行出图数（worker 个数）：默认 3，上限由「可用账号数」决定
+        "workers": WORKERS,
     }
     if CONFIG_FILE.exists():
         try:
@@ -340,6 +350,39 @@ def load_config() -> dict:
         except Exception as e:
             log(f"config.local.json 读取失败: {e}")
     return cfg
+
+
+def save_config(updates: dict) -> dict:
+    """把若干键合并写回 config.local.json（原子替换），返回写后的完整配置。
+
+    只做浅合并：别的键原样留着，不会因为存一个并行数就把接口配置抹掉。
+    """
+    cfg: dict = {}
+    if CONFIG_FILE.exists():
+        try:
+            got = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            if isinstance(got, dict):
+                cfg = got
+        except Exception as e:
+            log(f"config.local.json 读取失败（准备覆盖写）: {e}")
+    cfg.update(updates or {})
+    try:
+        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = CONFIG_FILE.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        tmp.replace(CONFIG_FILE)
+    except Exception as e:
+        log(f"config.local.json 写入失败: {mask(e)[:160]}")
+    return cfg
+
+
+def workers_from_cfg() -> int:
+    """启动时的并行数：配置里存的值优先，非法值一律退回默认 3。"""
+    try:
+        n = int(load_config().get("workers") or WORKERS_DEFAULT)
+    except Exception:
+        n = WORKERS_DEFAULT
+    return max(1, min(WORKERS_ABS_MAX, n))
 
 
 def _read_pool_user_key(cfg: dict) -> str:
@@ -512,6 +555,11 @@ class PoolManager:
         self.queue: asyncio.Queue[str] = asyncio.Queue()
         self.running: dict[str, dict] = {}
         self._workers: list[asyncio.Task] = []
+        # 并行数：用户可调，持久化在 config.local.json 的 workers
+        self.workers: int = workers_from_cfg()
+        self._wid_seq: int = 0          # worker 编号只增不减，日志里对得上
+        self._retire_pending: int = 0   # 队列里还没被取走的「提前下班」令牌数
+        self._workers_lock = asyncio.Lock()
         # 正在执行的单个任务：手动停止时只取消它，不杀 worker，队列才能继续接新活
         self._job_tasks: dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
@@ -539,12 +587,76 @@ class PoolManager:
         await self.refresh_env_ids()
         await self.refresh_accounts(force=True)
         self._restore()
-        for i in range(WORKERS):
-            self._workers.append(asyncio.create_task(self._worker(i + 1)))
+        self.workers = workers_from_cfg()
+        for _ in range(self.workers):
+            self._spawn_worker()
         self._acct_task = asyncio.create_task(self._account_refresh_loop())
         p = provider_cfg()
-        log(f"本地执行层启动：{WORKERS} 个 worker，接口 {p['base_url']}"
+        log(f"本地执行层启动：{self.workers} 个 worker，接口 {p['base_url']}"
             f"（{p['name']}），已同步 {len(self.accounts)} 个账号")
+
+    def _spawn_worker(self) -> asyncio.Task:
+        self._wid_seq += 1
+        t = asyncio.create_task(self._worker(self._wid_seq))
+        self._workers.append(t)
+        return t
+
+    # ---------- 并行数（用户可调） ----------
+    def valid_accounts(self) -> int:
+        """有效账号数 = 状态为可用（非限流/离线）的号。
+
+        明细拿不到时退回号池自报的 active（/health 汇总）；都拿不到就是 0。
+        """
+        ready = sum(1 for a in self.accounts if a.get("status") == "ready")
+        if ready:
+            return ready
+        try:
+            return int(self.pool_stat.get("active") or 0)
+        except Exception:
+            return 0
+
+    def workers_cap(self) -> int:
+        """并行上限：不超过有效账号数（一个号同时只出一张图）。"""
+        n = self.valid_accounts()
+        if n <= 0:
+            # 账号明细暂时读不到时不收紧，免得一次探测失败就把用户的设置判成非法
+            return max(WORKERS_DEFAULT, self.workers)
+        return max(1, min(n, WORKERS_ABS_MAX))
+
+    async def set_workers(self, n: int) -> dict:
+        """改并行数：多的立刻拉起来，少的发「下班令牌」等它把手上的图出完再退。"""
+        async with self._workers_lock:
+            cap = self.workers_cap()
+            try:
+                want = int(n)
+            except Exception:
+                return {"ok": False, "workers": self.workers, "max": cap,
+                        "message": "并行数必须是整数"}
+            if want < 1:
+                return {"ok": False, "workers": self.workers, "max": cap,
+                        "message": "并行数至少 1"}
+            target = min(want, cap)
+            old = self.workers
+            # 已经退出的 worker 任务从列表里清掉，别让列表越堆越长
+            self._workers = [t for t in self._workers if not t.done()]
+            if target > old:
+                for _ in range(target - old):
+                    self._spawn_worker()
+            elif target < old:
+                for _ in range(old - target):
+                    self._retire_pending += 1
+                    await self.queue.put(RETIRE_TOKEN)
+            self.workers = target
+            save_config({"workers": target})
+            if target != old:
+                log(f"并行数 {old} → {target}"
+                    + (f"（请求 {want}，按可用账号 {cap} 收紧）" if target != want else ""))
+        msg = f"并行上限已设为 {target}"
+        if want > cap:
+            msg = f"最多 {cap} 个：并行数不能超过可用账号数，已按 {cap} 执行"
+        return {"ok": True, "workers": target, "max": cap, "requested": want,
+                "prev": old, "clamped": want > cap, "message": msg}
+
 
     # ---------- 任务落盘 / 恢复 ----------
     def _persist(self) -> None:
@@ -868,7 +980,7 @@ class PoolManager:
 
         账号状态只在这时候才会变，监控和后台同步据此决定刷多快。
         """
-        return bool(self.running) or self.queue.qsize() > 0
+        return bool(self.running) or (self.queue.qsize() - self._retire_pending) > 0
 
     async def refresh_accounts_throttled(self, busy_interval: float = 3.0,
                                          idle_interval: float = 20.0) -> None:
@@ -1003,8 +1115,12 @@ class PoolManager:
             "busy": len(self.running),
             # 「现在有活干」：正在出图或还有排队。别和 pool_stat 里的 active（可用账号数）搞混
             "running_now": self.is_busy(),
-            "workers": WORKERS,
-            "queued": self.queue.qsize(),
+            "workers": self.workers,
+            "workers_max": self.workers_cap(),
+            "workers_default": WORKERS_DEFAULT,
+            "valid_accounts": self.valid_accounts(),
+            # 队列里混着「下班令牌」，排队数只算真任务
+            "queued": max(0, self.queue.qsize() - self._retire_pending),
             "running": running,
             "current": current,
             "rr_index": self._rr_index,
@@ -1034,11 +1150,17 @@ class PoolManager:
         '''
         stopped: list[str] = []
         dropped = 0
+        retire_lost = 0
         while True:
             try:
                 jid = self.queue.get_nowait()
             except asyncio.QueueEmpty:
                 break
+            if jid == RETIRE_TOKEN:
+                # 下班令牌不是任务，别当洪水清掉：并行数下调的意图还得兑现
+                retire_lost += 1
+                self.queue.task_done()
+                continue
             job = self.jobs.get(jid)
             if job and job.get("status") in ("queued", "running"):
                 job.update({"status": "cancelled", "error": reason,
@@ -1046,6 +1168,8 @@ class PoolManager:
                 stopped.append(jid)
                 dropped += 1
             self.queue.task_done()
+        for _ in range(retire_lost):
+            await self.queue.put(RETIRE_TOKEN)
         # 先改状态再 cancel：_run_job 的 finally 才不会写历史或安排重试
         running = []
         for jid, task in list(self._job_tasks.items()):
@@ -1083,6 +1207,11 @@ class PoolManager:
         while True:
             job_id = await self.queue.get()
             try:
+                if job_id == RETIRE_TOKEN:
+                    # 并行上限被下调：把手上的活干完再走，不打断在途请求
+                    self._retire_pending = max(0, self._retire_pending - 1)
+                    log(f"worker {wid}: 退出（并行数下调）")
+                    return
                 job = self.jobs.get(job_id)
                 if not job or job.get("status") == "cancelled":
                     continue
