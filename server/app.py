@@ -138,7 +138,11 @@ async def img_with_fallback(full_path: str):
     root = str(REPO_IMAGES.resolve())
     # 目录穿越防护：只允许访问 repo_images 之内
     if str(target).startswith(root + os.sep) and target.is_file():
-        return FileResponse(str(target), headers={"Cache-Control": "public, max-age=604800"})
+        # .webp 在部分系统（如 Windows）的 MIME 注册表里缺失，会被猜成
+        # application/octet-stream；显式声明，保证浏览器 <img> 正确识别。
+        mt = "image/webp" if target.suffix.lower() == ".webp" else None
+        return FileResponse(str(target), media_type=mt,
+                            headers={"Cache-Control": "public, max-age=604800"})
     # 文件缺失 → 生成 SVG 占位图
     label = Path(full_path).stem
     h = hashlib.md5(full_path.encode("utf-8")).hexdigest()

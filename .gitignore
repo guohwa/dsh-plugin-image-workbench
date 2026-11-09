@@ -6,6 +6,8 @@
 # 本地生成的图片 / 参考图 / 缩略图（绝不入库）
 images/
 refs/
+# 风格样图：安装时从 CDN 按需下载，不入库（保持 clone 体积小）
+server/repo_images/
 thumbs/
 output/
 out/

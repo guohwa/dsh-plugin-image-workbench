@@ -132,13 +132,20 @@ node install.mjs
 
 配置代理后，号池经该出口访问上游，生成任务才会成功；未配置且所在网络受限时，表现为面板在线但生成失败、日志提示连接超时。
 
-### 风格预览图（零二进制资源）
+### 风格预览图（真实样图，零二进制入库）
 
-风格、版式、配色以结构化数据内置在仓库中，预览缩略图**不随包发布**（避免仓库膨胀，GitHub 包始终保持轻量）。画廊里每张卡的缩略图若本地不存在，后端 `/img/...` 会自动生成一张 SVG 占位图（渐变 + 风格编号）返回，因此任何一次全新安装都不会出现破图，界面保持完整可用。
+风格、版式、配色以结构化数据内置在仓库中，预览缩略图**不随包发布**（避免仓库膨胀，GitHub 包始终保持轻量）。真实预览图来自上游 [`yang0/handraw-style`](https://github.com/yang0/handraw-style) 的图床：
 
-如需替换为真实样例图，把 `.webp` 文件按 `catalog` 引用的路径放入 `server/repo_images/`（如 `individual/FA/FA-001.webp`）即自动生效，无需改代码、无需重启。
+- **主来源（国内直连、路径精确）**：`https://img.handraw-style.com/images/individual/{前缀}/{前缀-编号}.webp`
+- **兜底来源**：[`gitee` 镜像](https://gitee.com/yang02010/handraw-style) raw、`github` raw（受限网络通常不可达，仅尽力而为）
 
-**一键拉取真实样图**：风格/版式/配色的真实预览图来自上游 [`yang0/handraw-style`](https://github.com/yang0/handraw-style) 仓库。安装脚本会在安装后自动尝试拉取（`server/scripts/fetch_style_images.py`，best-effort，网络不通则跳过）；也可在画廊弹窗点「下载风格样例图」手动触发。拉取成功后画廊即显示真实样图，无需改代码。
+下载清单直接来自 `catalog.build()`，始终与画廊数据一致；已存在文件跳过，可断点续传。
+
+**自动拉取**：安装脚本 `node install.mjs` 会在安装后自动调用 `server/scripts/fetch_style_images.py`（best-effort，网络不通则跳过，不阻断安装）；也可在画廊弹窗点「下载风格样例图」手动触发。拉取成功后画廊即显示真实样图，无需改代码、无需重启。
+
+**离线兜底**：若拉取失败（无网络 / 图床不可达），后端 `/img/...` 会对缺失图自动生成一张 SVG 占位图（渐变 + 风格编号）返回，任何一次全新安装都不会出现破图，界面保持完整可用。等网络恢复后点「下载风格样例图」即可补齐真图。
+
+手动替换：把 `.webp` 按 `catalog` 引用的路径放入 `server/repo_images/`（如 `individual/FA/FA-001.webp`）即自动生效。
 
 ### 方式 B：使用第三方接口
 
