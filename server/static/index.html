@@ -288,9 +288,9 @@
   .pill{display:inline-flex;align-items:center;gap:6px;background:#f7f5ff;border:1px solid var(--line);
     border-radius:12px;padding:3px 9px;font-size:11px;color:var(--ink-2)}
   .footer-note{margin-top:12px;font-size:10.5px;color:var(--ink-3);line-height:1.6}
-  /* 左栏底部版本号：左栏与中/右栏同高，版本钉在卡片左下角 */
-  .panel.left{align-self:stretch;display:flex;flex-direction:column}
-  .ver-foot{margin-top:auto;padding-top:12px;font-size:11px;color:var(--ink-3);opacity:.7}
+  /* 左栏底部版本号：跟在内容正下方，不与别的栏对齐；有新版本时多一行升级提示 */
+  .ver-foot{margin-top:16px;font-size:13px;color:var(--ink-3)}
+  .ver-foot .up-new{margin-top:5px;font-size:12px;color:var(--primary);cursor:default}
   .strip-wrap{display:flex;align-items:center;gap:6px}
   .strip{position:relative;flex:1;display:flex;gap:8px;overflow-x:auto;padding:6px 2px;min-height:100px;scroll-behavior:smooth}
   .strip::-webkit-scrollbar{height:8px}
@@ -674,7 +674,10 @@
     </div>
     <div class="status" id="splitStatus"></div>
     <div class="md" id="docRaw" style="display:none"></div>
-    <div class="ver-foot" id="verFoot" title="当前工作台版本"></div>
+    <div class="ver-foot">
+      <div id="verFoot" title="当前工作台版本"></div>
+      <div class="up-new" id="upNote" hidden></div>
+    </div>
   </section>
 
   <!-- 配图工坊 -->
@@ -4742,6 +4745,18 @@ setInterval(refreshPool, 10000);
     .then(function(d){
       var el = document.getElementById('verFoot');
       if (el && d && d.version) el.textContent = 'v' + d.version;
+    })
+    .catch(function(){});
+  /* 有新版本就在版本号下面提示一行；查失败就当没有，不打扰使用 */
+  fetch('/api/upgrade', {cache: 'no-store'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(d){
+      var el = document.getElementById('upNote');
+      if (!el || !d || !d.has_new || !d.latest) return;
+      el.hidden = false;
+      el.textContent = '发现新版本 v' + d.latest + '，建议升级 →';
+      el.title = '当前 v' + d.current + '。在 DSH「插件」里更新即可；'
+        + '或在插件目录执行 npm i dsh-plugin-image-workbench@latest 后重跑 node install.mjs，装完重启 DSH。';
     })
     .catch(function(){});
 })();

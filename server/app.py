@@ -420,6 +420,43 @@ async def health():
     return {"ok": True, "version": VERSION}
 
 
+def _ver_key(v: str) -> tuple:
+    """把 x.y.z 解析成可比较的元组，非数字段按 0 处理。"""
+    out = []
+    for seg in (v or "").split("."):
+        out.append(int(seg) if seg.isdigit() else 0)
+    return tuple(out)
+
+
+_UPGRADE_CACHE: dict = {"at": 0.0, "data": None}
+
+
+@app.get("/api/upgrade")
+async def api_upgrade():
+    """对比 npm 上的最新版本，供左下角出「有新版本」提示。
+
+    走 npmmirror 直连（国内稳），10 分钟缓存；网络不通就当没有新版本，
+    绝不因为查版本失败打扰使用。trust_env=False：不吃代理环境变量，避免被带偏。
+    """
+    now = time.time()
+    if _UPGRADE_CACHE["data"] is not None and now - _UPGRADE_CACHE["at"] < 600:
+        return JSONResponse(_UPGRADE_CACHE["data"])
+    data = {"current": VERSION, "latest": "", "has_new": False}
+    try:
+        import httpx
+        async with httpx.AsyncClient(trust_env=False, timeout=6) as c:
+            r = await c.get("https://registry.npmmirror.com/dsh-plugin-image-workbench/latest")
+            if r.status_code == 200:
+                lat = str(r.json().get("version") or "").strip()
+                data["latest"] = lat
+                data["has_new"] = bool(lat) and _ver_key(lat) > _ver_key(VERSION)
+    except Exception:
+        pass
+    _UPGRADE_CACHE["at"] = now
+    _UPGRADE_CACHE["data"] = data
+    return JSONResponse(data)
+
+
 @app.get("/api/catalog")
 async def api_catalog():
     return JSONResponse(CATALOG)
