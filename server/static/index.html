@@ -2677,8 +2677,8 @@ function renderPool(d){
   warn.hidden = msgs.length === 0;
   warn.textContent = msgs.join(' ');
 
-  // 当前不在内置号池：给出一键切回入口，避免「改去外部池就回不来」的死胡同
-  const onBuiltin = (d.base_url || '').includes(':38651');
+  // 当前已是本机内置号池：不再显示「恢复」入口，避免误导性重复按钮
+  const onBuiltin = d.local === true || (d.base_url || '').includes(':38651');
   $('#pUseBuiltinRow').hidden = onBuiltin;
 
   const list = $('#pAccList'); list.textContent = '';
