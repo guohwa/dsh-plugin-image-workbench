@@ -863,7 +863,6 @@
       <h3 id="pickerTitle">全部风格</h3>
       <span class="spacer"></span>
       <button class="btn ghost mini" id="pickerClose" type="button">关闭</button>
-      <button class="btn ghost mini" id="pickerFetch" type="button" title="从上游仓库拉取真实风格样图（首次需联网，拉完画廊即显示真图）">下载风格样例图</button>
     </div>
     <div class="chips" id="pickerChips"></div>
     <input id="pickerFilter" placeholder="搜索编号 / 名称" style="font-size:12px;padding:7px 10px;margin-bottom:8px">
@@ -1127,7 +1126,10 @@ function fmtDur(ms){
   const m = Math.floor(s / 60);
   return m + ' 分 ' + String(s % 60).padStart(2, '0') + ' 秒';
 }
-function imgUrl(p){ return '/img/' + String(p||'').replace(/^images\//,''); }
+// 样图资源版本：补真图 / 换图源 / 改占位逻辑时 +1，用来顶掉浏览器缓存的旧渐变占位。
+// 占位 SVG 之前被缓存了 1 天（max-age=86400），导致补了真图后画廊仍显示渐变，加版本号可自愈。
+const IMG_VER = '2';
+function imgUrl(p){ return '/img/' + String(p||'').replace(/^images\//,'') + '?v=' + IMG_VER; }
 
 async function loadCatalog(){
   const r = await fetch('/api/catalog'); const d = await r.json();
@@ -1307,29 +1309,6 @@ function openPicker(kind){
   $('#pickerGrid').classList.toggle('color-grid', kind === 'color');
   renderPicker();
   $('#pickerDlg').showModal();
-}
-
-$('#pickerFetch').onclick = async () => {
-  const btn = $('#pickerFetch');
-  const old = btn.textContent;
-  btn.disabled = true; btn.textContent = '拉取中…';
-  try {
-    const d = await (await fetch('/api/previews/fetch', {method: 'POST'})).json();
-    if (d.ok){ toast('样例图已拉取，正在刷新画廊', 'ok'); refreshPreviews(); }
-    else toast('拉取失败：' + (d.error || (d.stderr || '').slice(0, 80) || '网络不可用'), 'err');
-  } catch (e){ toast('拉取失败：' + e.message, 'err'); }
-  finally { btn.disabled = false; btn.textContent = old; }
-};
-
-// 拉取真实样图后，强制刷新画廊里所有图片（带 cache-bust），命中新文件
-function refreshPreviews(){
-  document.querySelectorAll('#pickerGrid img').forEach(im => {
-    try {
-      const u = new URL(im.src, location.href);
-      u.searchParams.set('_t', Date.now());
-      im.src = u.pathname + u.search;
-    } catch (_) {}
-  });
 }
 
 function renderPicker(){

@@ -153,23 +153,81 @@ function syncServer() {
   console.log('已同步工作台后端代码 -> server/（' + copied + ' 个文件，不含账号/图片/配置）。');
 }
 
-// 安装后尽力拉取真实风格样图（best-effort，失败静默跳过，不影响安装）
-function fetchStyleImages() {
-  const script = path.join(PLUGIN_DIR, 'server', 'scripts', 'fetch_style_images.py');
-  if (!fs.existsSync(script)) return;
-  const venvPy = path.join(PLUGIN_DIR, 'server', '.venv', 'Scripts', 'python.exe');
-  const py = fs.existsSync(venvPy) ? venvPy : (process.env.PYTHON || 'python3');
+/**
+ * 安装时自动下载真实样图（用 Node 直接拉，不依赖 Python 虚拟环境）。
+ *
+ * 分层来源（用户提供的三个源全部用上）：
+ *   1) CDN 单文件  https://img.handraw-style.com  —— 国内国外都通，最小最快
+ *      （在线画廊 static.handraw-style.com/gallery 的图也来自这个 CDN）
+ *   2) Gitee 镜像 raw  https://gitee.com/yang02010/handraw-style/raw/master
+ *      —— 国内兜底，CDN 被墙时用
+ *   3) GitHub raw     https://raw.githubusercontent.com/yang0/handraw-style/main
+ *      —— 国外兜底
+ * 失败不阻断安装，但会明确提示；失败项会在下次重跑 `node install.mjs` 时自动跳过已存在的、只补齐缺失的。
+ */
+async function fetchStyleImages() {
+  const repoImages = path.join(PLUGIN_DIR, 'server', 'repo_images');
+  fs.mkdirSync(repoImages, { recursive: true });
+
+  // 1) 收集清单：来自 catalog.json 的 img 字段（风格 / 图型 / 主题色三类）
+  let rels = [];
+  const catFile = path.join(PLUGIN_DIR, 'server', 'catalog.json');
   try {
-    const r = require('child_process').spawnSync(py, [script], { timeout: 600000, stdio: 'ignore' });
-    console.log(r.status === 0
-      ? '已拉取真实风格样图。'
-      : '风格样图拉取跳过（网络不可用，运行时点「下载风格样例图」可补）。');
-  } catch (e) {
-    console.log('风格样图拉取跳过（' + e.message + '）。');
-  }
+    const cat = JSON.parse(fs.readFileSync(catFile, 'utf8'));
+    for (const k of ['styles', 'layouts', 'colors'])
+      for (const it of (cat[k] || [])) if (it.img) rels.push(it.img);
+  } catch (_) { /* 下面兜底 */ }
+  if (!rels.length)
+    for (const pre of 'FA FB FC FD FE FF FG FH FI'.split(' '))
+      for (let n = 1; n < 80; n++)
+        rels.push(`images/individual/${pre}/${pre}-${String(n).padStart(3, '0')}.webp`);
+  rels = [...new Set(rels)];
+  const total = rels.length;
+  if (!total) { console.log('没有可下载的样图清单，跳过。'); return; }
+
+  const CDN = 'https://img.handraw-style.com';
+  const GITEE = 'https://gitee.com/yang02010/handraw-style/raw/master';
+  const GITHUB = 'https://raw.githubusercontent.com/yang0/handraw-style/main';
+  const sourcesFor = rel => [CDN + '/' + rel, GITEE + '/' + rel, GITHUB + '/' + rel];
+  const localOf = rel => path.join(repoImages, rel.replace(/^images\//, ''));
+  const exist = p => { try { return fs.statSync(p).size > 0; } catch { return false; } };
+
+  let done = 0, skip = 0, fail = 0;
+  const CONC = 12;
+  const getOne = async (rel) => {
+    const dst = localOf(rel);
+    if (exist(dst)) { skip++; return; }
+    fs.mkdirSync(path.dirname(dst), { recursive: true });
+    for (const url of sourcesFor(rel)) {
+      try {
+        const ac = new AbortController();
+        const t = setTimeout(() => ac.abort(), 15000);
+        const r = await fetch(url, { signal: ac.signal });
+        clearTimeout(t);
+        if (!r.ok) continue;
+        // 只接受真正的图片响应：gitee raw 会 302 跳到登录页（text/html），
+        // 若不拦截会把 HTML 写成 .webp 坏文件。
+        const ct = (r.headers.get('content-type') || '').toLowerCase();
+        if (!ct.startsWith('image/')) continue;
+        const buf = Buffer.from(await r.arrayBuffer());
+        if (buf.length < 200) continue;
+        fs.writeFileSync(dst, buf);
+        done++; return;
+      } catch { /* 换下一个源 */ }
+    }
+    fail++;
+  };
+
+  console.log('正在自动下载真实样图（风格 / 图型 / 主题色，共 ' + total + ' 张）…');
+  for (let i = 0; i < rels.length; i += CONC)
+    await Promise.all(rels.slice(i, i + CONC).map(getOne));
+
+  console.log(`样图下载完成：共 ${total} 张，已下 ${done}，跳过(已存在) ${skip}，失败 ${fail}。`);
+  if (fail)
+    console.log(`  ${fail} 张失败（多为网络受限）。重跑 \`node install.mjs\` 可补齐；失败项会自动跳过已存在的。`);
 }
 
-if (!uninstall) {
+async function install() {
   syncServer();
   if (fs.existsSync(LINK_PATH)) {
     console.log('插件目录已存在 -> ' + LINK_PATH);
@@ -180,10 +238,17 @@ if (!uninstall) {
   const ok = fs.existsSync(path.join(LINK_PATH, 'host.js')) && fs.existsSync(path.join(LINK_PATH, 'client.js'));
   console.log(ok ? '插件文件校验通过。' : '警告：联接内未找到 host.js / client.js。');
   console.log('工作台后端与内置号池由 host.js / pool_service.py 在 DSH 启动时拉起。');
-  // 安装后尽力拉取真实风格样图（上游 handraw-style 仓库）。网络不可用则静默跳过，
-  // 前端自动回退到 SVG 占位，不影响安装。成功后会话里画廊即显示真图。
-  fetchStyleImages();
+  // 安装时自动下载真实样图（CDN / Gitee 镜像 / GitHub 三层兜底）。失败不阻断安装，
+  // 但会明确提示；重跑本脚本即可补齐失败项。
+  await fetchStyleImages();
   console.log('请重启 DeepSeek Harness 使 bundle 生效（旧号池插件届时会从侧栏消失）。');
+}
+
+if (!uninstall) {
+  install().catch(e => {
+    console.error('安装过程中发生异常：' + (e && e.stack || e));
+    process.exit(1);
+  });
 } else {
   console.log('已从 profile 配置摘除插件；node_modules 里的目录联接保留，不影响 DSH。');
   console.log('请重启 DeepSeek Harness 使变更生效。');

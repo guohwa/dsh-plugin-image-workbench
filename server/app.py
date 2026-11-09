@@ -157,26 +157,10 @@ async def img_with_fallback(full_path: str):
         f'fill="#ffffff" text-anchor="middle" opacity="0.95">{label}</text>'
         "</svg>"
     )
+    # 占位图必须 no-store：它只是「文件还没下载」的瞬态提示，绝不能进浏览器缓存。
+    # 否则真图补上后，浏览器仍按旧 URL 命中缓存里的渐变占位，画廊就一直显示渐变。
     return Response(content=svg.encode("utf-8"), media_type="image/svg+xml",
-                    headers={"Cache-Control": "public, max-age=86400"})
-
-
-@app.post("/api/previews/fetch")
-async def api_previews_fetch():
-    """从上游 handraw-style 仓库拉取真实风格样图到 repo_images/（后台执行，网络失败静默跳过）。"""
-    def _run():
-        import subprocess
-        script = LAB / "scripts" / "fetch_style_images.py"
-        if not script.is_file():
-            return {"ok": False, "error": "fetch script missing"}
-        try:
-            r = subprocess.run([sys.executable, str(script)],
-                               capture_output=True, text=True, timeout=600)
-            return {"ok": r.returncode == 0, "returncode": r.returncode,
-                    "stdout": (r.stdout or "")[-800:], "stderr": (r.stderr or "")[-800:]}
-        except Exception as e:
-            return {"ok": False, "error": str(e)[:200]}
-    return JSONResponse(await run_in_threadpool(_run))
+                    headers={"Cache-Control": "no-store"})
 
 
 app.mount("/refs", StaticFiles(directory=str(REFS_DIR)), name="refs")
