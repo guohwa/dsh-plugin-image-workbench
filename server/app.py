@@ -547,6 +547,55 @@ async def api_pool_service_auto(body: dict):
     return JSONResponse(pool_service.set_auto_start(home, bool(body.get("enabled"))))
 
 
+@app.post("/api/pool/use-builtin")
+async def api_pool_use_builtin():
+    """一键切回本工作台自带的内置号池（38651）并启动它。
+
+    典型场景：出图接口曾指向外部号池 / 写作台号池（如 38650），想切回来。
+    只动 config.local.json 与内置池的停止标记，不碰外部号池的账号与进程。
+    注意必须同时把 api_key 对齐到内置池：只改 base_url 不换 key，会用旧外部
+    key 去打内置池的 /v1，结果 401，账号面板照样刷不出内置号。
+    """
+    home = Path.home() / ".dsh" / "chatgpt2api-image"
+    builtin_url = "http://127.0.0.1:38651/v1"
+    # 读内置池自带的用户 Key，写进 config，确保接口密钥与内置池对齐
+    user_key = pool_mod._read_pool_user_key({"pool_dir": str(home)}) or ""
+    if not user_key:
+        try:
+            user_key = pool_service.ensure_admin_key(home) or ""
+        except Exception:
+            user_key = ""
+    cfg = {}
+    if POOL_CONFIG_FILE.exists():
+        try:
+            cfg = json.loads(POOL_CONFIG_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            cfg = {}
+    cfg["api_base_url"] = builtin_url
+    cfg["pool_base_url"] = builtin_url
+    cfg["api_key"] = user_key
+    cfg["pool_dir"] = str(home)
+    cfg["monitor_mode"] = "auto"
+    cfg.setdefault("port", 8092)
+    POOL_CONFIG_FILE.write_text(
+        json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # 清掉手动停止标记，让内置池能被启动 / 守护自动拉起
+    try:
+        (home / pool_service.STOP_FLAG).unlink(missing_ok=True)
+    except Exception:
+        pass
+    # 启动内置池（首次建运行时可能要几十秒，丢线程池不堵事件循环）
+    res = await run_in_threadpool(pool_service.start)
+    await POOL.refresh_env_ids()
+    await POOL.refresh_accounts(force=True)
+    return JSONResponse({
+        "ok": bool(res.get("ok", True)),
+        "started": bool(res.get("ok", True)),
+        "message": res.get("message", ""),
+        "config": _cfg_view(),
+    })
+
+
 # ---------- 接口设置（通用 OpenAI 兼容接口） ----------
 def _cfg_view() -> dict:
     """当前接口配置的脱敏视图，绝不回传完整 API Key。"""
