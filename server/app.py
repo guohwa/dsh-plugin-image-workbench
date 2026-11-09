@@ -54,6 +54,25 @@ for _d in (REPO_IMAGES, OUT_DIR, THUMB_DIR, REFS_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 CATALOG = catalog.build()
+
+
+def _plugin_version() -> str:
+    """插件版本，取自插件根目录的 package.json。
+
+    独立运行时（只把 server/ 拷出来跑）读不到那个文件，返回 unknown 即可，
+    版本仅用于界面显示与排查「装的是哪一版」，不影响任何功能。
+    """
+    for cand in (LAB.parent / "package.json", LAB / "package.json"):
+        try:
+            v = str(json.loads(cand.read_text(encoding="utf-8")).get("version") or "").strip()
+            if v:
+                return v
+        except Exception:
+            continue
+    return "unknown"
+
+
+VERSION = _plugin_version()
 POOL = PoolManager()
 # 图片目录传函数：用户改「保存目录」后历史立刻按新目录找图，不用重启
 HISTORY = History(LAB / "workbench" / "history.jsonl", out_dir, THUMB_DIR,
@@ -398,7 +417,7 @@ def build_polish_prompt(req: GenRequest) -> str:
 
 @app.get("/health")
 async def health():
-    return {"ok": True}
+    return {"ok": True, "version": VERSION}
 
 
 @app.get("/api/catalog")
@@ -653,6 +672,7 @@ def _cfg_view() -> dict:
         "mode": pool.get("mode") or ("pool" if p["is_pool"] else "single"),
         "pool_message": pool.get("message") or "",
         "port": load_config().get("port", 8092),
+        "version": VERSION,
     }
 
 

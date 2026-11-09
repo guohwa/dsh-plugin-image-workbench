@@ -990,7 +990,7 @@
 <dialog id="configDlg">
   <div class="inner">
     <div class="dlg-head">
-      <h3>接口与号池 <span id="cfgEngine" style="font-weight:400;color:var(--ink-3);font-size:12px"></span></h3>
+      <h3>接口与号池 <span id="cfgEngine" style="font-weight:400;color:var(--ink-3);font-size:12px"></span><span id="cfgVersion" style="font-weight:400;color:var(--ink-3);font-size:11px;opacity:.7;margin-left:6px"></span></h3>
       <span class="spacer"></span>
       <button class="btn ghost mini" id="cfgClose" type="button">关闭</button>
     </div>
@@ -2549,6 +2549,8 @@ async function loadAppName(){
   }catch(e){ /* 读不到就用默认名，不影响其他功能 */ }
 }
 function cfgFill(d){
+  // 版本号放在标题旁：反馈问题时截图就能看出装的是哪一版
+  const v = $('#cfgVersion'); if (v) v.textContent = d.version ? ('v' + d.version) : '';
   $('#cfgAppName').value = d.app_name || d.app_name_default || '';
   $('#cfgBase').value = d.base_url || '';
   $('#cfgKey').value = '';
