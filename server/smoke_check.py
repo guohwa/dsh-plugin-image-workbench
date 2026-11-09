@@ -140,6 +140,17 @@ try:
 except Exception as e:
     ok('GET /api/pool/proxy 可解析', False, str(e)[:120])
 
+# 出口代理那一栏按本机实时探测结果反显，不写死地址：换机器要能跟着变
+try:
+    eg = client.get('/api/pool/egress').json()
+    ok('GET /api/pool/egress 给出本机探测结果',
+       eg.get('ok') is True and 'url' in eg and isinstance(eg.get('ports'), list),
+       f"{eg.get('url') or '未探测到'}（来源 {eg.get('source')}）")
+    ok('探测结果带候选端口列表', isinstance(eg.get('ports'), list),
+       f"{len(eg.get('ports') or [])} 个端口在监听")
+except Exception as e:
+    ok('GET /api/pool/egress 可解析', False, str(e)[:120])
+
 # 「接口与号池」面板：账号导入 / 删号全靠它，字段缺一个前端就是空白
 try:
     pn = client.get('/api/pool/panel').json()

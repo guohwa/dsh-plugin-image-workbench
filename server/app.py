@@ -534,6 +534,21 @@ async def api_pool_proxy():
     return JSONResponse(res)
 
 
+@app.get("/api/pool/egress")
+async def api_pool_egress(fresh: int = 0):
+    """探测当前设备实际可用的出口代理（只读，不改号池配置）。
+
+    生图必须过代理，所以面板里这一栏永远展示本机真实情况：换电脑、换代理
+    端口，反显的值跟着变，不会停在某个写死的地址上。
+    """
+    try:
+        data = await asyncio.to_thread(
+            pool_service.detect_egress, 0 if fresh else 20.0)
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": str(e)[:160]})
+    return JSONResponse(data)
+
+
 @app.post("/api/pool/proxy")
 async def api_pool_proxy_save(body: dict):
     """保存本机号池的出口代理配置。默认直连；受限网络由用户填自己的代理。"""

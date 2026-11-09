@@ -236,22 +236,43 @@ _LOCAL_PROXY_SPECS = [
 ]
 
 
-def _env_egress_proxy() -> str:
-    """用户环境显式设了出口代理就直接用，优先级最高。"""
+_COMMON_PROXY_PORTS = {1080, 1087, 7890, 7891, 7897, 8118, 8080, 8888,
+                       10808, 10809, 20171, 33210}
+
+
+def _env_egress_proxy(relaxed: bool = False) -> str:
+    """用户环境显式设了出口代理就直接用，优先级最高。
+
+    宿主和各类工具链会往环境里塞临时回环代理（随机高端口），那玩意只能通
+    它自己的链路，拿去跑号池只会全盘超时。所以回环地址只认常见代理端口。
+    """
     for k in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy",
               "HTTP_PROXY", "http_proxy"):
         v = (os.environ.get(k) or "").strip()
-        if v:
-            return v
+        if not v:
+            continue
+        if not relaxed:
+            host, port = proxy_host_port(v)
+            if host in ("127.0.0.1", "localhost", "::1") and port not in _COMMON_PROXY_PORTS:
+                continue
+        return v
     return ""
 
 
 def _local_proxy_candidates() -> list[str]:
-    """本机常见代理端口在监听的，按首选协议生成候选 URL。"""
-    out = []
+    """本机代理端口在监听的，生成候选 URL。
+
+    同一个端口两种协议都试一遍：1080 既可能是 SOCKS5（Shadowsocks），
+    也可能是 HTTP（部分客户端），只按首选协议生成会漏掉一半用户。
+    """
+    out: list[str] = []
+    seen: set[int] = set()
     for scheme, port in _LOCAL_PROXY_SPECS:
-        if probe(port, 0.4):
-            out.append(f"{scheme}://127.0.0.1:{port}")
+        if port in seen or not probe(port, 0.4):
+            continue
+        seen.add(port)
+        out.append(f"{scheme}://127.0.0.1:{port}")
+        out.append(f"{'http' if scheme == 'socks5' else 'socks5'}://127.0.0.1:{port}")
     return out
 
 
@@ -294,11 +315,74 @@ def _pool_proxy_test(home: Path, admin: str, port: int) -> bool:
         return False
 
 
-def auto_detect_proxy(home: Path, port: int) -> dict:
-    """号池上线后做一次零配置出口代理探测，命中即持久化，否则保持直连。
+_EGRESS_CACHE: dict = {"at": 0.0, "data": {}}
+_EGRESS_LOCK = threading.Lock()
 
-    只在当前号池 proxy_url 为空（None=读不到、已有值=尊重用户）时才探测，
-    所以不会覆盖用户显式设置，也不会在每次重启重复探测已持久化的结果。
+
+def proxy_host_port(url: str) -> tuple[str, int]:
+    """解析代理地址；端口解析不出来返回 0。"""
+    try:
+        u = urlparse(url if "://" in str(url) else "http://" + str(url))
+        host = (u.hostname or "").lower()
+        return host, int(u.port or (443 if u.scheme == "https" else 80))
+    except Exception:
+        return "", 0
+
+
+def proxy_alive(url: str) -> bool:
+    """这个代理在本机还活着吗。生图没有出口代理就出不了图，所以要能判断。
+
+    只对回环地址做端口探测：远程代理本机判断不了，一律当作可用，不擅自替换。
+    """
+    host, port = proxy_host_port(url)
+    if not host:
+        return False
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        return True
+    return bool(port) and probe(port, 0.35)
+
+
+def detect_egress(cache_seconds: float = 20.0) -> dict:
+    """探测当前设备实际可用的出口代理，只读，不改号池配置。
+
+    面板里那一栏永远显示本机真实情况，而不是写死某个地址：换一台电脑、
+    换了代理端口，显示会跟着变。顺序：环境变量优先，其次扫本机常见端口。
+    """
+    now = time.time()
+    with _EGRESS_LOCK:
+        cached = _EGRESS_CACHE["data"]
+        if cached and now - float(_EGRESS_CACHE["at"]) < cache_seconds:
+            return dict(cached)
+    envp = _env_egress_proxy()
+    env_any = _env_egress_proxy(relaxed=True)
+    ports: list[dict] = []
+    seen: set[int] = set()
+    for scheme, port in _LOCAL_PROXY_SPECS:
+        if port in seen or not probe(port, 0.3):
+            continue
+        seen.add(port)
+        alt = "http" if scheme == "socks5" else "socks5"
+        ports.append({"port": port, "scheme": scheme,
+                      "url": f"{scheme}://127.0.0.1:{port}",
+                      "alt": f"{alt}://127.0.0.1:{port}"})
+    url = envp or (ports[0]["url"] if ports else "")
+    data = {"ok": True, "url": url,
+            "source": "env" if envp else ("port" if ports else "none"),
+            "env": envp,
+            "env_ignored": env_any if env_any and env_any != envp else "",
+            "ports": ports, "checked_at": int(now)}
+    with _EGRESS_LOCK:
+        _EGRESS_CACHE["at"] = now
+        _EGRESS_CACHE["data"] = data
+    return dict(data)
+
+
+def auto_detect_proxy(home: Path, port: int, recheck: bool = True) -> dict:
+    """号池上线后校准一次出口代理，命中即持久化，否则保持直连。
+
+    recheck=True 时，如果已保存的地址在本机已经连不上（换了电脑、换了代理
+    端口、客户端关了），会重新探测并覆盖；本机还在监听的原值一律保留，
+    不会覆盖用户手填的地址。
     """
     home = Path(home)
     admin = ensure_admin_key(home)
@@ -308,7 +392,9 @@ def auto_detect_proxy(home: Path, port: int) -> dict:
     if cur is None:
         return {"ok": True, "skipped": True, "reason": "read_failed"}
     if cur:
-        return {"ok": True, "skipped": True, "reason": "already_set", "proxy_url": cur}
+        if not recheck or proxy_alive(cur):
+            return {"ok": True, "skipped": True, "reason": "already_set", "proxy_url": cur}
+        log("已保存的出口代理 " + cur + " 在本机已连不上，重新探测")
     cands: list[str] = []
     envp = _env_egress_proxy()
     if envp:

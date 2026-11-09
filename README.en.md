@@ -123,10 +123,11 @@ Entries containing only an email, password and 2FA secret without an `access_tok
 
 ### Outbound proxy
 
-The built-in pool must reach OpenAI / ChatGPT. Whether you need a proxy depends on your network:
+The built-in pool must reach OpenAI / ChatGPT. Leave it empty for a direct connection on an unrestricted network; on a restricted network configure it as below. The address shown in the panel is always what was detected on this machine, never a hardcoded sample.
 
-- **Unrestricted network**: leave it empty (default) for a direct connection, no setup required.
-- **Restricted network** (e.g. some regions where direct access times out): open "Endpoint & Pool -> Local Pool -> Pool outbound proxy", enter your own outbound proxy such as `socks5://127.0.0.1:1080` or `http://127.0.0.1:7890`, and click "Save proxy". Saving runs a connectivity check immediately: if it fails, the panel names the address that could not be reached, which is almost always a wrong port or a proxy that is not running. Once the check passes, account quotas are recalculated automatically. **No address is hardcoded** — enter the proxy actually running on your machine.
+- **Auto-detected display**: "Endpoint & Pool -> Local Pool -> Pool outbound proxy" shows the proxy this machine is actually using. Environment variables such as `HTTPS_PROXY` are read first (temporary loopback proxies injected by host tools are ignored), then common local ports are probed: 1080 (both SOCKS5 and HTTP), 7890, 7891, 8118, 1087. Change machine or proxy port and the value follows.
+- **Auto-calibration**: the pool calibrates once at startup. A saved address that still connects locally is kept; one that no longer connects (new machine, closed port, exited client) is re-detected and replaced; nothing found means a direct connection.
+- **Manual entry / one-click switch**: you can also type your own address and click "Save proxy" to run an immediate connectivity check; failures name the address that could not be reached, and account quotas are recalculated once it passes. If the saved address is unreachable on this machine, the panel marks it and offers a "switch to <address>" button.
 - Environment variable: set `CHATGPT2API_PROXY_RUNTIME_PROXY_URL` (e.g. `socks5://127.0.0.1:1080`) before launch; the pool reads it during bootstrap.
 
 With a proxy configured, the pool reaches its upstream through that egress and generation succeeds. Without one on a restricted network, the panel shows online but generation fails with connection timeouts in the log, and account quotas stay at 0 (displayed as "used up").

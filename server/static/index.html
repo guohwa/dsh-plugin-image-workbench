@@ -554,6 +554,9 @@
   .psec{display:flex;align-items:baseline;gap:8px;margin-top:4px}
   .psec b{font-size:12px}
   .psec .tag{font-size:11px;color:var(--ink-3)}
+  .psec .tag.ok{color:var(--ok)}
+  .psec .tag.warn{color:var(--warn);font-weight:600}
+  .psec .tag.bad{color:var(--err);font-weight:600}
   .pacc{border:1px solid var(--line);border-radius:12px;max-height:224px;overflow:auto;background:#fff}
   #tabPool .pool-right #pAccList{flex:1 1 auto;min-height:0;max-height:none;overflow:auto}
   .pacc-row{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid #f4f2fb;font-size:12px}
@@ -1086,12 +1089,14 @@
           <p class="phint" id="pHome"></p>
         </div>
         <div class="psec"><b>号池出口代理</b><span class="tag" id="pProxyTag"></span></div>
-        <div class="ptip"><span>🌐</span><span>号池需要访问 OpenAI / ChatGPT。不受限网络可留空直连；受限网络（如部分国内环境）在此填你自己的出口代理，例如 <code>socks5://127.0.0.1:1080</code> 或 <code>http://127.0.0.1:7890</code>。<b>别照抄示例地址</b>，填你本机实际在跑的那个。</span></div>
+        <div class="ptip"><span>🌐</span><span>号池要连 OpenAI / ChatGPT，生图必须走代理。这里显示本机当前在用的地址，换机器会自动跟着变。</span></div>
         <div class="prow" style="align-items:flex-start;gap:8px">
-          <input id="pProxy" type="text" placeholder="socks5://127.0.0.1:1080（受限网络填；留空=直连）" style="flex:1 1 auto;min-width:0;width:100%">
+          <input id="pProxy" type="text" placeholder="留空=直连" style="flex:1 1 auto;min-width:0;width:100%">
+          <button class="btn ghost mini" type="button" id="pProxyUse" hidden>用本机代理</button>
           <button class="btn ghost mini" type="button" id="pProxyTest">测试</button>
           <button class="btn primary mini" type="button" id="pProxySave">保存代理</button>
         </div>
+        <div class="prow"><span class="pmeta" id="pProxyLocal"></span></div>
         <div class="prow"><span class="pmeta" id="pProxyMsg"></span></div>
         <div class="psec"><b>导入账号</b></div>
         <div class="ptip"><span>💡</span><span>提示：可以上 <a href="https://priceai.cc/" target="_blank" rel="noopener noreferrer">https://priceai.cc/</a> 买几分钱的普号（一般 3-5 毛钱可以买 10 个）。购买后直接上传或粘贴在下方文本框，点击「导入并授权入池」即可。</span></div>
@@ -2803,27 +2808,73 @@ $('#pUseBuiltin').onclick = async ()=>{
   }
 };
 
-/* 号池出口代理：读 / 存 / 测，全部走后端透传，浏览器不碰 admin key */
-async function loadPoolProxy(){
-  try{
-    const d = await (await fetch('/api/pool/proxy', {cache: 'no-store'})).json();
-    if (!d.ok){
-      $('#pProxyTag').textContent = d.reason === 'non_local' ? '非本机号池' : '';
-      return;
-    }
-    const rt = d.runtime || {};
-    $('#pProxy').value = rt.proxy_url || '';
-    const en = rt.enabled ? '开' : '关';
-    // 自动探测出来的代理，徽标明确标注，且仍可手动改
-    const isAuto = d.proxy_auto_url && rt.proxy_url && rt.proxy_url === d.proxy_auto_url;
-    if (rt.proxy_url){
-      $('#pProxyTag').textContent = isAuto ? ('自动探测：' + rt.proxy_url + '（可改）') : ('代理 ' + en);
-    } else {
-      $('#pProxyTag').textContent = '直连';
-    }
-    $('#pProxyMsg').textContent = '';
-  }catch(e){ /* 面板照常，代理框留空即可 */ }
+/* 号池出口代理：读 / 存 / 测，全部走后端透传，浏览器不碰 admin key。
+   这一栏不写死任何地址：本机当前在用什么代理就显示什么，换机器会跟着变。 */
+let pEgress = null;
+function proxyEndpoint(url){
+  const m = /^(\w+):\/\/([^:\/]+)(?::(\d+))?/.exec(String(url || ''));
+  if (!m) return {host: '', port: 0};
+  return {host: (m[2] || '').toLowerCase(), port: Number(m[3] || (m[1] === 'https' ? 443 : 80))};
 }
+async function loadPoolProxy(){
+  const input = $('#pProxy'), tag = $('#pProxyTag'), use = $('#pProxyUse'), meta = $('#pProxyLocal');
+  let d = {ok: false}, eg = null;
+  // 号池配置和本机探测并行取，任一路失败都不影响另一路
+  const [pr, er] = await Promise.allSettled([
+    fetch('/api/pool/proxy', {cache: 'no-store'}).then(r => r.json()),
+    fetch('/api/pool/egress', {cache: 'no-store'}).then(r => r.json()),
+  ]);
+  if (pr.status === 'fulfilled' && pr.value) d = pr.value;
+  if (er.status === 'fulfilled' && er.value && er.value.ok) eg = er.value;
+  pEgress = eg;
+
+  const saved = (d.ok && d.runtime && d.runtime.proxy_url) || '';
+  const local = (eg && eg.url) || '';
+  // 本机探测到的端口集合：已保存的回环地址不在里面，说明端口已经没了
+  const livePorts = ((eg && eg.ports) || []).map(p => p.port);
+  const ep = proxyEndpoint(saved);
+  const isLoop = ['127.0.0.1', 'localhost', '::1'].includes(ep.host);
+  const alive = !saved || !isLoop || livePorts.includes(ep.port);
+
+  // 已保存的优先显示；没有就先把本机探测值反显出来，点保存才真正生效
+  input.value = saved || local || '';
+  input.placeholder = local ? ('留空=直连（本机可用 ' + local + '）') : '留空=直连';
+  use.hidden = true;
+  const setTag = (text, tone) => { tag.textContent = text; tag.className = tone ? ('tag ' + tone) : 'tag'; };
+
+  if (d.ok === false && d.reason === 'non_local'){
+    setTag('非本机号池');
+    meta.textContent = local ? ('本机当前出口代理：' + local) : '';
+    $('#pProxyMsg').textContent = '';
+    return;
+  }
+  if (!local){
+    setTag(saved ? '已保存' : '直连', saved ? '' : 'bad');
+    meta.textContent = saved
+      ? '本机没探测到出口代理，已保存的地址是否可用请点「测试」。'
+      : '本机没探测到出口代理。生图要连 OpenAI，国内网络直连基本会失败。';
+  } else if (!saved){
+    setTag('未保存', 'warn');
+    meta.textContent = '本机出口代理：' + local + '，点「保存代理」启用。';
+  } else if (saved === local){
+    setTag('自动识别', 'ok');
+    meta.textContent = '本机出口代理：' + local;
+  } else if (!alive){
+    setTag('本机连不上', 'bad');
+    meta.textContent = '已保存的 ' + saved + ' 在本机连不上（端口没监听），现在可用的是 ' + local + '。';
+    use.hidden = false; use.textContent = '改用 ' + local;
+  } else {
+    setTag('已保存');
+    meta.textContent = '已保存：' + saved + '；本机还探测到 ' + local + '。';
+    use.hidden = false; use.textContent = '改用 ' + local;
+  }
+  $('#pProxyMsg').textContent = '';
+}
+$('#pProxyUse').onclick = ()=>{
+  if (!pEgress || !pEgress.url) return;
+  $('#pProxy').value = pEgress.url;
+  $('#pProxySave').click();
+};
 /* 换出口代理后额度必须重算：号池自身 5 分钟才轮询一次，这里立刻推一把 */
 async function refreshQuotaAfterProxy(){
   try{
