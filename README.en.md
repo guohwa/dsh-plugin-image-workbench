@@ -74,25 +74,26 @@ The account-pool process lifecycle is managed by `server/pool_service.py`; the D
 
 ### Install from DSH (recommended)
 
-Open "Plugins -> Add Plugin", enter the repository URL, choose the source matching your network, click Install:
+Open "Plugins -> Add Plugin", enter one of the repository URLs, click Install:
 
-```text
-https://github.com/guohwa/dsh-plugin-image-workbench
-```
+| Source | URL |
+| --- | --- |
+| Gitee (recommended in mainland China) | `https://gitee.com/guohwa/dsh-plugin-image-workbench` |
+| GitHub | `https://github.com/guohwa/dsh-plugin-image-workbench` |
 
-The plugin manager needs access to GitHub. If it hangs on connecting or reports a timeout, use [Install from source](#install-from-source) instead — a mirror package registered with the same installer works identically.
+Both mirror each other: every push and tag on GitHub is synced to Gitee automatically. The plugin ships a roughly 31 MB uv runtime, which is the part that stalls or times out when cloning from GitHub; Gitee is reachable directly from mainland China and a shallow clone takes about 9 seconds. If the plugin manager hangs on connecting, switch to the Gitee URL.
 
 ### Install from source
 
 For development, restricted networks, or migration from an older version:
 
 ```bash
-git clone https://github.com/guohwa/dsh-plugin-image-workbench.git
+git clone https://gitee.com/guohwa/dsh-plugin-image-workbench.git
 cd dsh-plugin-image-workbench
 node install.mjs
 ```
 
-If GitHub is unreachable, download the repository archive from any GitHub mirror, extract it, and run `node install.mjs` inside that directory; the registration result is the same.
+Upstream lives on GitHub (`https://github.com/guohwa/dsh-plugin-image-workbench.git`); the Gitee URL above is the same content and much faster from mainland China.
 
 The installer creates the profile directory junction, registers the bundle, syncs backend code and removes the legacy standalone pool plugin from the load list. It is idempotent. DSH usually picks up the new bundle directly; if no sidebar entry appears, quit DSH completely and start it again.
 
@@ -207,7 +208,7 @@ Principal backend routes are listed below. The complete definitions are in `serv
 | Symptom | Resolution |
 | --- | --- |
 | No sidebar entry | Bundles load only at DSH startup; quit DSH completely and start it again |
-| Plugin manager reports a GitHub connection timeout | Download the repository archive from a mirror and run `node install.mjs` inside it |
+| Plugin manager reports a GitHub connection timeout | Switch to the Gitee URL `https://gitee.com/guohwa/dsh-plugin-image-workbench`, reachable directly from mainland China |
 | Install fails with `ERR_PNPM_EPERM ... rename '...dsh-plugin-image-workbench_tmp_...'` | The previous version is still running and the backend process holds the plugin directory, so Windows refuses the rename. Quit DSH completely (tray menu -> Quit), end any leftover `python.exe` in Task Manager, delete `node_modules\dsh-plugin-image-workbench`, then install again. From 1.1.4 on, installs under `node_modules` relocate their runtime to `~/.dsh/image-workbench`, so this no longer happens |
 | Code stops taking effect after moving the installation directory | Re-run `node install.mjs`; the directory junction is rebuilt to the current path |
 | "Built-in pool not ready" | Start the pool under "Endpoint & Pool -> Local Pool"; allow time for first-run environment initialization |

@@ -73,19 +73,20 @@ flowchart LR
 
 ### 在 DSH 中安装（推荐）
 
-打开「插件 → 添加插件」，填入仓库地址，来源按网络环境选择，点击安装：
+打开「插件 → 添加插件」，填入仓库地址，点击安装：
 
-```text
-https://github.com/guohwa/dsh-plugin-image-workbench
-```
+| 来源 | 地址 |
+| --- | --- |
+| Gitee（国内推荐） | `https://gitee.com/guohwa/dsh-plugin-image-workbench` |
+| GitHub | `https://github.com/guohwa/dsh-plugin-image-workbench` |
 
-插件管理器需要访问 GitHub。若长时间停留在连接状态或提示超时，改用下面的[从源码安装](#从源码安装)，走镜像下载后用同一个安装器注册，效果一致。
+两边内容完全一致：GitHub 上每次 push 和打 tag 都会自动镜像到 Gitee。插件里带一个约 31 MB 的 uv 运行时，从 GitHub 克隆时这一大块最容易卡在传输阶段或直接超时；Gitee 国内直连，浅克隆实测 9 秒左右。插件管理器若长时间停留在连接状态，改用 Gitee 地址即可。
 
 ### 交给 AI Agent 安装（最省事）
 
 如果你正在使用支持插件安装指令的 AI 助手（如 WorkBuddy），直接把仓库地址丢给它，说一句就行，不用自己敲命令：
 
-> 帮我安装 https://github.com/guohwa/dsh-plugin-image-workbench 这个 DSH 插件
+> 帮我安装 https://gitee.com/guohwa/dsh-plugin-image-workbench 这个 DSH 插件
 
 Agent 会自动执行克隆、运行 `node install.mjs` 并完成 profile 注册，装完提示你重启 DSH。整个过程与下方的[从源码安装](#从源码安装)完全一致，只是由 Agent 代为操作；首次初始化、账号导入与代理配置的步骤仍需你按界面提示完成。
 
@@ -94,12 +95,12 @@ Agent 会自动执行克隆、运行 `node install.mjs` 并完成 profile 注册
 适用于开发环境、网络受限或从旧版本迁移：
 
 ```bash
-git clone https://github.com/guohwa/dsh-plugin-image-workbench.git
+git clone https://gitee.com/guohwa/dsh-plugin-image-workbench.git
 cd dsh-plugin-image-workbench
 node install.mjs
 ```
 
-无法直连 GitHub 时，可用任意 GitHub 镜像下载仓库压缩包，解压后进入该目录执行 `node install.mjs`，注册效果完全相同。
+上游在 GitHub（`https://github.com/guohwa/dsh-plugin-image-workbench.git`），国内直连更推荐上面这条 Gitee 地址，内容与 GitHub 一致。
 
 安装器会建立 profile 目录联接、注册 bundle、同步后端代码并清理旧版独立号池插件的加载项，可重复执行；安装完成后多数情况下 DSH 会直接加载新 bundle，侧栏未出现入口时完全退出 DSH 再启动一次。
 
@@ -207,7 +208,7 @@ python -m venv .venv
 | 现象 | 处理方式 |
 | --- | --- |
 | 侧栏未出现入口 | bundle 仅在 DSH 启动时加载，完全退出 DSH 再启动 |
-| 插件管理器提示连接 GitHub 超时 | 改用镜像下载仓库压缩包，解压后执行 `node install.mjs` |
+| 插件管理器提示连接 GitHub 超时 | 换成 Gitee 地址 `https://gitee.com/guohwa/dsh-plugin-image-workbench`，国内直连 |
 | 安装报 `ERR_PNPM_EPERM ... rename '...dsh-plugin-image-workbench_tmp_...'` | 上一个版本还在运行，后端进程把插件目录锁住了，Windows 不允许重命名。完全退出 DSH（托盘菜单 → 退出），在任务管理器结束残留的 `python.exe`，删掉 `node_modules\dsh-plugin-image-workbench` 后重装。1.1.4 起装在 `node_modules` 里时运行时会自动搬到 `~/.dsh/image-workbench`，不再出现 |
 | 移动过插件目录后代码不再生效 | 重跑 `node install.mjs`，安装器会把目录联接重建到当前路径 |
 | 提示「工作台后端未运行」 | 面板会直接显示原因：多为本机没有 Python 3.10+ 且自动下载失败。装一个 Python 3.13 后点「立即启动并重试」；有代理时插件会自动识别并使用 |
