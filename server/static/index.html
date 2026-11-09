@@ -4597,12 +4597,16 @@ async function openDrafts(){
   d.items.forEach(it=>{
     const row = document.createElement('div');
     row.className = 'draft-row';
-    /* 小字只留「N 条分镜 · 标题开头」，超出按码点截断加省略号；
-       不再把 titles 又拼一遍（封面标题常和文章标题重复，会把小字拖得极长） */
-    const brief = safeText(it.title) || safeText((it.titles || []).find(Boolean) || '');
+    /* 名字优先用标题：标题才是这篇东西叫什么，选题只是「想写什么」的一句话，
+       以前选题优先，标题写好了却看到草稿叫「33333」 */
+    const draftLabel = () => safeText(it.name || it.title || it.topic || '（无标题）');
+    /* 小字只留「N 条分镜 · 跟主名不同的那条信息」：主名已经是标题了，
+       再拼一遍标题等于占地方；选题也跟主名一样就跳过，试下第一条分镜标题 */
+    const brief = [safeText(it.topic),
+                   safeText((it.titles || []).find(Boolean) || '')]
+      .find(t => t && t !== draftLabel()) || '';
     const sub = clipText([it.count ? it.count + ' 条分镜' : '无分镜',
                           brief ? clipText(brief, 12) : ''].filter(Boolean).join(' · '), 30);
-    const draftLabel = () => safeText(it.name || it.topic || it.title || '（无选题）');
     row.innerHTML = `<span class="dc"><b data-role="label">${esc(draftLabel())}</b>`
       + `<input class="rn-input" data-role="rn" type="text" maxlength="60" placeholder="输入草稿名称，留空恢复默认" style="display:none">`
       + `<span class="ds">${esc(fmtTime(it.updated))} · ${esc(sub)}</span></span>`
@@ -4615,8 +4619,8 @@ async function openDrafts(){
     const labelEl = row.querySelector('[data-role="label"]');
     const rnEl = row.querySelector('[data-role="rn"]');
     /* 回显「当前这个名字」：自定义名优先，没有自定义名就回显它现在显示的默认名
-       （选题 / 标题），用户在现有名字上改，而不是对着一个空框重想 */
-    const defaultName = () => safeText(it.topic || it.title || '');
+       （标题 / 选题），用户在现有名字上改，而不是对着一个空框重想 */
+    const defaultName = () => safeText(it.title || it.topic || '');
     const currentName = () => safeText(it.name || '') || defaultName();
     rnEl.value = currentName();
     row.querySelector('[data-act="rename"]').onclick = ()=>{
@@ -4634,7 +4638,7 @@ async function openDrafts(){
         labelEl.style.display = 'block';
         if (!save) { rnEl.value = currentName(); return; }
         const val = Array.from(safeText(rnEl.value.trim())).slice(0, 60).join('');
-        /* 改完正好等于默认名（选题 / 标题）就存空串，让名字继续跟着选题走，
+        /* 改完正好等于默认名（标题 / 选题）就存空串，让名字继续跟着标题走，
            免得把它写死成一份静态名称 */
         const nextName = val === defaultName() ? '' : val;
         if (nextName === (it.name || '')) { rnEl.value = currentName(); return; }
