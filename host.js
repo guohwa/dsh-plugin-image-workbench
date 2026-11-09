@@ -17,6 +17,7 @@ import net from 'node:net';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fetchStyleImages } from './scripts/fetch-style-images.mjs';
 
 export const inject = ['connection'];
 
@@ -208,6 +209,53 @@ export function apply(ctx, config = {}) {
   const poolPort = Number(config.poolPort || process.env.DSH_IMAGE_POOL_PORT || 38651);
   console.log('[image-workbench] 工作台=' + (serverDir || '未找到') + ':' + port
     + '，内置号池=' + poolPort + '（由工作台后端自己拉起和守护）');
+
+  /**
+   * 样图补齐（后台，不阻塞启动）。
+   *
+   * npm 包里不带 574 张样例图，工作台后端在文件缺失时会退化成渐变 SVG 占位，
+   * 「风格库 / 配色库」就整片色块，看着像装坏了。所以插件自己启动后补一次：
+   * 已存在的跳过，升级也不会重下（repo_images 在运行时目录，同步时被排除）。
+   */
+  const samples = { state: 'idle', total: 0, done: 0, skip: 0, fail: 0,
+                    message: '', at: '', log: join(RUNTIME_DIR, 'samples.log') };
+  let samplesRunning = null;
+  function ensureSamples() {
+    if (samplesRunning) return samplesRunning;
+    if (!state.serverDir) { samples.state = 'skipped'; return Promise.resolve(samples); }
+    if (process.env.DSH_IMAGE_SKIP_SAMPLES === '1') {
+      samples.state = 'skipped'; samples.message = '已按 DSH_IMAGE_SKIP_SAMPLES 跳过'; return Promise.resolve(samples);
+    }
+    const log = text => {
+      console.log('[image-workbench] ' + text);
+      try {
+        mkdirSync(RUNTIME_DIR, { recursive: true });
+        appendFileSync(samples.log, `[${new Date().toISOString()}] ${text}\n`);
+      } catch { /* 日志而已 */ }
+    };
+    samples.state = 'running'; samples.at = new Date().toISOString();
+    samplesRunning = fetchStyleImages({ serverDir: state.serverDir, log })
+      .then(r => {
+        samples.total = r.total; samples.done = r.done;
+        samples.skip = r.skip; samples.fail = r.fail;
+        samples.message = r.error || '';
+        samples.state = r.ok ? 'done' : (r.error ? 'error' : 'partial');
+        samples.at = new Date().toISOString();
+        return samples;
+      })
+      .catch(e => {
+        samples.state = 'error'; samples.message = String(e && e.message || e);
+        samples.at = new Date().toISOString();
+        return samples;
+      })
+      .finally(() => { samplesRunning = null; });
+    return samplesRunning;
+  }
+  // 先让后端环境初始化抢到网络，再补样图（3 秒后开跑，纯后台）
+  {
+    const t = setTimeout(() => { void ensureSamples(); }, 3000);
+    if (typeof t.unref === 'function') t.unref();
+  }
 
   const watchdog = {
     enabled: config.watchdog !== false && state.autoStart,
@@ -584,6 +632,7 @@ export function apply(ctx, config = {}) {
         try { action = String((await request.json()).action || 'status'); } catch { /* 空 body */ }
       }
       if (action === 'start') await ensureServer(true);
+      else if (action === 'samples') void ensureSamples();
       else if (action === 'open') {
         const result = await openExternal(state.url);
         note('open', result);
@@ -620,6 +669,8 @@ export function apply(ctx, config = {}) {
           retryInMs: Math.max(0, venvState.nextRetryAt - Date.now()),
         },
         lastError: state.lastServerStart,
+        // 样例图（风格 / 图型 / 配色）下载进度：没下完时画廊显示的是占位色块
+        samples,
         // 进程起来又退出时，真正的原因在 backend.log 末尾（缺依赖、端口被占…）
         backendTail: tailOf(join(RUNTIME_DIR, 'backend.log'), 900),
         lastAction,

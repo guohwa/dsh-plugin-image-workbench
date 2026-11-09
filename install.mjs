@@ -27,6 +27,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { fetchStyleImages as fetchSamples } from './scripts/fetch-style-images.mjs';
 
 const NAME = 'dsh-plugin-image-workbench';
 const LEGACY = 'dsh-plugin-image-pool';
@@ -261,72 +262,17 @@ function syncServer() {
 /* ---------- 样图下载 ---------- */
 
 /**
- * 安装时自动下载真实样图（用 Node 直接拉，不依赖 Python 虚拟环境）。
- *
- * 分层来源：
- *   1) CDN 单文件  https://img.handraw-style.com  —— 国内国外都通，最小最快
- *   2) Gitee 镜像 raw  https://gitee.com/yang02010/handraw-style/raw/master
- *   3) GitHub raw     https://raw.githubusercontent.com/yang0/handraw-style/main
- * 失败不阻断安装，但会明确提示；重跑 `node install.mjs` 只补缺失项，已下的自动跳过。
+ * 安装时补齐真实样图（风格 / 图型 / 主题色预览）。
+ * 实现与 host.js 共用 scripts/fetch-style-images.mjs —— 一份逻辑两处调用，
+ * 免得「插件启动时补图」和「安装时补图」两套代码各自漂移。
  */
 async function fetchStyleImages() {
-  const repoImages = path.join(PLUGIN_DIR, 'server', 'repo_images');
-  fs.mkdirSync(repoImages, { recursive: true });
-
-  let rels = [];
-  const catFile = path.join(PLUGIN_DIR, 'server', 'catalog.json');
-  try {
-    const cat = JSON.parse(fs.readFileSync(catFile, 'utf8'));
-    for (const k of ['styles', 'layouts', 'colors'])
-      for (const it of (cat[k] || [])) if (it.img) rels.push(it.img);
-  } catch (e) {
-    console.warn('读取 catalog.json 失败（' + (e && e.message || e) + '），跳过样图下载。');
-    return;
-  }
-  rels = [...new Set(rels)];
-  if (!rels.length) { console.log('catalog.json 中没有可下载的样图清单，跳过。'); return; }
-
-  const total = rels.length;
-  const CDN = 'https://img.handraw-style.com';
-  const GITEE = 'https://gitee.com/yang02010/handraw-style/raw/master';
-  const GITHUB = 'https://raw.githubusercontent.com/yang0/handraw-style/main';
-  const sourcesFor = rel => [CDN + '/' + rel, GITEE + '/' + rel, GITHUB + '/' + rel];
-  const localOf = rel => path.join(repoImages, rel.replace(/^images\//, ''));
-  const exist = p => { try { return fs.statSync(p).size > 0; } catch { return false; } };
-
-  let done = 0, skip = 0, fail = 0;
-  const CONC = 12;
-  const getOne = async (rel) => {
-    const dst = localOf(rel);
-    if (exist(dst)) { skip++; return; }
-    fs.mkdirSync(path.dirname(dst), { recursive: true });
-    for (const url of sourcesFor(rel)) {
-      try {
-        const ac = new AbortController();
-        const t = setTimeout(() => ac.abort(), 15000);
-        const r = await fetch(url, { signal: ac.signal });
-        clearTimeout(t);
-        if (!r.ok) continue;
-        // 只接受真正的图片响应：gitee raw 会 302 跳到登录页（text/html），
-        // 若不拦截会把 HTML 写成 .webp 坏文件。
-        const ct = (r.headers.get('content-type') || '').toLowerCase();
-        if (!ct.startsWith('image/')) continue;
-        const buf = Buffer.from(await r.arrayBuffer());
-        if (buf.length < 200) continue;
-        fs.writeFileSync(dst, buf);
-        done++; return;
-      } catch { /* 换下一个源 */ }
-    }
-    fail++;
-  };
-
-  console.log('正在自动下载真实样图（风格 / 图型 / 主题色，共 ' + total + ' 张）…');
-  for (let i = 0; i < rels.length; i += CONC)
-    await Promise.all(rels.slice(i, i + CONC).map(getOne));
-
-  console.log(`样图下载完成：共 ${total} 张，已下 ${done}，跳过(已存在) ${skip}，失败 ${fail}。`);
-  if (fail)
-    console.log(`  ${fail} 张失败（多为网络受限）。重跑 \`node install.mjs\` 可补齐，已存在的会自动跳过。`);
+  const r = await fetchSamples({
+    serverDir: path.join(PLUGIN_DIR, 'server'),
+    log: text => console.log(text),
+  });
+  if (r.error) console.log('样图下载跳过：' + r.error);
+  if (r.fail) console.log('  ' + r.fail + ' 张失败（多为网络受限）。重跑 node install.mjs 可补齐，已存在的会自动跳过。');
 }
 
 /* ---------- 安装后自检 ---------- */
