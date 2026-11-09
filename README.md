@@ -114,9 +114,37 @@ node install.mjs
 
 ## 接口接入与账号管理
 
-内置账号池的初始状态不包含任何账号。首次生成前需完成以下任一配置。
+工作台支持两类接入方式：使用你已有的号池或任意第三方 OpenAI 兼容接口（方式 A）、使用本插件内置账号池（方式 B）。首次生成前需完成以下任一配置。
 
-### 方式 A：使用内置账号池
+### 方式 A：使用自有号池或者第三方接口
+
+如果你已经在 DSH 中运行着自己的「ChatGPT2API · 号池」（如默认端口 `38650`），或想接入任意 OpenAI 兼容服务，工作台完全兼容，无需启用本插件内置的 `38651` 号池：
+
+1. 在「接口与号池 → 出图接口」中，将 Base URL 填写为你已有号池的 `/v1` 地址（例如 `http://127.0.0.1:38650/v1`），并填入该号池的用户 API Key（在其 `user-api-keys.json` 中可查）。
+2. 保存后执行连通性测试。配置指向外部号池后，**内置 `38651` 号池不会被启动，也不参与进程管理**，两个号池各自独立、互不抢占端口与账号目录。
+3. 出图与参考图重写均通过标准 OpenAI 兼容协议（`/v1/images/generations`、`/v1/images/edits`）提交，你的号池原生支持。
+
+监控说明：若外部号池暴露 `/api/accounts`（含逐账号明细）与 `/health`，工作台会照常显示每个账号的限流 / 异常状态；若未暴露，监控自动降级为「单接口模式」——仅显示在线、不显示逐账号明细，**生成本身不受影响**。位于本机之外的远程号池，工作台一律只读、不代管其进程。
+
+> 未配置任何号池就点击「出图」时，工作台会明确提示「尚未配置生图号池」，并指引前往「接口与号池」面板填写地址与 Key，而非笼统报错。
+
+### 配置项
+
+大部分配置可在「接口与号池 → 出图接口」中修改，结果写入 `server/config.local.json`，该文件不纳入版本管理。下表为出厂默认值，两个服务端口均可通过 `cordis.patch.yml` 或环境变量调整。修改账号池端口时，须同步更新出图接口的 Base URL；账号管理面板按默认端口 38651 验证，建议保留默认值。
+
+| 配置项 | 默认值 | 修改方式 |
+| --- | --- | --- |
+| 工作台端口 | `8092` | `cordis.patch.yml` 的 `port`，或环境变量 `DSH_IMAGE_PORT` |
+| 账号池端口 | `38651` | `cordis.patch.yml` 的 `poolPort`，或环境变量 `DSH_IMAGE_POOL_PORT` |
+| 接口地址 | `http://127.0.0.1:38651/v1` | 出图接口页签 |
+| 图像模型 | `gpt-image-2` | 出图接口页签 |
+| 图片保存目录 | `server/images/` | 出图接口页签，支持绝对路径 |
+| 工作台名称 | `Bluxe手绘工坊 · 生图工作台` | 出图接口页签 |
+| 账号池数据目录 | `~/.dsh/chatgpt2api-image/` | 存放 `admin-key`、`user-api-keys.json`、`source/config.json` 与账号库 |
+| 守护间隔 | `15000` ms | `cordis.patch.yml` 的 `watchdogIntervalMs`；`watchdog: false` 可关闭宿主侧守护 |
+| 日志路径 | `~/.dsh/image-workbench/backend.log`、`~/.dsh/image-workbench/venv.log`、账号池目录下的 `pool-service.log` | 排障时按此顺序检查 |
+
+### 方式 B：使用内置账号池
 
 在「接口与号池 → 本地号池」中导入账号。点击文件选择框或拖入 `.txt`、`.json`、`.csv`、`.tsv`、`.log` 等文本文件（可多选），亦可直接粘贴文本内容，然后点击「导入并授权入池」。
 
@@ -140,10 +168,6 @@ node install.mjs
 
 配置代理后，号池经该出口访问上游，生成任务方可成功；未配置且网络受限时，表现为面板在线但生成失败、日志提示连接超时。
 
-### 方式 B：使用第三方接口
-
-在「接口与号池 → 出图接口」中填写 Base URL、API Key 与模型名，保存后执行连通性测试。该方式无需启动内置账号池。
-
 ## 独立运行
 
 后端服务可自行启动并守护账号池，因此无需 DSH 亦可运行：
@@ -164,22 +188,6 @@ python -m venv .venv
 ```
 
 账号池运行时仍由 `pool_service.py` 从插件的 `vendor/` 目录释放。Linux 与 macOS 环境若无可用 `uv`，需预先准备账号池的 Python 3.13 运行环境。启动后访问 `http://127.0.0.1:8092/`。
-
-## 配置项
-
-大部分配置可在「接口与号池 → 出图接口」中修改，结果写入 `server/config.local.json`，该文件不纳入版本管理。下表为出厂默认值，两个服务端口均可通过 `cordis.patch.yml` 或环境变量调整。修改账号池端口时，须同步更新出图接口的 Base URL；账号管理面板按默认端口 38651 验证，建议保留默认值。
-
-| 配置项 | 默认值 | 修改方式 |
-| --- | --- | --- |
-| 工作台端口 | `8092` | `cordis.patch.yml` 的 `port`，或环境变量 `DSH_IMAGE_PORT` |
-| 账号池端口 | `38651` | `cordis.patch.yml` 的 `poolPort`，或环境变量 `DSH_IMAGE_POOL_PORT` |
-| 接口地址 | `http://127.0.0.1:38651/v1` | 出图接口页签 |
-| 图像模型 | `gpt-image-2` | 出图接口页签 |
-| 图片保存目录 | `server/images/` | 出图接口页签，支持绝对路径 |
-| 工作台名称 | `Bluxe手绘工坊 · 生图工作台` | 出图接口页签 |
-| 账号池数据目录 | `~/.dsh/chatgpt2api-image/` | 存放 `admin-key`、`user-api-keys.json`、`source/config.json` 与账号库 |
-| 守护间隔 | `15000` ms | `cordis.patch.yml` 的 `watchdogIntervalMs`；`watchdog: false` 可关闭宿主侧守护 |
-| 日志路径 | `~/.dsh/image-workbench/backend.log`、`~/.dsh/image-workbench/venv.log`、账号池目录下的 `pool-service.log` | 排障时按此顺序检查 |
 
 ## HTTP 接口
 

@@ -1,9 +1,11 @@
-"""本地版执行层：出图 / 文案改走本机「ChatGPT2API · 生图号池」(127.0.0.1:38651)。
+"""本地版执行层：出图 / 文案统一走 OpenAI 兼容接口（号池或任意第三方均可）。
 
-与线上版的差别只有底层：VPS 是 20 个网页账号 + 指纹浏览器 + Playwright，
-本地是一个隔离的 OpenAI 兼容号池 API。PoolManager 的公开接口、job 状态机、
-result 数据契约全部保持不变，因此 app.py / history.py / imaging.py / 前端
-2816 行代码一行都不用改，历史、单张重做、压缩图、批量下载全部沿用。
+工作台不绑定任何特定号池：接口地址与密钥完全由 `config.local.json` 的
+`api_base_url` / `api_key` 决定，指向本插件内置的 38651 号池、用户已有的
+ChatGPT2API 号池（如 38650）、或任意 OpenAI 兼容服务皆可。PoolManager 的
+公开接口、job 状态机、result 数据契约保持稳定，因此 app.py / history.py /
+imaging.py / 前端代码无需随底层接口变化而改动，历史、单张重做、压缩图、
+批量下载全部沿用。
 
 VPS 原件备份在 pool.py.vps_original。
 """

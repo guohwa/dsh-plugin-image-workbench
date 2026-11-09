@@ -1353,16 +1353,26 @@ function payload(mode, topic){
   };
 }
 
+// 统一的出图提交入口：把后端返回的明确错误（如「尚未配置生图号池」）原样透出，
+// 而不是笼统的「提交失败 HTTP 400」，方便用户直接照提示操作。
+async function submitGenerate(p){
+  const r = await fetch('/api/generate', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(p)});
+  if (!r.ok){
+    let msg = '提交失败 HTTP ' + r.status;
+    try { const d = await r.json(); if (d && d.detail) msg = d.detail; } catch(_){}
+    throw new Error(msg);
+  }
+  return r.json();
+}
+
 async function run(mode, statusEl){
   const p = payload(mode);
   if (!p.topic){ toast('先写一个选题'); $('#topic').focus(); return; }
   statusEl.className = 'status run'; statusEl.textContent = '排队中…';
   try{
-    const r = await fetch('/api/generate', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(p)});
-    if (!r.ok) throw new Error('提交失败 HTTP ' + r.status);
-    const {job_id} = await r.json();
+    const {job_id} = await submitGenerate(p);
     poll(job_id, statusEl, mode);
-  }catch(e){ statusEl.className='status err'; statusEl.textContent = e.message; }
+  }catch(e){ statusEl.className='status err'; statusEl.textContent = e.message; toast(e.message, 'err'); }
 }
 
 async function poll(id, statusEl, mode){
@@ -1414,16 +1424,14 @@ async function polishText(){
   const statusEl = $('#textStatus');
   statusEl.className = 'status run'; statusEl.textContent = '排队中…';
   try{
-    const r = await fetch('/api/generate', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        mode:'polish', topic: title || body.slice(0, 60), title, body,
-        style_id: null, layout_id: null, color_id: null, ratio: '3:4', note: null
-      })});
-    if (!r.ok) throw new Error('提交失败 HTTP ' + r.status);
-    const {job_id} = await r.json();
+    const {job_id} = await submitGenerate({
+      mode:'polish', topic: title || body.slice(0, 60), title, body,
+      style_id: null, layout_id: null, color_id: null, ratio: '3:4', note: null
+    });
     poll(job_id, statusEl, 'polish');
   }catch(e){
     statusEl.className = 'status err'; statusEl.textContent = e.message;
+    toast(e.message, 'err');
   }
 }
 
@@ -1753,17 +1761,15 @@ async function runOne(i){
   const taskId = 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const topic = (it.title || it.body || '配图').slice(0, 60);
   try{
-    const r = await fetch('/api/generate', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({...payload('image', topic), task_id: taskId, seq: i,
-        doc_body: $('#docBody').value, title: it.title, body: it.body, prompt,
-        ...redoExtra(redo)})});
-    if (!r.ok) throw new Error('提交失败 HTTP ' + r.status);
-    const {job_id} = await r.json();
+    const {job_id} = await submitGenerate({...payload('image', topic), task_id: taskId, seq: i,
+      doc_body: $('#docBody').value, title: it.title, body: it.body, prompt,
+      ...redoExtra(redo)});
     const ok = await pollOne(job_id, i, topic, statusEl);
     statusEl.className = ok ? 'status ok' : 'status err';
     if (ok) clearRedo(true);
   }catch(e){
     statusEl.className = 'status err'; statusEl.textContent = e.message;
+    toast(e.message, 'err');
   }
 }
 
@@ -2262,12 +2268,10 @@ async function runImage(){
       if (_stopRequested) throw new Error('已停止生图');
       const topic = (it.title || it.body || '配图').slice(0, 60);
       const prompt = await redoPrompt(it, redo, it.prompt);
-      const r = await fetch('/api/generate', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({...payload('image', topic), task_id: taskId, seq: seq++,
-          doc_body: docBody, title: it.title, body: it.body, prompt,
-          ...redoExtra(redo)})});
-      if (!r.ok) throw new Error('提交失败 HTTP ' + r.status);
-      ids.push((await r.json()).job_id);
+      const {job_id} = await submitGenerate({...payload('image', topic), task_id: taskId, seq: seq++,
+        doc_body: docBody, title: it.title, body: it.body, prompt,
+        ...redoExtra(redo)});
+      ids.push(job_id);
       // 每提交一张就刷一次断点：刷新页面后能凭它接着等图
       saveBatch({task: taskId, ids: ids.slice(), topics, t: Date.now()});
       statusEl.textContent = `已提交 ${ids.length}/${items.length}…`;
@@ -2280,6 +2284,7 @@ async function runImage(){
   }catch(e){
     statusEl.className = 'status err';
     statusEl.textContent = _stopRequested ? '已停止生图' : e.message;
+    if (!_stopRequested) toast(e.message, 'err');
   }finally{
     btn.disabled = false;
     _batchRunning = false;

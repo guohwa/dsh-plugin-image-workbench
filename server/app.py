@@ -728,8 +728,25 @@ async def api_generate(req: GenRequest):
         raise HTTPException(400, "bad replace_id")
     if req.mode not in ("text", "image", "polish"):
         raise HTTPException(400, "mode must be text, image or polish")
-    if not POOL.accounts:
-        raise HTTPException(400, "pool is empty")
+    # 号池未就绪：单接口模式本就不拉账号，放行（由真实请求暴露错误）；
+    # 号池 / auto 模式账号为空时，给出明确指引而非笼统的「pool is empty」。
+    if not POOL.accounts and provider_cfg().get("monitor_mode") != "single":
+        cfg = load_config()
+        base = provider_cfg(cfg).get("base_url") or ""
+        user_set = bool(cfg.get("api_base_url"))
+        if not base:
+            raise HTTPException(
+                400,
+                "尚未配置生图号池。请在「接口与号池」面板填写号池地址与 API Key 后再出图。")
+        if not user_set:
+            raise HTTPException(
+                400,
+                "尚未配置生图号池：当前仍指向内置空号池。请在「接口与号池」面板填写你自己的号池地址"
+                "（例如 http://127.0.0.1:38650/v1）与 API Key，或先启动内置号池并导入账号。")
+        raise HTTPException(
+            400,
+            f"号池 {base} 已配置但暂无可用账号。请确认号池进程已启动并已导入账号；"
+            "可在「接口与号池」面板点「测试」验证连通性。")
     if req.mode == "text":
         prompt = build_text_prompt(req)
     elif req.mode == "polish":
