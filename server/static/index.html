@@ -288,6 +288,9 @@
   .pill{display:inline-flex;align-items:center;gap:6px;background:#f7f5ff;border:1px solid var(--line);
     border-radius:12px;padding:3px 9px;font-size:11px;color:var(--ink-2)}
   .footer-note{margin-top:12px;font-size:10.5px;color:var(--ink-3);line-height:1.6}
+  /* 左栏底部版本号：左栏与中/右栏同高，版本钉在卡片左下角 */
+  .panel.left{align-self:stretch;display:flex;flex-direction:column}
+  .ver-foot{margin-top:auto;padding-top:12px;font-size:11px;color:var(--ink-3);opacity:.7}
   .strip-wrap{display:flex;align-items:center;gap:6px}
   .strip{position:relative;flex:1;display:flex;gap:8px;overflow-x:auto;padding:6px 2px;min-height:100px;scroll-behavior:smooth}
   .strip::-webkit-scrollbar{height:8px}
@@ -671,6 +674,7 @@
     </div>
     <div class="status" id="splitStatus"></div>
     <div class="md" id="docRaw" style="display:none"></div>
+    <div class="ver-foot" id="verFoot" title="当前工作台版本"></div>
   </section>
 
   <!-- 配图工坊 -->
@@ -4729,6 +4733,17 @@ setInterval(refreshPool, 10000);
         : '缩略图已全部就位（共 ' + s.total + ' 张）。';
     })
     .catch(function(){}); // 状态读不到就保持默认说明，不影响轮播
+})();
+
+/* 左下角版本号：/health 返回插件版本（取自 package.json），读不到就留空 */
+(function(){
+  fetch('/health', {cache: 'no-store'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(d){
+      var el = document.getElementById('verFoot');
+      if (el && d && d.version) el.textContent = 'v' + d.version;
+    })
+    .catch(function(){});
 })();
 </script>
 
