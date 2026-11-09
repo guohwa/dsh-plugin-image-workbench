@@ -17,7 +17,6 @@
 - [首次启动](#首次启动)
 - [接口接入与账号管理](#接口接入与账号管理)
 - [独立运行](#独立运行)
-- [配置项](#配置项)
 - [HTTP 接口](#http-接口)
 - [数据与隐私](#数据与隐私)
 - [故障排查](#故障排查)
@@ -139,22 +138,6 @@ node install.mjs
 仅包含邮箱、密码与 2FA 密钥而不含 `access_token` 的条目不在支持范围内，本版本号池不执行登录换取 token 的操作。导入完成后，按网络环境配置出网代理，并确认面板显示在线状态。
 
 > 出图接口若曾指向外部号池（如 38650），「本地号池」页会出现「↩ 恢复使用本机内置号池（38651）」按钮，一键把接口切回内置池并启动它；外部号池的账号与进程不受影响。
-
-### 配置项
-
-大部分配置可在「接口与号池 → 出图接口」中修改，结果写入 `server/config.local.json`，该文件不纳入版本管理。下表为出厂默认值，两个服务端口均可通过 `cordis.patch.yml` 或环境变量调整。修改账号池端口时，须同步更新出图接口的 Base URL；账号管理面板按默认端口 38651 验证，建议保留默认值。
-
-| 配置项 | 默认值 | 修改方式 |
-| --- | --- | --- |
-| 工作台端口 | `8092` | `cordis.patch.yml` 的 `port`，或环境变量 `DSH_IMAGE_PORT` |
-| 账号池端口 | `38651` | `cordis.patch.yml` 的 `poolPort`，或环境变量 `DSH_IMAGE_POOL_PORT` |
-| 接口地址 | `http://127.0.0.1:38651/v1` | 出图接口页签 |
-| 图像模型 | `gpt-image-2` | 出图接口页签 |
-| 图片保存目录 | `server/images/` | 出图接口页签，支持绝对路径 |
-| 工作台名称 | `Bluxe手绘工坊 · 生图工作台` | 出图接口页签 |
-| 账号池数据目录 | `~/.dsh/chatgpt2api-image/` | 存放 `admin-key`、`user-api-keys.json`、`source/config.json` 与账号库 |
-| 守护间隔 | `15000` ms | `cordis.patch.yml` 的 `watchdogIntervalMs`；`watchdog: false` 可关闭宿主侧守护 |
-| 日志路径 | `~/.dsh/image-workbench/backend.log`、`~/.dsh/image-workbench/venv.log`、账号池目录下的 `pool-service.log` | 排障时按此顺序检查 |
 
 ### 出网代理配置
 
