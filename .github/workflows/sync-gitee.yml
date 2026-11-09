@@ -1,0 +1,38 @@
+name: Sync to Gitee
+
+# 把 GitHub 的 main 分支和 tag 镜像到 Gitee，国内用户可以直连码云安装。
+# 需要两个仓库 Secrets：GITEE_USER（码云用户名）、GITEE_TOKEN（码云私人令牌，勾 projects 权限）
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: sync-gitee
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push to Gitee
+        env:
+          GU: ${{ secrets.GITEE_USER }}
+          GT: ${{ secrets.GITEE_TOKEN }}
+          GR: ${{ secrets.GITEE_REPO }}
+        run: |
+          if [ -z "$GT" ] || [ -z "$GU" ]; then
+            echo "::warning::未配置 GITEE_USER / GITEE_TOKEN，跳过同步"
+            exit 0
+          fi
+          REPO="${GR:-dsh-plugin-image-workbench}"
+          git remote add gitee "https://${GU}:${GT}@gitee.com/${GU}/${REPO}.git"
+          git push gitee --all --force
+          git push gitee --tags --force
+          echo "已同步到 https://gitee.com/${GU}/${REPO}"

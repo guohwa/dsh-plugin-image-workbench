@@ -1,0 +1,45 @@
+# npm 包只放源码与运行时，不放任何本地生成物
+# （server/ 在 package.json 的 files 里，这里做二次排除）
+
+# Python 运行环境（安装时本地自建）
+server/.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# 生成图片 / 缩略图 / 风格样图（首次运行按需下载）
+server/images/
+server/thumbs/
+server/repo_images/
+images/
+thumbs/
+output/
+
+# 历史、草稿、任务数据
+server/workbench/
+workbench/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.jsonl
+
+# 号池账号与本地密钥
+server/data/
+data/
+accounts.json
+accounts.db
+user-api-keys.json
+admin-key
+import-blacklist.json
+config.json
+config.local.json
+.env
+.env.*
+
+# 日志与备份
+*.log
+*.bak_*
+*.orig
+*.rej

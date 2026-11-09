@@ -1,0 +1,48 @@
+name: Publish to npm
+
+# 打 tag 时自动发到 npmjs 官方源；npmmirror 会在几分钟内自动同步，
+# 用户装插件时填包名即可，DSH 会自动选国内镜像。
+# 需要一个仓库 Secret：NPM_TOKEN（npm 账号的 Automation / Granular token）
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: 校验 tag 与 package.json 版本一致
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "package.json=$PKG tag=$TAG"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$PKG" != "$TAG" ]; then
+            echo "::error::package.json 版本 $PKG 与 tag $TAG 不一致，拒绝发布"
+            exit 1
+          fi
+
+      - name: 打印包内容摘要
+        run: npm pack --dry-run 2>&1 | tail -8
+
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::warning::未配置 NPM_TOKEN，跳过发布"
+            exit 0
+          fi
+          npm publish --access public
