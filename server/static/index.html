@@ -1058,6 +1058,8 @@
           <button class="btn ghost mini" id="pRestart" type="button" hidden>重启</button>
           <button class="btn ghost mini" id="pStop" type="button" hidden>停止</button>
           <button class="btn ghost mini" id="pReload" type="button">刷新</button>
+          <button class="btn primary mini" id="pUseBuiltin" type="button" hidden
+            title="把出图接口改回本机内置号池 38651，并对齐密钥、启动它。外部号池的账号与进程不受影响">↩ 切回内置池</button>
         </div>
         <div class="prow">
           <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink-3);white-space:nowrap">
@@ -2650,6 +2652,10 @@ function renderPool(d){
   $('#pStart').hidden = !canManage || on || !!poolBusy;
   $('#pRestart').hidden = !canManage || !sv.running || !!poolBusy;
   $('#pStop').hidden = !canManage || !sv.running || !!poolBusy;
+  // 接口不在内置池（比如改指了 38650）时给一个回程入口；已在内置池就绝不显示。
+  // 不能用 d.local 判断：38650 同样跑在本机回环，local 一样为 true，只认端口。
+  const useBuf = $('#pUseBuiltin');
+  if (useBuf) useBuf.hidden = /:38651(\D|$)/.test(d.base_url || '') || !!poolBusy;
   // 上一步动作把按钮 disable 过，这里必须按最新状态复位，否则「启动」看得到却点不动
   ['pStart', 'pRestart', 'pStop'].forEach(id => { $('#' + id).disabled = !!poolBusy; });
   $('#pAuto').disabled = !canManage;
@@ -2755,6 +2761,26 @@ document.querySelectorAll('[data-copy]').forEach(b => {
 });
 
 $('#pReload').onclick = ()=> loadPoolPanel();
+
+$('#pUseBuiltin').onclick = async ()=>{
+  const btn = $('#pUseBuiltin');
+  if (!confirm('把出图接口切回本机内置号池（38651）？\n\n会同时对好该号池的 Key 并启动它；当前外部号池（如 38650）的账号与进程不受影响。')) return;
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = '切换中…';
+  try{
+    const r = await fetch('/api/pool/use-builtin', {method: 'POST'});
+    const d = await r.json().catch(()=> ({}));
+    if (!r.ok) throw new Error(d.detail || d.message || ('HTTP ' + r.status));
+    if (d.config){ cfgFill(d.config); applyAppName(d.config.app_name); }
+    await loadPoolPanel();
+    refreshPool();
+    toast('已切回内置号池', 'ok');
+  }catch(e){
+    toast('切换失败：' + e.message, 'err');
+  }finally{
+    btn.disabled = false; btn.textContent = old;
+  }
+};
 
 /* 号池出口代理：读 / 存 / 测，全部走后端透传，浏览器不碰 admin key */
 async function loadPoolProxy(){
