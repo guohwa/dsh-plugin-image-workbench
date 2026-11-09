@@ -11,6 +11,11 @@
     --ok:#12b886; --warn:#f59f00; --err:#e03131; --chip:#f1eefe;
   }
   *{box-sizing:border-box}
+  /* 页面级滚动条不画出来：工作台常驻在 IDE 侧栏里，一条灰条跟着内容增减来回闪很碍眼。
+     只隐藏这根条，滚轮 / 触控板 / 键盘 / scrollIntoView 都照常工作；
+     栏内的横向滚动条（.strip 那类）是元素级样式，不受影响 */
+  html{scrollbar-width:none;-ms-overflow-style:none}
+  html::-webkit-scrollbar{width:0;height:0}
   body{margin:0;background:var(--bg);color:var(--ink);
     font:13px/1.6 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;}
   header{display:flex;align-items:center;gap:12px;padding:12px 18px;background:#fff;
@@ -291,9 +296,13 @@
   .pill{display:inline-flex;align-items:center;gap:6px;background:#f7f5ff;border:1px solid var(--line);
     border-radius:12px;padding:3px 9px;font-size:11px;color:var(--ink-2)}
   .footer-note{margin-top:12px;font-size:10.5px;color:var(--ink-3);line-height:1.6}
-  /* 左栏底部版本号：跟在内容正下方，不与别的栏对齐；有新版本时多一行升级提示 */
-  .ver-foot{margin-top:16px;font-size:13px;color:var(--ink-3)}
-  .ver-foot .up-new{margin-top:5px;font-size:12px;color:var(--primary);cursor:default}
+  /* 左栏底部版本号：跟在内容正下方，不与别的栏对齐。
+     升级提示做成同一行的小胶囊，绝不另起一行——多一行就会把整页顶出右侧滚动条 */
+  .ver-foot{display:flex;align-items:center;gap:8px;margin-top:16px;font-size:13px;
+    color:var(--ink-3);white-space:nowrap}
+  .ver-foot .up-new{flex:none;font-size:11px;line-height:1.5;color:var(--primary);
+    background:#f3f0ff;border:1px solid #e3dcff;border-radius:9px;padding:0 7px;cursor:pointer}
+  .ver-foot .up-new:hover{background:#eae4ff}
   .strip-wrap{display:flex;align-items:center;gap:6px}
   .strip{position:relative;flex:1;display:flex;gap:8px;overflow-x:auto;padding:6px 2px;min-height:100px;scroll-behavior:smooth}
   .strip::-webkit-scrollbar{height:8px}
@@ -4870,16 +4879,21 @@ setInterval(refreshPool, 10000);
       if (el && d && d.version) el.textContent = 'v' + d.version;
     })
     .catch(function(){});
-  /* 有新版本就在版本号下面提示一行；查失败就当没有，不打扰使用 */
+  /* 有新版本就在版本号右边挂个小胶囊；查失败就当没有，不打扰使用。
+     必须与版本号同一行：另起一行会把整页顶出右侧滚动条。 */
   fetch('/api/upgrade', {cache: 'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
     .then(function(d){
       var el = document.getElementById('upNote');
       if (!el || !d || !d.has_new || !d.latest) return;
       el.hidden = false;
-      el.textContent = '发现新版本 v' + d.latest + '，建议升级 →';
-      el.title = '当前 v' + d.current + '。在 DSH「插件」里更新即可；'
+      el.textContent = '新版本 v' + d.latest + ' →';
+      var tip = '当前 v' + d.current + '。在 DSH「插件」里更新即可；'
         + '或在插件目录执行 npm i dsh-plugin-image-workbench@latest 后重跑 node install.mjs，装完重启 DSH。';
+      el.title = tip;
+      el.addEventListener('click', function(){
+        if (typeof toast === 'function') toast(tip, {title: '升级到 v' + d.latest, ms: 8000});
+      });
     })
     .catch(function(){});
 })();
