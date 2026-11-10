@@ -78,6 +78,33 @@ ok('前端两个停止按钮齐全', 'id="stopGen"' in _src_html and 'id="monSto
 ok('前端停止链路完整',
    all(x in _src_html for x in ('async function stopAllJobs', '/api/generate/stop',
                                 'clearBatch();', "d.status === 'cancelled'")))
+ok('选择器单击放大预览：弹窗 / 确认按钮 / 双击直选都在',
+   all(x in _src_html for x in ('id="pickPrev"', 'id="ppPick"', 'function openPickPrev',
+                                'function confirmPick', 'b.ondblclick = ',
+                                'function fitPrevWidth')),
+   '缺一个就会出现「点了没反应」或「选不中」')
+ok('选择器弹窗固定高度 + 焦点进框 + 滚轮接管',
+   all(x in _src_html for x in ('height:min(86vh,880px)', 'dlg.focus()',
+                                'function wirePickerWheel', 'wirePickerWheel()')),
+   '高度改回内容自适应会随分组抽动；少了滚轮接管，鼠标停在标题上滚不动')
+
+# 更新说明随包发布，升级面板从新版本的包里读它
+_log = json.loads((ROOT / 'changelog.json').read_text(encoding='utf-8'))
+_vers = [x.get('version') for x in _log if isinstance(x, dict)]
+ok('更新说明文件可用', isinstance(_log, list) and _vers
+   and all(x.get('items') for x in _log), f'{len(_log)} 个版本：{_vers[:3]}')
+ok('更新说明按版本区间取，最新在前，同版本为空',
+   len(_vers) >= 2
+   and [r['version'] for r in app._notes_between(_vers[-1], _vers[0], _log)][0] == _vers[0]
+   and app._notes_between(_vers[0], _vers[0], _log) == [],
+   '跨版本升级要把漏掉的几条一次补全，否则用户只看到最后一版')
+ok('更新说明不落后于当前版本', app._ver_key(_vers[0]) >= app._ver_key(app.VERSION),
+   f'changelog {_vers[0]} / 当前 {app.VERSION} —— 发了版忘记写说明，面板就空了')
+ok('升级白名单带上 changelog.json',
+   app._upgrade_rel('server/changelog.json') == 'server/changelog.json'
+   and app._upgrade_rel('server/other.json') is None)
+ok('升级面板有更新说明区块',
+   all(x in _src_html for x in ('id="upNotes"', 'id="upNotesBody"', 'function renderNotes')))
 ok('access 无 fcntl 依赖', not hasattr(access, 'fcntl'))
 ok('工作台目录可用', (ROOT / 'app.py').is_file())
 ok('AUTH 为空(本地全放行)', app.AUTH is None)

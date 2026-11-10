@@ -451,6 +451,49 @@ _REGISTRIES = (
     "https://registry.npmmirror.com/dsh-plugin-image-workbench/latest",
     "https://registry.npmjs.org/dsh-plugin-image-workbench/latest",
 )
+# 更新说明随包一起发（server/changelog.json）。旧版本自己的这份文件里没有新版本的条目，
+# 所以只能去 CDN 上读新包里的那份；npmmirror 的 files 接口要白名单，用不了。
+_CHANGELOG_BASES = (
+    "https://cdn.jsdelivr.net/npm/dsh-plugin-image-workbench@{}/server/changelog.json",
+    "https://unpkg.com/dsh-plugin-image-workbench@{}/server/changelog.json",
+)
+_NOTES_MAX_VERSIONS = 3      # 落后很多版本时只列最近三个，别把面板撑爆
+_NOTES_MAX_ITEMS = 8
+
+
+async def _fetch_changelog(ver: str) -> list:
+    """取指定版本随包发布的更新说明，两个 CDN 依次兜底，都失败返回空。"""
+    import httpx
+
+    async with httpx.AsyncClient(trust_env=False, timeout=6, follow_redirects=True) as c:
+        for tpl in _CHANGELOG_BASES:
+            try:
+                r = await c.get(tpl.format(ver))
+                if r.status_code == 200:
+                    data = r.json()
+                    if isinstance(data, list):
+                        return data
+            except Exception:
+                continue
+    return []
+
+
+def _notes_between(current: str, latest: str, log: list) -> list:
+    """从完整 changelog 里挑出「当前版本之后」的条目，最新排前面。"""
+    rows = []
+    for it in log:
+        if not isinstance(it, dict):
+            continue
+        v = str(it.get("version") or "").strip()
+        if not v:
+            continue
+        # 只要 current < v <= latest：跨版本升级时一次把漏掉的说明都补上
+        if _ver_key(v) > _ver_key(current) and _ver_key(v) <= _ver_key(latest):
+            items = [str(t) for t in (it.get("items") or []) if str(t).strip()]
+            rows.append({"version": v, "date": str(it.get("date") or ""),
+                         "items": items[:_NOTES_MAX_ITEMS]})
+    rows.sort(key=lambda x: _ver_key(x["version"]), reverse=True)
+    return rows[:_NOTES_MAX_VERSIONS]
 
 
 async def _latest_version() -> str:
@@ -492,11 +535,14 @@ async def api_upgrade():
         return JSONResponse(cached)
     if VERSION == "unknown":
         # 独立运行读不到 package.json：没有可比基准，不做升级判定，免得永远提示有新版本
-        data, ttl = {"current": VERSION, "latest": "", "has_new": False}, _UPGRADE_TTL_SAME
+        data, ttl = {"current": VERSION, "latest": "", "has_new": False, "notes": []}, _UPGRADE_TTL_SAME
     else:
         lat = await _latest_version()
         has_new = bool(lat) and _ver_key(lat) > _ver_key(VERSION)
-        data = {"current": VERSION, "latest": lat, "has_new": has_new}
+        data = {"current": VERSION, "latest": lat, "has_new": has_new, "notes": []}
+        if has_new:
+            # 只说清了「有新版本」还不够，得让人知道新在哪：随包发的 changelog 里捞
+            data["notes"] = _notes_between(VERSION, lat, await _fetch_changelog(lat))
         ttl = _UPGRADE_TTL_NEW if has_new else (_UPGRADE_TTL_SAME if lat else _UPGRADE_TTL_FAIL)
     _UPGRADE_CACHE.update({"at": now, "data": data, "ttl": ttl})
     return JSONResponse(data)
@@ -537,7 +583,7 @@ def _upgrade_rel(rel: str) -> str | None:
     top = parts[0]
     if top == "server":
         if len(parts) == 2:
-            ok = name.endswith(".py") or name in {"catalog.json", "requirements.txt"}
+            ok = name.endswith(".py") or name in {"catalog.json", "requirements.txt", "changelog.json"}
             return rel if ok else None
         return rel if parts[1] == "static" else None
     if top == "scripts":

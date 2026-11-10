@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bluxe手绘工坊 · 生图工作台</title>
+<!-- 内联图标：不写这一行浏览器会去请求 /favicon.ico 拿个 404，控制台常驻一条红字 -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236a5ae0'/%3E%3Cpath d='M9 22V10h6a4 4 0 0 1 0 8H9' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
   :root{
     --bg:#f5f3fb; --panel:#ffffff; --ink:#1f1b2e; --ink-2:#5b5573; --ink-3:#8b86a3;
@@ -226,13 +228,59 @@
   .panel.left #docTitle{font-size:14px;font-weight:600;padding:8px 10px}
   .panel.left #docBody{min-height:240px;line-height:1.7}
   .btn.mini{padding:5px 10px;font-size:11.5px}
-  dialog.picker{width:min(1240px,96vw)}
+  /* 选择器高度定死：换分组 / 搜索后结果从 170 张变 13 张时，弹窗不能跟着抽一下。
+     内部用 flex 把列表撑满，滚动交给 .scroller，头部和搜索框固定不动 */
+  dialog.picker{width:min(1240px,96vw);height:min(86vh,880px);padding:0}
+  dialog.picker[open]{display:flex;flex-direction:column}
+  dialog.picker .inner{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+  dialog.picker .scroller{flex:1 1 auto;min-height:0;max-height:none}
   dialog.picker h3 span{font-weight:400;color:var(--ink-3);font-size:12px}
   #pickerGrid{grid-template-columns:repeat(auto-fill,minmax(184px,1fr));gap:14px}
   #pickerGrid .tile span{font-size:12.5px}
   #pickerGrid.color-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
   #pickerGrid.color-grid .tile{padding:8px;gap:6px}
   #pickerGrid.color-grid .tile img{border-radius:50%;aspect-ratio:1}
+  /* 单击预览：把缩略图按原始比例放大到看得清细节，底部给一个明确的「选这个」
+     高度靠固定区块保证：舞台固定、标题单行、描述固定三行，翻页时长短不同也不会抽。
+     265px 是信息区(128)+按钮区(71)+上下余量的实测值，任何窗口高度下按钮都留在视内 */
+  dialog.pickprev{width:min(580px,94vw);padding:0;overflow:hidden;
+    --pp-img-h:clamp(160px,calc(92vh - 265px),620px);transition:width .16s ease}
+  dialog.pickprev[open]{display:flex;flex-direction:column}
+  dialog.pickprev::backdrop{background:rgba(22,14,44,.62)}
+  .pp-stage{position:relative;flex:0 0 auto;height:calc(var(--pp-img-h) + 32px);
+    display:flex;align-items:center;justify-content:center;background:#171130;padding:16px 68px}
+  .pp-stage img{width:100%;height:100%;object-fit:contain;border-radius:10px;display:block;
+    background:#241c42;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+  .pp-nav{position:absolute;top:50%;transform:translateY(-50%);width:38px;height:38px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
+    background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);color:#fff;
+    transition:.14s;backdrop-filter:blur(4px)}
+  .pp-nav:hover{background:rgba(31,157,107,.9);border-color:rgba(255,255,255,.6)}
+  .pp-nav:active{transform:translateY(-50%) scale(.94)}
+  .pp-nav.prev{left:14px}
+  .pp-nav.next{right:14px}
+  .pp-nav[hidden]{display:none}
+  .pp-info{padding:13px 20px 0;flex:none}
+  .pp-title{font-size:15.5px;font-weight:600;color:var(--ink);line-height:1.4;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pp-meta{margin-top:4px;font-size:12px;color:var(--ink-3);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* 固定三行：描述短的时候也占住位置，弹窗高度才不会随内容跳 */
+  .pp-desc{margin-top:7px;font-size:12.5px;color:#4a4463;line-height:1.68;
+    height:5.04em;overflow:auto;white-space:pre-wrap}
+  .pp-foot{display:flex;align-items:center;gap:9px;padding:14px 20px 16px;flex:none}
+  .pp-idx{flex:1;min-width:0;font-size:11.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* 缩略图右上角的放大提示：告诉用户点一下是看大图，不是直接选中 */
+  #pickerGrid .tile .zoom{position:absolute;right:7px;bottom:30px;width:22px;height:22px;border-radius:7px;
+    display:flex;align-items:center;justify-content:center;background:rgba(28,20,52,.68);color:#fff;
+    opacity:0;transition:.14s;pointer-events:none}
+  #pickerGrid .tile:hover .zoom{opacity:1}
+  @media (max-width:640px){
+    .pp-stage{padding:12px 46px}
+    .pp-nav.prev{left:6px}
+    .pp-nav.next{right:6px}
+    .pp-stage img{max-height:46vh}
+  }
   .preview-card{border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff;min-height:150px}
   .preview-card h3{margin:0 0 8px;font-size:14px;line-height:1.45}
   .preview-card p{margin:0;white-space:pre-wrap;color:#3c3652;font-size:12.5px}
@@ -284,6 +332,15 @@
   #upDlg .up-hero .up-from{color:var(--ink-3);font-weight:500}
   #upDlg .up-hero .up-to{color:var(--primary)}
   #upDlg .up-hero .up-arrow{color:var(--ink-3);font-weight:400}
+  /* 更新说明：跨版本升级可能一次列出几条，给个上限免得把面板撑得老长 */
+  #upDlg .up-notes{margin:0 0 12px;padding:9px 11px;border:1px solid var(--line);
+    border-radius:10px;background:#fbfaff;max-height:196px;overflow:auto}
+  #upDlg .up-notes-t{font-size:11.5px;font-weight:600;color:var(--ink-3);margin-bottom:5px}
+  #upDlg .up-notes .up-v{font-size:11.5px;color:var(--primary);font-weight:600;margin:6px 0 2px}
+  #upDlg .up-notes .up-v:first-child{margin-top:0}
+  #upDlg .up-notes ul{margin:0 0 4px;padding-left:16px;font-size:12.5px;line-height:1.7;color:var(--ink-2)}
+  #upDlg .up-notes ul:last-child{margin-bottom:0}
+  #upDlg .up-notes li{margin:1px 0}
   #upDlg .up-list{margin:0 0 4px;padding-left:17px;font-size:12px;line-height:1.75;color:var(--ink-2)}
   #upDlg .up-list li{margin:2px 0}
   #upDlg .up-step{margin-top:10px;padding:8px 10px;border-radius:9px;background:#f7f5ff;
@@ -960,6 +1017,10 @@
       <span class="up-arrow">→</span>
       <span class="up-to" id="upTo">v—</span>
     </div>
+    <div class="up-notes" id="upNotes" hidden>
+      <div class="up-notes-t">这次更新了什么</div>
+      <div id="upNotesBody"></div>
+    </div>
     <ul class="up-list">
       <li>只覆盖代码文件（后端 py、前端页面、插件外壳），草稿、历史、图片、账号配置一律不动。</li>
       <li>覆盖前会把旧代码打包到 server/workbench/backup/，出问题能解回去。</li>
@@ -985,7 +1046,30 @@
     </div>
     <div class="chips" id="pickerChips"></div>
     <input id="pickerFilter" placeholder="搜索编号 / 名称" style="font-size:12px;padding:7px 10px;margin-bottom:8px">
-    <div class="scroller" style="max-height:74vh"><div class="grid-styles" id="pickerGrid"></div></div>
+    <div class="scroller"><div class="grid-styles" id="pickerGrid"></div></div>
+  </div>
+</dialog>
+
+<!-- 选择器里的单击预览：缩略图只有 184px 宽还带裁切，看不清细节，先放大再决定 -->
+<dialog id="pickPrev" class="pickprev">
+  <div class="pp-stage">
+    <button class="pp-nav prev" id="ppPrev" type="button" aria-label="上一个" title="上一个（←）">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M15 4.5 7.5 12 15 19.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <img id="ppImg" alt="预览图">
+    <button class="pp-nav next" id="ppNext" type="button" aria-label="下一个" title="下一个（→）">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M9 4.5 16.5 12 9 19.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
+  <div class="pp-info">
+    <div class="pp-title" id="ppTitle"></div>
+    <div class="pp-meta" id="ppMeta"></div>
+    <div class="pp-desc" id="ppDesc"></div>
+  </div>
+  <div class="pp-foot">
+    <span class="pp-idx" id="ppIdx"></span>
+    <button class="btn ghost" id="ppCancel" type="button">取消</button>
+    <button class="btn primary" id="ppPick" type="button">选这个</button>
   </div>
 </dialog>
 
@@ -1441,7 +1525,13 @@ function openPicker(kind){
     : kind === 'color' ? '搜索编号 / 颜色名' : '搜索编号 / 名称';
   $('#pickerGrid').classList.toggle('color-grid', kind === 'color');
   renderPicker();
-  $('#pickerDlg').showModal();
+  const dlg = $('#pickerDlg');
+  dlg.showModal();
+  // 焦点直接落在弹窗上：一开始滚轮和键盘就作用在这个框里，不会滑到背后的工作台；
+  // 列表回到顶部（「当前」那张本来就排第一，打开就能看到自己现在用的哪个）
+  const sc = dlg.querySelector('.scroller');
+  if (sc) sc.scrollTop = 0;
+  dlg.focus();
 }
 
 function renderPicker(){
@@ -1457,6 +1547,10 @@ function renderPicker(){
   renderGroupChips($('#pickerChips'), norm, group, g=>{ state.picker.group = g; renderPicker(); });
   const box = $('#pickerGrid'); box.innerHTML = '';
   const frag = document.createDocumentFragment();
+  const shown = [];                 // 当前筛选结果，预览里靠它做上一个 / 下一个
+  const ZOOM_ICON = '<i class="zoom" aria-hidden="true"><svg viewBox="0 0 24 24" width="13" height="13">'
+    + '<circle cx="10.5" cy="10.5" r="6.4" fill="none" stroke="currentColor" stroke-width="2.2"/>'
+    + '<path d="M15.4 15.4 21 21" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></i>';
   norm.forEach(it=>{
     if (group !== '全部' && it.group_name !== group) return;
     const hay = `${it.id} ${it.name_en || ''} ${it.features || ''} ${it.name || ''} ${it.title || ''}`.toLowerCase();
@@ -1465,11 +1559,143 @@ function renderPicker(){
     const b = document.createElement('button');
     b.className = 'tile' + (isSel ? ' sel' : '') + (kind === 'color' ? ' round' : '');
     b.innerHTML = `<img loading="lazy" src="${imgUrl(it.img)}" alt="${it.id}"><span>${
-      kind === 'color' ? `${it.id} ${it.name || ''}` : it.id}</span>${isSel ? '<i class="cur">当前</i>' : ''}`;
-    b.onclick = ()=>{ pick(kind, it); $('#pickerDlg').close(); };
+      kind === 'color' ? `${it.id} ${it.name || ''}` : it.id}</span>${isSel ? '<i class="cur">当前</i>' : ''}${ZOOM_ICON}`;
+    // 单击先看大图再决定；双击是老用户的快捷路径，直接选中，不用多点一次
+    b.onclick = ()=> schedulePreview(kind, it);
+    b.ondblclick = ()=>{ clearTimeout(pickClickTimer); confirmPick(kind, it); };
+    shown.push(it);
     frag.appendChild(b);
   });
+  state.picker.list = shown;
   box.appendChild(frag);
+}
+
+/* ---------- 单击放大预览 ----------
+   缩略图 184px 宽还是 1:1 裁切，细节全靠猜。单击先给一张按原始比例放大的图，
+   底下摆一个明确的「选这个」，看完再决定；双击仍然直接选中。 */
+let pickClickTimer = null;
+
+function schedulePreview(kind, it){
+  clearTimeout(pickClickTimer);
+  pickClickTimer = setTimeout(()=>{
+    const list = (state.picker && state.picker.list) || [];
+    const at = list.indexOf(it);
+    if (at < 0) return;
+    openPickPrev(list, at);
+  }, 150);
+}
+
+function confirmPick(kind, it){
+  if (!it) return;
+  pick(kind, it);
+  const pv = $('#pickPrev'); if (pv.open) pv.close();
+  const pk = $('#pickerDlg'); if (pk.open) pk.close();
+}
+
+function openPickPrev(list, at){
+  state.picker.list = list;
+  state.picker.at = at;
+  renderPickPrev();
+  const d = $('#pickPrev');
+  if (!d.open) d.showModal();
+  $('#ppPick').focus();       // 焦点落在这里，回车就是确认
+}
+
+function renderPickPrev(){
+  const pk = state.picker || {};
+  const list = pk.list || [], at = pk.at || 0, kind = pk.kind;
+  const it = list[at];
+  if (!it) return;
+  const img = $('#ppImg');
+  img.onload = fitPrevWidth;
+  img.src = imgUrl(it.img);
+  img.alt = it.id;
+  if (img.complete && img.naturalWidth) fitPrevWidth();
+  const meta = [];
+  let title = '', desc = '';
+  if (kind === 'layout'){
+    title = it.title || it.id;
+    meta.push(it.id, it.group_name || it.group);
+    desc = it.prompt || '';
+  } else if (kind === 'style'){
+    title = it.name_en || it.name || it.id;
+    meta.push('#' + it.id, it.group_name || it.group);
+    if (it.ref) meta.push(it.ref);
+    desc = it.features || '';
+  } else {
+    title = it.name || it.id;
+    meta.push(it.id, it.group);
+    // 主题色没有单独的说明字段。后端把它作为独立一句配色指令排在「图型」之后、「画风」之前，
+    // 这里照实说清楚；顺带把固定三行的描述区填上，不留在那儿空一块。
+    desc = '会作为独立的配色指令排在排版图型之后，图里的主色、辅色与留白都按这个色系走。';
+  }
+  $('#ppTitle').textContent = title;
+  $('#ppMeta').textContent = meta.filter(Boolean).join(' · ');
+  $('#ppDesc').textContent = desc;
+  $('#ppIdx').textContent = `第 ${at + 1} / ${list.length} 个`
+    + (list.length > 1 ? ' · 双击卡片可直接选中' : '');
+  const multi = list.length > 1;
+  $('#ppPrev').hidden = !multi;
+  $('#ppNext').hidden = !multi;
+}
+
+function stepPreview(step){
+  const pk = state.picker || {};
+  const list = pk.list || [];
+  if (list.length < 2) return;
+  pk.at = (pk.at + step + list.length) % list.length;
+  renderPickPrev();
+}
+
+/* 弹窗宽度跟着图片比例走：方图铺得开，竖长的色卡把多余深色空白收掉。
+   小图最多放大到原始像素的两倍，再大就只是糊，不会更清楚。 */
+function fitPrevWidth(){
+  const d = $('#pickPrev'), img = $('#ppImg');
+  if (!d || !img || !img.naturalWidth || !img.naturalHeight) return;
+  const ratio = img.naturalWidth / img.naturalHeight;
+  const maxH = Math.min(Math.max(window.innerHeight * 0.92 - 265, 160), 620);
+  const w = Math.min(maxH * ratio, img.naturalWidth * 2);
+  const pad = window.innerWidth <= 640 ? 92 : 136;
+  const upper = Math.min(window.innerWidth * 0.94, 900);
+  d.style.width = Math.round(Math.min(upper, Math.max(520, w + pad))) + 'px';
+}
+
+function wirePickPreview(){
+  $('#ppPrev').onclick = ()=> stepPreview(-1);
+  $('#ppNext').onclick = ()=> stepPreview(1);
+  $('#ppCancel').onclick = ()=> $('#pickPrev').close();
+  $('#ppPick').onclick = ()=>{
+    const pk = state.picker || {};
+    const it = (pk.list || [])[pk.at];
+    confirmPick(pk.kind, it);
+  };
+  // 焦点在按钮上时回车交给按钮自己，这里只管左右翻页
+  $('#pickPrev').addEventListener('keydown', e=>{
+    if (e.key === 'ArrowLeft'){ e.preventDefault(); stepPreview(-1); }
+    else if (e.key === 'ArrowRight'){ e.preventDefault(); stepPreview(1); }
+  });
+  // 点弹窗外面的遮罩也算取消（dialog 的 backdrop 点击目标就是 dialog 本身）
+  $('#pickPrev').addEventListener('click', e=>{
+    if (e.target === e.currentTarget) e.currentTarget.close();
+  });
+  window.addEventListener('resize', ()=>{ if ($('#pickPrev').open) fitPrevWidth(); });
+}
+
+/* 滚轮接管：指针停在标题、分组标签、搜索框上时，滚轮原本对列表毫无作用，
+   用户得先把鼠标挪到列表里才能翻。这里把没落在列表上的滚轮手动喂给列表，
+   滚到头就不再拦，交给浏览器默认行为（避免整页跟着抖）。 */
+function wirePickerWheel(){
+  const dlg = $('#pickerDlg');
+  if (!dlg) return;
+  dlg.addEventListener('wheel', e=>{
+    if (e.ctrlKey) return;                       // Ctrl+滚轮是缩放，不抢
+    const sc = dlg.querySelector('.scroller');
+    if (!sc || (e.target.closest && e.target.closest('.scroller'))) return;
+    if (sc.scrollHeight <= sc.clientHeight) return;
+    const before = sc.scrollTop;
+    sc.scrollTop = before + (e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY);
+    if (sc.scrollTop !== before) e.preventDefault();
+  }, {passive: false});
 }
 
 function payload(mode, topic){
@@ -3409,6 +3635,8 @@ CARD_KINDS.forEach(([k, sfx])=>{
 });
 $('#pickerFilter').addEventListener('input', renderPicker);
 $('#pickerClose').onclick = ()=> $('#pickerDlg').close();
+wirePickPreview();
+wirePickerWheel();
 
 
 /* ================= 左侧：标题 + 正文 → 分镜清单 ================= */
@@ -4923,7 +5151,23 @@ setInterval(refreshPool, 10000);
   var toEl = document.getElementById('upTo');
   var copyEl = document.getElementById('upCopy');
   var cancelEl = document.getElementById('upCancel');
+  var notesEl = document.getElementById('upNotes');
+  var notesBody = document.getElementById('upNotesBody');
   var curVer = '', latestVer = '';
+
+  /* 更新说明来自新版本包里的 server/changelog.json，由后端 /api/upgrade 带回来。
+     拿不到就整块不显示——宁可少一块，也不要在升级按钮旁边挂个「暂无说明」。 */
+  function renderNotes(notes){
+    if (!notesEl || !notesBody) return;
+    var rows = (notes || []).filter(function(n){ return n && n.version; });
+    if (!rows.length){ notesEl.hidden = true; notesBody.innerHTML = ''; return; }
+    notesBody.innerHTML = rows.map(function(n){
+      var head = 'v' + esc(n.version) + (n.date ? ' · ' + esc(n.date) : '');
+      var items = (n.items || []).map(function(t){ return '<li>' + esc(t) + '</li>'; }).join('');
+      return '<div class="up-v">' + head + '</div><ul>' + items + '</ul>';
+    }).join('');
+    notesEl.hidden = false;
+  }
 
   function setStep(text, kind){
     if (!stepEl) return;
@@ -4951,6 +5195,7 @@ setInterval(refreshPool, 10000);
       note.hidden = true;
       note.textContent = '';
       note.title = '';
+      renderNotes([]);
       return;
     }
     if (d.current) curVer = d.current;
@@ -4958,6 +5203,7 @@ setInterval(refreshPool, 10000);
     note.hidden = false;
     note.textContent = '新版本 v' + d.latest + ' →';
     note.title = '点击打开升级面板，可一键升级（只换代码，不动草稿和图片）';
+    renderNotes(d.notes);
   }
 
   /* ---------- 面板 ---------- */
