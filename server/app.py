@@ -421,39 +421,71 @@ async def health():
 
 
 def _ver_key(v: str) -> tuple:
-    """把 x.y.z 解析成可比较的元组，非数字段按 0 处理。"""
-    out = []
-    for seg in (v or "").split("."):
-        out.append(int(seg) if seg.isdigit() else 0)
-    return tuple(out)
+    """把 x.y.z 解析成可比较的键。
+
+    数字段按整数比（所以 1.1.9 < 1.1.10，字符串比会错）；缺的段补 0，
+    1.1 与 1.1.0 视为同版本；带 -beta / -rc 后缀的排在同号正式版之前。
+    """
+    core = (v or "").strip().split("+")[0]
+    head, sep, _pre = core.partition("-")
+    parts = []
+    for seg in head.split("."):
+        m = re.match(r"\d+", seg)
+        parts.append(int(m.group()) if m else 0)
+    while len(parts) < 3:
+        parts.append(0)
+    return (tuple(parts), 0 if sep else 1)
 
 
-_UPGRADE_CACHE: dict = {"at": 0.0, "data": None}
+_UPGRADE_CACHE: dict = {"at": 0.0, "data": None, "ttl": 0.0}
+# 缓存时长分三档：确实有新版本才敢锁久（10 分钟），
+# 没查到新版本只锁 90 秒——镜像同步慢的时候，锁 10 分钟会让用户晚十分钟才看见提示；
+# 查询失败锁 60 秒，网络恢复能尽快重试。
+_UPGRADE_TTL_NEW = 600
+_UPGRADE_TTL_SAME = 90
+_UPGRADE_TTL_FAIL = 60
+_REGISTRIES = (
+    "https://registry.npmmirror.com/dsh-plugin-image-workbench/latest",
+    "https://registry.npmjs.org/dsh-plugin-image-workbench/latest",
+)
+
+
+async def _latest_version() -> str:
+    """按「国内镜像 → 官方源」顺序取 npm 上的最新版本，都失败就返回空串。"""
+    import httpx
+    async with httpx.AsyncClient(trust_env=False, timeout=6, follow_redirects=True) as c:
+        for url in _REGISTRIES:
+            try:
+                r = await c.get(url)
+                if r.status_code == 200:
+                    v = str(r.json().get("version") or "").strip()
+                    if v:
+                        return v
+            except Exception:
+                continue
+    return ""
 
 
 @app.get("/api/upgrade")
 async def api_upgrade():
     """对比 npm 上的最新版本，供左下角出「有新版本」提示。
 
-    走 npmmirror 直连（国内稳），10 分钟缓存；网络不通就当没有新版本，
-    绝不因为查版本失败打扰使用。trust_env=False：不吃代理环境变量，避免被带偏。
+    直连 registry（不吃代理环境变量，避免被带偏），结果按是否有新版本分档缓存；
+    网络不通就当没有新版本，绝不因为查版本失败打扰使用。
     """
     now = time.time()
-    if _UPGRADE_CACHE["data"] is not None and now - _UPGRADE_CACHE["at"] < 600:
-        return JSONResponse(_UPGRADE_CACHE["data"])
-    data = {"current": VERSION, "latest": "", "has_new": False}
-    try:
-        import httpx
-        async with httpx.AsyncClient(trust_env=False, timeout=6) as c:
-            r = await c.get("https://registry.npmmirror.com/dsh-plugin-image-workbench/latest")
-            if r.status_code == 200:
-                lat = str(r.json().get("version") or "").strip()
-                data["latest"] = lat
-                data["has_new"] = bool(lat) and _ver_key(lat) > _ver_key(VERSION)
-    except Exception:
-        pass
-    _UPGRADE_CACHE["at"] = now
-    _UPGRADE_CACHE["data"] = data
+    cached = _UPGRADE_CACHE["data"]
+    if cached is not None and now - _UPGRADE_CACHE["at"] < _UPGRADE_CACHE["ttl"]:
+        return JSONResponse(cached)
+    if VERSION == "unknown":
+        # 独立运行读不到 package.json：没有可比基准，不做升级判定，免得永远提示有新版本
+        data, ttl = {"current": VERSION, "latest": "", "has_new": False}, _UPGRADE_TTL_SAME
+    else:
+        lat = await _latest_version()
+        has_new = bool(lat) and _ver_key(lat) > _ver_key(VERSION)
+        data = {"current": VERSION, "latest": lat, "has_new": has_new}
+        ttl = _UPGRADE_TTL_NEW if has_new else (_UPGRADE_TTL_SAME if lat else _UPGRADE_TTL_FAIL)
+    _UPGRADE_CACHE.update({"at": now, "data": data, "ttl": ttl})
     return JSONResponse(data)
 
 

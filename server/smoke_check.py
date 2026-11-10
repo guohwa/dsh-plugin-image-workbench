@@ -57,6 +57,13 @@ ok('app.api_generate_stop', hasattr(app, 'api_generate_stop'))
 ok('POST /api/generate/stop 已注册',
    any(getattr(r, 'path', '') == '/api/generate/stop'
        and 'POST' in getattr(r, 'methods', set()) for r in app.app.routes))
+# 版本比较：必须按数字段比，字符串比会把 1.1.9 判成比 1.1.10 新
+_ver_cases = [('1.1.9', '1.1.10', False), ('1.1.17', '1.1.16', True), ('1.1', '1.1.0', False),
+              ('1.1.17', '1.1.17', False), ('1.1.17-beta.1', '1.1.17', False),
+              ('1.1.17-beta.1', '1.1.16', True), ('1.10.0', '1.9.9', True)]
+ok('版本比较：按数字段比，预发布版低于同号正式版',
+   all((app._ver_key(a) > app._ver_key(b)) == exp for a, b, exp in _ver_cases))
+
 _src_pool = (ROOT / 'pool.py').read_text(encoding='utf-8')
 _src_html = (ROOT / 'static' / 'index.html').read_text(encoding='utf-8')
 ok('已停止状态不落盘', 'not in ("done", "error", "cancelled")' in _src_pool)

@@ -4878,26 +4878,51 @@ setInterval(refreshPool, 10000);
     .then(function(r){ return r.ok ? r.json() : null; })
     .then(function(d){
       var el = document.getElementById('verFoot');
-      if (el && d && d.version) el.textContent = 'v' + d.version;
+      if (el && d && d.version && d.version !== 'unknown') el.textContent = 'v' + d.version;
     })
     .catch(function(){});
   /* 有新版本就在版本号右边挂个小胶囊；查失败就当没有，不打扰使用。
-     必须与版本号同一行：另起一行会把整页顶出右侧滚动条。 */
-  fetch('/api/upgrade', {cache: 'no-store'})
-    .then(function(r){ return r.ok ? r.json() : null; })
-    .then(function(d){
-      var el = document.getElementById('upNote');
-      if (!el || !d || !d.has_new || !d.latest) return;
-      el.hidden = false;
-      el.textContent = '新版本 v' + d.latest + ' →';
-      var tip = '当前 v' + d.current + '。在 DSH「插件」里更新即可；'
-        + '或在插件目录执行 npm i dsh-plugin-image-workbench@latest 后重跑 node install.mjs，装完重启 DSH。';
-      el.title = tip;
-      el.addEventListener('click', function(){
-        if (typeof toast === 'function') toast(tip, {title: '升级到 v' + d.latest, ms: 8000});
-      });
-    })
-    .catch(function(){});
+     必须与版本号同一行：另起一行会把整页顶出右侧滚动条。
+     工作台常年开着，只在首屏查一次就永远等不到提示，所以切回页面和每 10 分钟各复查一次；
+     复查拿到的结果如果已经没有新版本，要把胶囊收回去，不能挂着过期提示。 */
+  var note = document.getElementById('upNote');
+  if (!note) return;
+  var tipText = '', tipTitle = '';
+
+  function render(d){
+    if (!d || !d.has_new || !d.latest){
+      note.hidden = true;
+      note.textContent = '';
+      note.title = '';
+      return;
+    }
+    note.hidden = false;
+    note.textContent = '新版本 v' + d.latest + ' →';
+    tipTitle = '升级到 v' + d.latest;
+    tipText = '当前 v' + d.current + '。在 DSH「插件」里更新即可；'
+      + '或在插件目录执行 npm i dsh-plugin-image-workbench@latest 后重跑 node install.mjs，装完重启 DSH。';
+    note.title = tipText;
+  }
+
+  // 用 onclick 覆盖而不是 addEventListener：复查会反复渲染，监听器不能越叠越多
+  note.onclick = function(){
+    if (!note.hidden && tipText !== '' && typeof toast === 'function') toast(tipText, {title: tipTitle, ms: 8000});
+  };
+
+  var busy = false;
+  function check(){
+    if (busy || document.hidden) return;
+    busy = true;
+    fetch('/api/upgrade', {cache: 'no-store'})
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(render)
+      .catch(function(){})
+      .then(function(){ busy = false; });
+  }
+
+  check();
+  setInterval(check, 10 * 60 * 1000);
+  document.addEventListener('visibilitychange', function(){ if (!document.hidden) check(); });
 })();
 </script>
 
