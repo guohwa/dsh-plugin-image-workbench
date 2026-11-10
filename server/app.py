@@ -10,8 +10,11 @@ import hashlib
 import os
 import re
 import secrets
+import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
 import time
 import uuid
 import zipfile
@@ -487,6 +490,160 @@ async def api_upgrade():
         ttl = _UPGRADE_TTL_NEW if has_new else (_UPGRADE_TTL_SAME if lat else _UPGRADE_TTL_FAIL)
     _UPGRADE_CACHE.update({"at": now, "data": data, "ttl": ttl})
     return JSONResponse(data)
+
+
+# ---------- 一键升级：从 npm 拉整包，只覆盖代码文件 ----------
+#
+# 插件的运行目录就是源码目录（DSH 用目录联接指过来），草稿、历史、图片、配置、
+# 虚拟环境都躺在同一个目录里。所以升级只做一件事：把新包的代码文件逐个盖上去，
+# 其余一律不碰——用白名单而不是黑名单，认不出来的路径直接跳过。
+
+PLUGIN_ROOT = LAB.parent
+# 顶层这几个是插件外壳，跟随版本一起更新
+_TOP_CODE = {"host.js", "client.js", "cordis.patch.yml", "install.mjs", "package.json"}
+# 这些目录整棵不动：虚拟环境、运行态数据、号池内核（几十 MB，升级用不到）
+_KEEP_ANY = {"vendor", "node_modules", ".venv", "__pycache__", "workbench", "images",
+             "thumbs", "refs", "repo_images", ".pytest_cache", ".git"}
+_KEEP_FILES = {"config.local.json", "app.db", "history.db"}
+_MAX_TARBALL = 120 * 1024 * 1024
+_TARBALL_BASES = (
+    "https://registry.npmmirror.com/dsh-plugin-image-workbench/-/dsh-plugin-image-workbench-{}.tgz",
+    "https://registry.npmjs.org/dsh-plugin-image-workbench/-/dsh-plugin-image-workbench-{}.tgz",
+)
+
+
+def _upgrade_rel(rel: str) -> str | None:
+    """tarball 内的相对路径 -> 该不该写盘。不该写返回 None。"""
+    parts = [p for p in rel.replace("\\", "/").split("/") if p not in ("", ".")]
+    if not parts:
+        return None
+    name = parts[-1]
+    if any(p in _KEEP_ANY for p in parts[:-1]):
+        return None
+    if name in _KEEP_FILES or name.endswith((".db", ".log", ".pyc", ".upnew")):
+        return None
+    if len(parts) == 1:
+        return rel if name in _TOP_CODE else None
+    top = parts[0]
+    if top == "server":
+        if len(parts) == 2:
+            ok = name.endswith(".py") or name in {"catalog.json", "requirements.txt"}
+            return rel if ok else None
+        return rel if parts[1] == "static" else None
+    if top == "scripts":
+        return rel if name.endswith((".mjs", ".py")) else None
+    return None
+
+
+async def _fetch_tarball(ver: str) -> bytes:
+    """取 npm 整包。镜像优先、官方源兜底，都失败返回空。"""
+    import httpx
+    async with httpx.AsyncClient(trust_env=False, timeout=90, follow_redirects=True) as c:
+        for tpl in _TARBALL_BASES:
+            try:
+                r = await c.get(tpl.format(ver))
+                if r.status_code == 200 and r.content and len(r.content) <= _MAX_TARBALL:
+                    return r.content
+            except Exception:
+                continue
+    return b""
+
+
+def _extract_tarball(blob: bytes, dest: Path) -> Path | None:
+    """解开 npm 包，返回 package/ 目录；版本号对不上就当失败。"""
+    with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tf:
+        try:
+            tf.extractall(dest, filter="data")   # 3.12+ 默认要 filter，挡路径穿越
+        except TypeError:
+            tf.extractall(dest)
+    pkg = dest / "package"
+    return pkg if pkg.is_dir() else None
+
+
+@app.post("/api/upgrade/apply")
+async def api_upgrade_apply():
+    """下载并覆盖代码后返回；重启由 /api/upgrade/restart 单独触发。
+
+    出图进行中直接拒绝：重启会把在途请求掐断，宁可让用户等几十秒。
+    """
+    snap = POOL.snapshot()
+    if snap.get("running_now") or int(snap.get("queued") or 0) > 0 or int(snap.get("busy") or 0) > 0:
+        return JSONResponse({"ok": False, "error": "正在出图，等这批跑完再升级（升级会重启服务）"},
+                            status_code=409)
+    latest = await _latest_version()
+    if not latest:
+        return JSONResponse({"ok": False, "error": "取不到最新版本号，检查网络后重试"}, status_code=502)
+    if _ver_key(latest) <= _ver_key(VERSION):
+        return JSONResponse({"ok": False, "error": "已经是最新版本 v" + VERSION}, status_code=400)
+
+    blob = await _fetch_tarball(latest)
+    if not blob:
+        return JSONResponse({"ok": False, "error": "安装包下载失败，可点「复制命令」手工升级"}, status_code=502)
+
+    tmp = Path(tempfile.mkdtemp(prefix="iw-upgrade-"))
+    try:
+        pkg = _extract_tarball(blob, tmp)
+        if pkg is None:
+            return JSONResponse({"ok": False, "error": "安装包结构不对，已放弃（未改动任何文件）"},
+                                status_code=502)
+        try:
+            got = str(json.loads((pkg / "package.json").read_text(encoding="utf-8")).get("version") or "")
+        except Exception:
+            got = ""
+        if got.strip() != latest:
+            return JSONResponse({"ok": False, "error": "安装包版本核对不上（拿到 " + (got or "空") + "），已放弃"},
+                                status_code=502)
+
+        # 先把「要写哪些文件」算清楚，再动手，避免中途才发现路径不对
+        plans = []
+        for f in sorted(pkg.rglob("*")):
+            if not f.is_file():
+                continue
+            rel = _upgrade_rel(f.relative_to(pkg).as_posix())
+            if not rel:
+                continue
+            dest = (PLUGIN_ROOT / rel).resolve()
+            if PLUGIN_ROOT not in dest.parents:
+                continue   # 越界，宁可不写
+            plans.append((f, dest, rel))
+        if not plans:
+            return JSONResponse({"ok": False, "error": "包里没有可覆盖的代码文件，已放弃"}, status_code=502)
+
+        # 备份：把即将被覆盖的现有文件打包，出问题可以手工解回去
+        bdir = LAB / "workbench" / "backup"
+        bdir.mkdir(parents=True, exist_ok=True)
+        zpath = bdir / ("v" + VERSION + "-" + time.strftime("%Y%m%d-%H%M%S") + ".zip")
+        with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+            for _src, dest, rel in plans:
+                if dest.exists():
+                    z.write(dest, rel)
+
+        # 覆盖：先写临时文件再 os.replace，中途失败不会留下半截文件
+        for src, dest, _rel in plans:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            staging = dest.with_name(dest.name + ".upnew")
+            shutil.copyfile(src, staging)
+            os.replace(staging, dest)
+
+        _UPGRADE_CACHE.update({"at": 0.0, "data": None, "ttl": 0.0})
+        return JSONResponse({"ok": True, "from": VERSION, "to": latest,
+                             "files": len(plans), "backup": zpath.name,
+                             "note": "号池内核 vendor/ 未替换"})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": "升级中断：" + type(e).__name__ + " " + str(e)[:120]},
+                            status_code=500)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+@app.post("/api/upgrade/restart")
+async def api_upgrade_restart():
+    """升级后自重启：进程退出，DSH 宿主的守护会拉起新代码。"""
+    async def _bye():
+        await asyncio.sleep(0.8)   # 先让这次响应发出去
+        os._exit(0)
+    asyncio.create_task(_bye())
+    return JSONResponse({"ok": True})
 
 
 @app.get("/api/catalog")
