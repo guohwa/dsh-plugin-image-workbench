@@ -628,11 +628,23 @@ async def api_upgrade_apply():
                 if dest.exists():
                     z.write(dest, rel)
 
-        # 覆盖：先写临时文件再 os.replace，中途失败不会留下半截文件
+        # 覆盖：先写临时文件再 os.replace，中途失败不会留下半截文件。
+        # 行尾跟着原文件走：Windows 上仓库是 CRLF 检出，包内是 LF，直接盖过去会让
+        # git status 一片 M（内容其实没变），所以文本文件保持原来的行尾风格。
+        _text_ext = {".py", ".html", ".css", ".js", ".mjs", ".json", ".txt",
+                     ".yml", ".yaml", ".md"}
         for src, dest, _rel in plans:
             dest.parent.mkdir(parents=True, exist_ok=True)
+            raw = src.read_bytes()
+            if dest.suffix.lower() in _text_ext and dest.exists():
+                try:
+                    old = dest.read_bytes()
+                except OSError:
+                    old = b""
+                if b"\r\n" in old and b"\r\n" not in raw:
+                    raw = raw.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
             staging = dest.with_name(dest.name + ".upnew")
-            shutil.copyfile(src, staging)
+            staging.write_bytes(raw)
             os.replace(staging, dest)
 
         _UPGRADE_CACHE.update({"at": 0.0, "data": None, "ttl": 0.0})
