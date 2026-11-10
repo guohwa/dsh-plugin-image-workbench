@@ -454,19 +454,29 @@ _REGISTRIES = (
 
 
 async def _latest_version() -> str:
-    """按「国内镜像 → 官方源」顺序取 npm 上的最新版本，都失败就返回空串。"""
+    """问所有源，取最高的版本号。
+
+    镜像同步比官方源慢几分钟，只看镜像会在发版后漏报；而「镜像有响应」不等于
+    「镜像已同步」，所以要两边都问再比大小，不能谁先答就用谁。
+    """
     import httpx
+
+    async def one(c, url: str) -> str:
+        try:
+            r = await c.get(url)
+            if r.status_code == 200:
+                return str(r.json().get("version") or "").strip()
+        except Exception:
+            pass
+        return ""
+
     async with httpx.AsyncClient(trust_env=False, timeout=6, follow_redirects=True) as c:
-        for url in _REGISTRIES:
-            try:
-                r = await c.get(url)
-                if r.status_code == 200:
-                    v = str(r.json().get("version") or "").strip()
-                    if v:
-                        return v
-            except Exception:
-                continue
-    return ""
+        got = await asyncio.gather(*[one(c, u) for u in _REGISTRIES])
+    best = ""
+    for v in got:
+        if v and (not best or _ver_key(v) > _ver_key(best)):
+            best = v
+    return best
 
 
 @app.get("/api/upgrade")
