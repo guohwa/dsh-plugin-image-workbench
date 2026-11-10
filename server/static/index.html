@@ -298,8 +298,10 @@
   .footer-note{margin-top:12px;font-size:10.5px;color:var(--ink-3);line-height:1.6}
   /* 左栏底部版本号：跟在内容正下方，不与别的栏对齐。
      升级提示做成同一行的小胶囊，绝不另起一行——多一行就会把整页顶出右侧滚动条 */
-  .ver-foot{display:flex;align-items:center;gap:8px;margin-top:16px;font-size:13px;
+  .ver-foot{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px;
     color:var(--ink-3);white-space:nowrap}
+  /* 左栏状态条空着的时候不占位：否则 18px 高 + 10px 上边距会在按钮和版本号之间留出一行空行 */
+  #splitStatus:empty{display:none;margin:0}
   .ver-foot .up-new{flex:none;font-size:11px;line-height:1.5;color:var(--primary);
     background:#f3f0ff;border:1px solid #e3dcff;border-radius:9px;padding:0 7px;cursor:pointer}
   .ver-foot .up-new:hover{background:#eae4ff}
