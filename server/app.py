@@ -647,6 +647,14 @@ async def api_upgrade_apply():
             staging.write_bytes(raw)
             os.replace(staging, dest)
 
+        # 备份只留最近 5 份：每次 200K 出头，攒一年也占不了多少，但没必要无限堆
+        try:
+            olds = sorted(bdir.glob("v*.zip"), key=lambda p: p.stat().st_mtime)
+            for p in olds[:-5]:
+                p.unlink()
+        except OSError:
+            pass
+
         _UPGRADE_CACHE.update({"at": 0.0, "data": None, "ttl": 0.0})
         return JSONResponse({"ok": True, "from": VERSION, "to": latest,
                              "files": len(plans), "backup": zpath.name,
