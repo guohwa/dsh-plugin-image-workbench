@@ -290,6 +290,8 @@ class GenRequest(BaseModel):
     prompt: str | None = Field(default=None, max_length=8000)
     # 参考图（/api/ref 上传拿到的 id），给了就随提示词一起传给 ChatGPT
     ref_id: str | None = Field(default=None, max_length=32)
+    # 参考图用法：style=只借画风/光影（默认，严禁 1:1 复刻）| full=尽量一比一还原参考图
+    ref_mode: str = "style"
     # 出图模式与拍摄类型，只用于历史回看/载入还原，不参与拼提示词（提示词前端已拼好）
     image_mode: str | None = Field(default=None, max_length=16)
     shoot_type: str | None = Field(default=None, max_length=40)
@@ -327,6 +329,8 @@ class ComposeRequest(BaseModel):
     note: str | None = None
     topic: str | None = None
     ref: bool = False
+    # 参考图用法：style=只借画风（默认）| full=完整复刻
+    ref_mode: str = "style"
     # 出图模式：graphic-text（默认，图文）| photo（摄影）；摄影可带拍摄类型
     image_mode: str | None = None
     shoot_type: str | None = None
@@ -343,14 +347,21 @@ def _find(items: list[dict], item_id: str | None) -> dict | None:
 
 
 def build_image_prompt(req: GenRequest) -> str:
+    # 参考图约束是「内部指令」：只喂给模型，不进用户可编辑的提示词正文。
+    # compose 返回的 prompt 已是干净版，这里在真正出图时才把约束拼到文本最前面。
+    ref_instr = ""
+    if req.ref_id:
+        # style=只借画风（默认，严禁 1:1 复刻）；full=尽量一比一还原参考图
+        ref_instr = composer.REF_FUSION if (req.ref_mode or "style") != "full" else composer.REF_FUSION_FULL
     if req.prompt and req.prompt.strip():
-        return req.prompt.strip()
+        # 已有文案（来自「生成提示词」或手改）：把参考约束拼在最前，绝不丢掉
+        return (ref_instr + "\n" + req.prompt.strip()) if ref_instr else req.prompt.strip()
     style = _find(CATALOG["styles"], req.style_id)
     layout = _find(CATALOG["layouts"], req.layout_id)
     color = _find(CATALOG["colors"], req.color_id)
     parts: list[str] = []
-    if req.ref_id:
-        parts.append(composer.REF_FUSION)
+    if ref_instr:
+        parts.append(ref_instr)
     if layout:
         parts.append(f"排版图型：{layout['prompt']}")
     if color:
@@ -1304,6 +1315,7 @@ async def api_compose(req: ComposeRequest):
         "note": req.note,
         "topic": req.topic,
         "ref": req.ref,
+        "ref_mode": req.ref_mode,
         "image_mode": req.image_mode,
         "shoot_type": req.shoot_type,
         "instruction": req.instruction,
@@ -1331,6 +1343,7 @@ async def api_autoscene(req: ComposeRequest):
         "note": req.note,
         "topic": req.topic,
         "ref": req.ref,
+        "ref_mode": req.ref_mode,
         "image_mode": req.image_mode,
         "shoot_type": req.shoot_type,
         "instruction": req.instruction,
@@ -1410,6 +1423,7 @@ async def api_generate(req: GenRequest):
         "ratio": req.ratio,
         "ref_id": (req.ref_id or "") if ref_path else "",
         "ref_path": ref_path,
+        "ref_mode": (req.ref_mode or "style") if ref_path else "",
         "image_mode": (req.image_mode or "graphic-text"),
         "shoot_type": (req.shoot_type or ""),
         "replace_id": rid,

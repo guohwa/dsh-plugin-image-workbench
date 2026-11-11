@@ -49,6 +49,32 @@ for mod, names in [
 ]:
     for n in names:
         ok(f'{mod.__name__}.{n}', hasattr(mod, n))
+
+# 参考图模式（style=只借画风 / full=完整复刻，对齐漫画工作台的身份/姿势解耦思路）
+_src_index = (ROOT / 'static' / 'index.html').read_text(encoding='utf-8')
+ok('GenRequest 默认 ref_mode=style', app.GenRequest(mode='image', topic='t').ref_mode == 'style')
+ok('ComposeRequest 默认 ref_mode=style', app.ComposeRequest().ref_mode == 'style')
+ok('REF_FUSION 只借风格不抄内容',
+   '借鉴风格' in composer.REF_FUSION and '复制这张图' in composer.REF_FUSION)
+ok('REF_FUSION_FULL 是一比一复刻', '一比一还原' in composer.REF_FUSION_FULL)
+_r1 = app.GenRequest(mode='image', topic='t'); _r1.ref_id = 'x'; _r1.ref_mode = 'style'; _r1.prompt = None
+_r2 = app.GenRequest(mode='image', topic='t'); _r2.ref_id = 'x'; _r2.ref_mode = 'full'; _r2.prompt = None
+ok('build_image_prompt 按 ref_mode 走不同指令',
+   '借鉴风格' in app.build_image_prompt(_r1)
+   and '一比一还原' in app.build_image_prompt(_r2)
+   and app.build_image_prompt(_r1) != app.build_image_prompt(_r2))
+ok('build_image_prompt 已有 prompt 也把参考约束拼在最前（不丢约束）',
+   app.build_image_prompt(app.GenRequest(mode='image', topic='t', ref_id='x',
+                                        ref_mode='style', prompt='用户自己的提示词正文')).startswith('参考我上传的这张图'))
+ok('build_image_prompt 无参考图时不塞入约束',
+   '参考我上传的这张图' not in app.build_image_prompt(app.GenRequest(mode='image', topic='t', prompt='纯文案')))
+_sel = {'style': None, 'layout': None, 'color': None}
+ok('build_prompt 不把参考约束写进展示用提示词（避免像「代码」混进用户文案）',
+   '借鉴风格' not in composer.build_prompt({'title': 't', 'body': 'b'}, _sel, '3:4', [], False, 'normal', ref=True, ref_mode='style')
+   and '复制这张图' not in composer.build_prompt({'title': 't', 'body': 'b'}, _sel, '3:4', [], False, 'normal', ref=True, ref_mode='full'))
+ok('前端参考图卡片带「参考图模式」下拉',
+   'id="refMode"' in _src_index and '只借画风' in _src_index and '完整复刻参考图' in _src_index)
+ok('前端 payload 与 composeBody 透传 ref_mode', 'ref_mode: state.refMode' in _src_index)
 ok('PoolManager._execute', callable(getattr(pool.PoolManager, '_execute', None)))
 ok('PoolManager.snapshot', callable(getattr(pool.PoolManager, 'snapshot', None)))
 ok('PoolManager.check_all', callable(getattr(pool.PoolManager, 'check_all', None)))

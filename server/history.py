@@ -162,6 +162,7 @@ class History:
             "color_id": job.get("color_id"),
             "ratio": job.get("ratio"),
             "ref_id": job.get("ref_id") or "",
+            "ref_mode": job.get("ref_mode") or "style",
             # 出图模式（图文 / 摄影）与拍摄类型，载入历史时一起还原
             "image_mode": job.get("image_mode") or "graphic-text",
             "shoot_type": job.get("shoot_type") or "",
@@ -360,6 +361,7 @@ class History:
             "color_id": pick("color_id"),
             "ratio": pick("ratio"),
             "ref_id": pick("ref_id"),
+            "ref_mode": pick("ref_mode") or "style",
             "image_mode": pick("image_mode") or "graphic-text",
             "shoot_type": pick("shoot_type") or "",
             "items": items,

@@ -119,6 +119,9 @@
   .pick-card.on{border-color:#e6ddff;box-shadow:0 3px 14px rgba(106,90,224,.09)}
   .pick-card [hidden]{display:none!important}
   .pk-head{display:flex;align-items:center;gap:7px;margin-bottom:9px}
+  /* 参考图卡片里的「用法」下拉：整行铺满，和上传区视觉一致 */
+  .pk-mode{width:100%;margin:0 0 8px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;
+    background:#faf9ff;color:var(--ink);font-size:12.5px;cursor:pointer}
   .pk-head .pk-ic{display:flex;color:var(--primary)}
   .pk-head .pk-ic svg{width:15px;height:15px}
   .pk-head b{font-size:12.5px;font-weight:600;color:var(--ink);letter-spacing:.2px}
@@ -953,6 +956,10 @@
           <b>参考图</b>
           <span class="pk-opt">可选</span>
         </div>
+        <select id="refMode" class="pk-mode" title="参考图用法">
+          <option value="style" selected>只借画风（不 1:1 复刻）</option>
+          <option value="full">完整复刻参考图</option>
+        </select>
         <button class="pk-btn" id="emptyRef" type="button">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0L8 8m4-4l4 4"/><path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
           <span class="t">上传 / 拖入参考图</span>
@@ -1809,6 +1816,7 @@ function payload(mode, topic){
     color_id: state.sel.color && state.sel.color.id,
     ratio: $('#ratio').value, note: $('#note').value.trim(),
     ref_id: state.ref ? state.ref.id : null,
+    ref_mode: state.refMode,
     image_mode: state.omode || 'graphic-text',
     shoot_type: state.omode === 'photo' ? ($('#shootType').value || '').trim() : '',
     num_items: Number.isFinite(n) && n >= 1 ? Math.min(Math.max(n, 1), 20) : null
@@ -1934,6 +1942,7 @@ function itemNo(it, i){
 }
 state.items = [];
 state.ref = null;          // 参考图：{id, url, w, h}，可选
+state.refMode = 'style';    // 参考图用法：style=只借画风（默认）| full=完整复刻
 state.ws = 'normal';
 state.group = '';
 state.mode = 'image';
@@ -2092,6 +2101,7 @@ function composeBody(items){
     whitespace: state.ws,
     note: $('#note').value.trim(),
     ref: !!state.ref,
+    ref_mode: state.refMode,
     image_mode: state.omode || 'graphic-text',
     shoot_type: state.omode === 'photo' ? ($('#shootType').value || '').trim() : '',
     instruction: (state.instrCustom || '').trim(),
@@ -4257,6 +4267,9 @@ async function loadTaskIntoWorkbench(task){
   $('#shootType').value = d.shoot_type || '';
   syncOmode(); renderShootChips(); syncInstr();
   // 当时用过参考图的话一起带回来（图还在 refs/ 里）
+  // 参考图用法（只借画风 / 完整复刻）也还原，老记录缺省按「只借画风」
+  state.refMode = d.ref_mode === 'full' ? 'full' : 'style';
+  $('#refMode').value = state.refMode;
   if (d.ref_id){
     state.ref = {id: d.ref_id, url: '/refs/' + d.ref_id + '.png', w: null, h: null};
     const probe = new Image();
@@ -4681,6 +4694,7 @@ async function resetAll(){
 $('#emptyRef').onclick = ()=> $('#refFile').click();
 $('#chgRef').onclick = ()=> $('#refFile').click();
 $('#clrRef').onclick = clearRef;
+$('#refMode').onchange = ()=> { state.refMode = $('#refMode').value; };
 $('#refFile').addEventListener('change', e=>{
   const f = e.target.files && e.target.files[0];
   e.target.value = '';
