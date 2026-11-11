@@ -1328,6 +1328,10 @@
         </div>
         <span id="cfgOutHint" style="font-size:11px;color:var(--ink-3);line-height:1.6"></span>
       </div>
+      <div class="span2" style="border-top:1px solid #f0ecfa;padding-top:10px;display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="pushWxDraft" style="width:auto;margin:0">
+        <span style="font-size:13px;color:var(--ink-2)" title="开关打开时，批量出图完成后自动把这批图作为「图文消息」（带正文）推送到微信公众号草稿箱">推送公众号</span>
+      </div>
     </div>
     </div>
 
@@ -2751,6 +2755,8 @@ async function runImage(){
     }
     const ids = [];
     const topics = items.map(it=>it.title || it.body || '配图');
+    // 每张图对应的正文（文案），推送图文消息时作每屏的 caption
+    const bodies = items.map(it=>(it.body || '').trim());
     // 整篇正文一起落进历史，下次「载入」才还原得回来
     const docBody = $('#docBody').value;
     // 并行出图完成顺序是乱的，seq 记下提交顺序，历史里才能还原成 01 02 03
@@ -2771,7 +2777,10 @@ async function runImage(){
     // 整批都提交成功＝这份草稿的活干完了，从草稿箱移走（内容和提示词已随这一批进历史）
     const consumed = await consumeCurrentDraft();
     if (consumed) toast('已开始出图，这份草稿从草稿箱移出');
-    await pollBatch(ids, topics, statusEl);
+    await pollBatch(ids, topics, statusEl, bodies);
+    if (localStorage.getItem('wb_push_wx_draft') === '1' && state.results.length){
+      await pushWxDraft();
+    }
     if (state.results.length) clearRedo(true);
   }catch(e){
     statusEl.className = _stopRequested ? 'status' : 'status err';
@@ -2787,7 +2796,27 @@ async function runImage(){
   }
 }
 
-async function pollBatch(ids, topics, statusEl){
+// 公众号「图文消息」草稿箱自动推送：开关打开时，批量出图完成后把这批图作为图文消息（带正文）推到草稿箱
+async function pushWxDraft(){
+  const items = state.results.slice(0, 20).map(r => ({job_id: r.id, caption: (r.body || r.topic || '').trim()}));
+  if (!items.length) return;
+  const title = (($('#docTitle').value || $('#topic').value || 'AI 生成图文')).slice(0, 32);
+  toast('正在推送图文消息到公众号草稿箱…', {type:'info', title:'推送中'});
+  try {
+    const r = await fetch('/api/push_wechat_draft', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({title, items})
+    });
+    const d = await r.json();
+    if (d.ok) toast(`已推送 ${d.screens || d.pushed} 屏图文消息到公众号草稿箱`, {type:'ok', title:'图文已推送'});
+    else toast('图文推送失败：' + (d.error || ''), {type:'err', title:'推送失败'});
+  } catch(e){ toast('图文推送异常：' + e.message, {type:'err', title:'推送异常'}); }
+}
+// 开关状态持久化到 localStorage
+$('#pushWxDraft').addEventListener('change', e => localStorage.setItem('wb_push_wx_draft', e.target.checked ? '1' : '0'));
+$('#pushWxDraft').checked = localStorage.getItem('wb_push_wx_draft') === '1';
+
+async function pollBatch(ids, topics, statusEl, bodies){
   const t0 = Date.now();
   const pending = new Set(ids.map((_,i)=>i));
   let finished = 0, failed = 0, cancelled = 0, lastErr = '';
@@ -2847,7 +2876,7 @@ async function pollBatch(ids, topics, statusEl){
         finished++;
         const raw = d.image_url;
         const prev = d.preview_url || ('/api/history/' + ids[i] + '/preview');
-        const rec = {url: raw, preview: prev, topic: topics[i], seq: i, id: ids[i], account: d.account || '',
+        const rec = {url: raw, preview: prev, topic: topics[i], body: (bodies && bodies[i]) || '', seq: i, id: ids[i], account: d.account || '',
           w: d.result && d.result.width, h: d.result && d.result.height};
         state.results.push(rec);
         // 并行出图完成顺序是乱的，展示一律按清单顺序（seq）排
@@ -2941,7 +2970,7 @@ async function resumeBatch(){
   statusEl.textContent = `接上上次没跑完的 ${b.ids.length} 张…`;
   toast(`检测到上次未完成的 ${b.ids.length} 张，自动接着等`);
   try{
-    await pollBatch(b.ids, b.topics || b.ids.map(()=> '配图'), statusEl);
+    await pollBatch(b.ids, b.topics || b.ids.map(()=> '配图'), statusEl, b.bodies);
   }catch(e){
     statusEl.className = 'status err'; statusEl.textContent = e.message;
   }finally{

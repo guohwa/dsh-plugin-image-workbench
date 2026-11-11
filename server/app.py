@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import html
 import io
 import json
 import hashlib
@@ -1854,6 +1855,178 @@ async def static_page(path: str):
     if f.is_file():
         return FileResponse(str(f))
     raise HTTPException(404, "not found")
+
+
+# ============================================================
+# 微信公众号「图文消息」草稿箱推送（news 类型，带正文）
+# 每张图是一屏：正文图经 /uploadimg 拿到 url 嵌进 content；
+# 首图经 /material/add 拿 media_id 当封面 thumb_media_id；
+# access_token 走 /token，草稿走 /draft/add?access_token=。
+# 推送前对每张图反复确认落盘（6×1.5s），解决「4 张只推 3 张」的竞态。
+# ============================================================
+WX_GATEWAY = "https://wx.hyiplist.biz/api"
+WX_TOKEN = "wxgw-666"
+
+class PushDraftItem(BaseModel):
+    job_id: str
+    caption: str = ""
+
+class PushDraftRequest(BaseModel):
+    title: str = ""
+    items: list[PushDraftItem] = []
+
+def _wx_cfg() -> tuple[str, str]:
+    cfg = load_config()
+    return (str(cfg.get("wx_gateway") or WX_GATEWAY),
+            str(cfg.get("wx_token") or WX_TOKEN))
+
+def _wx_escape(s: str) -> str:
+    return html.escape(str(s or ""), quote=False)
+
+def _wx_resize(raw: bytes, max_edge: int = 1080) -> bytes:
+    """微信正文图压成 1080 长边的 JPEG（q82）。最长边都不超 1080 时跳过缩放。"""
+    from io import BytesIO
+    from PIL import Image, ImageOps
+    im = Image.open(BytesIO(raw))
+    im = ImageOps.exif_transpose(im).convert("RGB")
+    w, h = im.size
+    if max(w, h) > max_edge:
+        if w >= h:
+            im = im.resize((max_edge, int(h * max_edge / w)), Image.LANCZOS)
+        else:
+            im = im.resize((int(w * max_edge / h), max_edge), Image.LANCZOS)
+    buf = BytesIO()
+    im.save(buf, "JPEG", quality=82)
+    return buf.getvalue()
+
+async def _wx_confirm_on_disk(job_id: str) -> Path | None:
+    """反复确认图片真的落盘了再上传：6 次 × 1.5s，存在且 >1KB 才认。"""
+    for _ in range(6):
+        p = HISTORY.image_path(job_id)
+        if p and p.is_file() and p.stat().st_size > 1024:
+            return p
+        await asyncio.sleep(1.5)
+    return HISTORY.image_path(job_id)
+
+async def _wx_post_media(gateway: str, token: str, img_bytes: bytes,
+                         endpoint: str, retries: int = 3) -> str | None:
+    """上传一张图到网关。uploadimg→返回 url（嵌正文）；material/add→返回 media_id（封面）。"""
+    import httpx
+    b64 = base64.b64encode(img_bytes).decode()
+    payload = json.dumps({"media_b64": b64, "filename": "sticker.jpg",
+                          "content_type": "image/jpeg"}).encode()
+    headers = {"Authorization": "Bearer " + token, "Content-Type": "application/json",
+               "User-Agent": "Mozilla/5.0"}
+    last_err = ""
+    async with httpx.AsyncClient(trust_env=False, timeout=90) as c:
+        for attempt in range(1, retries + 1):
+            try:
+                r = await c.post(gateway + "/" + endpoint, content=payload, headers=headers)
+                d = r.json() if r.content else {}
+                if endpoint == "uploadimg":
+                    url = d.get("url") or d.get("media_url")
+                    if url:
+                        return url
+                else:
+                    mid = d.get("media_id") or d.get("mediaId")
+                    if mid:
+                        return mid
+                last_err = f"{endpoint} 第{attempt}次未返回有效结果: {str(d)[:120]}"
+            except Exception as e:
+                last_err = f"{endpoint} 第{attempt}次异常: {e}"
+            await asyncio.sleep(1.0)
+    print("wx upload failed:", last_err)
+    return None
+
+async def _wx_get_token(gateway: str, token: str) -> str | None:
+    import httpx
+    try:
+        async with httpx.AsyncClient(trust_env=False, timeout=30) as c:
+            r = await c.get(gateway + "/token",
+                            headers={"Authorization": "Bearer " + token,
+                                     "User-Agent": "Mozilla/5.0"})
+            return (r.json() or {}).get("access_token")
+    except Exception as e:
+        print("wx token failed:", e)
+        return None
+
+@app.post("/api/push_wechat_draft")
+async def api_push_wechat_draft(req: PushDraftRequest):
+    """把一批生成的图作为「图文消息」推到微信公众号草稿箱（news，带正文）。"""
+    if not req.items:
+        raise HTTPException(400, "没有要推送的图片")
+    if len(req.items) > 20:
+        raise HTTPException(400, "微信图文一次最多 20 张，当前 " + str(len(req.items)))
+    gateway, token = _wx_cfg()
+    screens: list[dict] = []        # 每屏：{caption, url}
+    thumb_media_id: str | None = None
+    errors: list[str] = []
+    for idx, it in enumerate(req.items):
+        # 反复确认落盘：出图刚完成、缩略图派生还在跑时，原图可能还没完全写完
+        p = await _wx_confirm_on_disk(it.job_id)
+        if not p or not p.is_file():
+            errors.append("找不到图片或尚未落盘: " + it.job_id)
+            continue
+        try:
+            jpg = _wx_resize(p.read_bytes())
+        except Exception as e:
+            errors.append("压缩失败: " + it.job_id + " " + str(e)[:80])
+            continue
+        url = await _wx_post_media(gateway, token, jpg, "uploadimg", retries=3)
+        if not url:
+            errors.append("正文图上传失败: " + it.job_id)
+            continue
+        screens.append({"caption": it.caption, "url": url})
+        # 首图额外传一次 material/add 拿封面 media_id
+        if idx == 0:
+            thumb_media_id = await _wx_post_media(gateway, token, jpg, "material/add", retries=3)
+    if not screens:
+        return JSONResponse({"ok": False, "error": "没有成功上传任何图片", "errors": errors})
+    if not thumb_media_id:
+        # uploadimg 全成功但 material/add（封面）失败：这种概率极低，直接报缺封面
+        return JSONResponse({"ok": False, "error": "封面 media_id 未取得（正文图已传完，material/add 失败）",
+                             "errors": errors})
+    # 拼带插图的 HTML 正文：caption 作段落，图居中嵌入
+    parts: list[str] = []
+    for sc in screens:
+        cap = _wx_escape((sc["caption"] or "").strip())
+        if cap:
+            parts.append('<p style="margin:0 0 14px;font-size:16px;line-height:1.8;color:#3a3a3a;">' + cap + "</p>")
+        parts.append('<p style="text-align:center;margin:6px 0 22px;">'
+                     '<img src="' + sc["url"] + '" style="max-width:100%;border-radius:8px;'
+                     'box-shadow:0 2px 10px rgba(0,0,0,.08);"></p>')
+    content_html = (
+        '<div style="font-size:16px;line-height:1.85;color:#3a3a3a;letter-spacing:.2px;'
+        "font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB',"
+        "'Microsoft YaHei',sans-serif;padding:2px 2px 20px;\">"
+        + "".join(parts) + "</div>"
+    )
+    digest = ((screens[0]["caption"] or "").strip())[:64]
+    title = ((req.title or "AI 生成的图文").strip() or "AI 生成的图文")[:32]
+    wx_token = await _wx_get_token(gateway, token)
+    if not wx_token:
+        return JSONResponse({"ok": False, "error": "无法获取微信 access_token", "errors": errors})
+    article = {
+        "title": title,
+        "author": "Bluxe",
+        "digest": digest,
+        "content": content_html,
+        "thumb_media_id": thumb_media_id,
+        "need_open_comment": 0,
+        "only_fans_can_comment": 0,
+    }
+    payload = json.dumps({"articles": [article]}, ensure_ascii=False).encode()
+    url = gateway + "/draft/add" + ("?access_token=" + wx_token)
+    try:
+        async with httpx.AsyncClient(trust_env=False, timeout=30) as c:
+            r = await c.post(url, content=payload,
+                            headers={"Authorization": "Bearer " + token,
+                                     "Content-Type": "application/json",
+                                     "User-Agent": "Mozilla/5.0"})
+            return JSONResponse({"ok": True, "status": r.status_code, "screens": len(screens),
+                                 "pushed": len(screens), "body": r.text[:500], "errors": errors})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e), "errors": errors})
 
 
 if __name__ == "__main__":
