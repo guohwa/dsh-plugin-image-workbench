@@ -71,6 +71,15 @@
     padding:9px 11px;font:inherit;color:var(--ink);outline:none;resize:vertical}
   textarea:focus,input:focus,select:focus{border-color:var(--primary-2);background:#fff}
   .row{display:flex;gap:8px;align-items:center}
+  /* 「AI 生成文章」旁的条数框：紧贴按钮，不喧宾夺主 */
+  .gen-count{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--ink-3);
+    background:#f7f5ff;border:1px solid var(--line);border-radius:9px;padding:4px 8px;white-space:nowrap}
+  .gen-count input{width:42px;border:0;background:#fff;border-radius:6px;padding:3px 4px;
+    font:inherit;font-weight:700;font-size:13px;color:var(--primary);text-align:center;
+    -moz-appearance:textfield}
+  .gen-count input::-webkit-outer-spin-button,
+  .gen-count input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  .gen-count input:focus{outline:2px solid var(--primary-2)}
   .btn{border:0;border-radius:10px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer;
     background:#f1eefe;color:var(--primary);transition:.15s;white-space:nowrap}
   .btn:hover{filter:brightness(.97)}
@@ -228,6 +237,60 @@
   .panel.left #docTitle{font-size:14px;font-weight:600;padding:8px 10px}
   .panel.left #docBody{min-height:240px;line-height:1.7}
   .btn.mini{padding:5px 10px;font-size:11.5px}
+  /* AI 热点选题：左栏「选题」上方的一小条。只露三条当引子，看全的点「全部」。
+     这块是只读资讯，视觉上要比可编辑的输入框轻，所以用淡底、小字号，不抢注意力 */
+  .aihot{border:1px solid #e6e0fb;border-radius:12px;background:linear-gradient(180deg,#faf8ff,#fff);
+    padding:6px 9px 4px}
+  .aihot-h{display:flex;align-items:center;gap:6px;margin-bottom:2px}
+  .aihot-t{font-size:11.5px;font-weight:700;color:var(--primary);letter-spacing:.2px}
+  .aihot-badge{font-size:9.5px;font-weight:600;color:#8b7cf6;background:#f1eefe;border:1px solid #e2d9ff;
+    border-radius:5px;padding:0 4px;line-height:14px;letter-spacing:.2px;cursor:help}
+  .aihot-a{border:0;background:transparent;color:var(--ink-2);font:inherit;font-size:10.5px;
+    cursor:pointer;padding:1px 4px;border-radius:5px;white-space:nowrap}
+  .aihot-a:hover{color:var(--primary);background:#f1eefe}
+  .aihot-list{display:flex;flex-direction:column}
+  /* 每行是一条事件：序号、标题（最多两行）、多少家信源在说 */
+  .ai-row{display:flex;gap:6px;align-items:flex-start;padding:2px 3px;border-radius:7px;cursor:pointer;
+    text-align:left;background:none;border:0;font:inherit;width:100%;transition:background .12s}
+  .ai-row:hover{background:#f3f0ff}
+  .ai-no{flex:0 0 auto;width:15px;height:15px;border-radius:4px;background:#f1eefe;color:var(--primary);
+    font-size:9.5px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px;
+    font-variant-numeric:tabular-nums}
+  .ai-row:first-child .ai-no{background:var(--primary);color:#fff}
+  .ai-tx{flex:1;min-width:0;font-size:11.5px;line-height:1.4;color:var(--ink);overflow:hidden;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
+  .ai-n{flex:0 0 auto;font-size:9.5px;color:var(--ink-3);margin-top:2px;white-space:nowrap;
+    font-variant-numeric:tabular-nums}
+  .aihot-load{font-size:11px;color:var(--ink-3);padding:5px 3px;line-height:1.5}
+  /* 放大弹窗：高度定死，综述在卡内滚动；展开不同长度的条目时窗口不跟着抽 */
+  dialog.aihot-dlg{width:min(780px,96vw);height:min(84vh,800px);padding:0}
+  dialog.aihot-dlg[open]{display:flex;flex-direction:column}
+  dialog.aihot-dlg .inner{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;padding:14px}
+  dialog.aihot-dlg .scroller{flex:1 1 auto;min-height:0;max-height:none;padding-right:4px;outline:none}
+  .aihot-note{font-size:11px;color:var(--ink-3);margin:0 0 9px;line-height:1.55}
+  .aihot-note b{color:var(--warn);font-weight:600}
+  .aihot-dlist{display:flex;flex-direction:column;gap:8px}
+  .ai-card{border:1px solid var(--line);border-radius:12px;background:#fff;padding:10px 12px;
+    transition:border-color .15s,background .15s}
+  .ai-card.on{border-color:#d5c9fb;background:#fbfaff}
+  .ai-ch{display:flex;gap:8px;align-items:flex-start;cursor:pointer;user-select:none}
+  .ai-cn{flex:0 0 auto;width:20px;height:20px;border-radius:6px;background:#f1eefe;color:var(--primary);
+    font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;
+    font-variant-numeric:tabular-nums}
+  .ai-card.on .ai-cn{background:var(--primary);color:#fff}
+  .ai-ct{flex:1;min-width:0;font-size:13.5px;font-weight:600;line-height:1.5;word-break:break-word}
+  .ai-cm{flex:0 0 auto;font-size:10.5px;color:var(--ink-3);margin-top:3px;white-space:nowrap;
+    font-variant-numeric:tabular-nums}
+  /* 综述整段交给外层 .scroller 滚：这里再套一层 overflow 会出现双滚动条，
+     滚到一半卡在综述里出不去，很难受 */
+  .ai-cb{margin:9px 0 0 28px;font-size:12px;line-height:1.78;color:var(--ink-2);
+    white-space:pre-wrap;word-break:break-word}
+  .ai-cb.ld{color:var(--ink-3);font-size:11.5px}
+  .ai-acts{display:flex;gap:2px;align-items:center;margin:10px 0 0 28px;flex-wrap:wrap}
+  .ai-src{font-size:10.5px;color:var(--ink-3);margin-right:4px}
+  .ai-lnk{font-size:11px;color:var(--ink-3);text-decoration:none;padding:3px 7px;border-radius:6px;
+    white-space:nowrap}
+  .ai-lnk:hover{color:var(--primary);background:#f1eefe}
   /* 选择器高度定死：换分组 / 搜索后结果从 170 张变 13 张时，弹窗不能跟着抽一下。
      内部用 flex 把列表撑满，滚动交给 .scroller，头部和搜索框固定不动 */
   dialog.picker{width:min(1240px,96vw);height:min(86vh,880px);padding:0}
@@ -528,6 +591,8 @@
     background:#fff;padding:9px 11px}
   .draft-row .dc{min-width:0;flex:1}
   .draft-row b{display:block;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .draft-row b[data-role="label"]{cursor:pointer}
+  .draft-row b[data-role="label"]:hover{color:var(--primary);text-decoration:underline}
   .draft-row .ds{display:block;font-size:10.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .draft-row .rn-input{width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;
     border:1px solid var(--primary);border-radius:7px;padding:3px 7px;background:#fff;color:inherit}
@@ -760,10 +825,28 @@
     </h2>
     <p class="hint save-hint"><span>文案不满意可让 AI 润色</span><span class="save-state" id="saveState" title="内容一改，1.5 秒没有新操作就自动存成草稿；切走页面也会立刻存一次。点这里可以马上保存"></span></p>
 
+    <!-- AI 热点选题：内容来自 AIHOT（aihot.news）的热点榜，后端代取并缓存 10 分钟。
+         只露三条，点任一条或「全部」打开放大弹窗，里面能展开 AI 写的事件综述 -->
+    <div class="aihot">
+      <div class="aihot-h">
+        <span class="aihot-t">AI 热点选题</span>
+        <span class="aihot-badge" title="数据来自 AIHOT（aihot.news）：每天从全网上百个信源里挑出值得看的 AI 动态">AIHOT</span>
+        <span class="spacer"></span>
+        <button class="aihot-a" id="aihotMore" type="button" title="放大查看全部热点">全部 ›</button>
+      </div>
+      <div class="aihot-list" id="aihotList">
+        <div class="aihot-load">正在拉今天的 AI 热点…</div>
+      </div>
+    </div>
+
     <label for="topic">选题 / 想写什么</label>
     <textarea id="topic" rows="2" placeholder="例：秋天第一杯奶茶怎么点才不踩雷"></textarea>
     <div class="row" style="margin-top:10px">
       <button class="btn primary" id="genText">AI 生成文章</button>
+      <label class="gen-count" title="生成正文时拆成多少条贴图条目：有些选题没有明确分界线，就按新闻/热点内容自动拆成多条细节，方便逐张贴图。">
+        <span>条数</span>
+        <input type="number" id="genCount" min="1" max="20" step="1" value="7">
+      </label>
       <span class="status" id="textStatus"></span>
     </div>
 
@@ -1070,6 +1153,20 @@
     <span class="pp-idx" id="ppIdx"></span>
     <button class="btn ghost" id="ppCancel" type="button">取消</button>
     <button class="btn primary" id="ppPick" type="button">选这个</button>
+  </div>
+</dialog>
+
+<!-- AI 热点选题放大：只读 AIHOT 的热点榜；点标题展开事件综述，看完可以一键填进选题框 -->
+<dialog id="aihotDlg" class="aihot-dlg">
+  <div class="inner">
+    <div class="dlg-head">
+      <h3>AI 热点选题 <span>AIHOT · aihot.news</span></h3>
+      <span class="spacer"></span>
+      <button class="btn ghost mini" id="aihotRefresh" type="button">刷新</button>
+      <button class="btn ghost mini" id="aihotClose" type="button">关闭</button>
+    </div>
+    <div class="aihot-note" id="aihotNote">过去 48 小时里被多个独立信源同时讨论的 AI 事件，越靠前讨论的人越多。点标题展开综述。</div>
+    <div class="scroller" tabindex="-1"><div class="aihot-dlist" id="aihotDList"></div></div>
   </div>
 </dialog>
 
@@ -1503,10 +1600,14 @@ function drawText(text){
 
 function syncPreview(){
   const title = $('#docTitle').value.trim();
-  const body = $('#docBody').value;
+  // 正文里以 # 开头的行是话题标签，单独交给 pTags 展示，避免在正文里再裸显一遍造成重复
+  const lines = $('#docBody').value.split('\n');
+  const tagLines = lines.filter(l => l.trim().startsWith('#'));
+  const bodyLines = lines.filter(l => !l.trim().startsWith('#'));
+  const body = bodyLines.join('\n').trim();
   $('#pTitle').textContent = title || '标题会同步到这里';
-  $('#pBody').textContent = (body.trim().slice(0, 4000) || '正文会同步到这里。');
-  $('#pTags').textContent = body.split('\n').filter(l=>l.includes('#')).join(' ');
+  $('#pBody').textContent = (body.slice(0, 4000) || '正文会同步到这里。');
+  $('#pTags').textContent = tagLines.join(' ').trim();
   noteContentChanged();          // 程序化改值（AI 生成 / 润色）不触发 input，这里补一脚
 }
 
@@ -1699,6 +1800,7 @@ function wirePickerWheel(){
 }
 
 function payload(mode, topic){
+  const n = parseInt($('#genCount').value, 10);
   return {
     mode, topic: (topic ?? $('#topic').value).trim(),
     group: state.group || $('#docTitle').value.trim() || undefined,
@@ -1708,7 +1810,8 @@ function payload(mode, topic){
     ratio: $('#ratio').value, note: $('#note').value.trim(),
     ref_id: state.ref ? state.ref.id : null,
     image_mode: state.omode || 'graphic-text',
-    shoot_type: state.omode === 'photo' ? ($('#shootType').value || '').trim() : ''
+    shoot_type: state.omode === 'photo' ? ($('#shootType').value || '').trim() : '',
+    num_items: Number.isFinite(n) && n >= 1 ? Math.min(Math.max(n, 1), 20) : null
   };
 }
 
@@ -2065,10 +2168,10 @@ function renderItems(){
     const pEl = el.querySelector('.it-prompt');
     tEl.value = it.title; bEl.value = it.body; sEl.value = it.scene || '';
     pEl.value = it.prompt || '';
-    tEl.oninput = ()=>{ state.items[i].title = tEl.value; };
-    bEl.oninput = ()=>{ state.items[i].body = bEl.value; fitBody(bEl); };
-    sEl.oninput = ()=>{ state.items[i].scene = sEl.value; };
-    pEl.oninput = ()=>{ state.items[i].prompt = pEl.value; autoGrow(pEl); };
+    tEl.oninput = ()=>{ state.items[i].title = tEl.value; noteContentChanged(); };
+    bEl.oninput = ()=>{ state.items[i].body = bEl.value; fitBody(bEl); noteContentChanged(); };
+    sEl.oninput = ()=>{ state.items[i].scene = sEl.value; noteContentChanged(); };
+    pEl.oninput = ()=>{ state.items[i].prompt = pEl.value; autoGrow(pEl); noteContentChanged(); };
     el.querySelector('.it-del').onclick = ()=>{
       state.items.splice(i, 1);
       renderItems();
@@ -3437,6 +3540,17 @@ function setPoolDetail(t){ $('#poolDetail').textContent = t; }
 
 $('#genText').onclick = ()=> run('text', $('#textStatus'));
 $('#polishText').onclick = polishText;
+
+/* 条数框：记住用户上一次的选择，刷新不丢；非法输入拉回 1-20 */
+(function(){
+  const el = $('#genCount');
+  if (!el) return;
+  const saved = parseInt(localStorage.getItem('iw_gen_count') || '', 10);
+  if (Number.isFinite(saved) && saved >= 1 && saved <= 20) el.value = saved;
+  const clamp = ()=>{ let v = parseInt(el.value, 10); if (!Number.isFinite(v)) v = 7; v = Math.min(Math.max(v, 1), 20); el.value = v; localStorage.setItem('iw_gen_count', String(v)); };
+  el.addEventListener('change', clamp);
+  el.addEventListener('blur', clamp);
+})();
 $('#genImage').onclick = runImage;
 $('#redoExit').onclick = ()=> clearRedo(false);
 $('#coverPrev').onclick = ()=>{ if (state.results.length > 1) selectResult((state.idx - 1 + state.results.length) % state.results.length); };
@@ -4687,6 +4801,14 @@ function draftKeyOf(o){
   return String((o && (o.topic || o.title)) || '').trim();
 }
 
+/* 有没有「成文」内容：标题 / 正文 / 任一分镜有实打实的文字。
+   只有选题、还没写正文时，不算一篇能存的东西，自动暂存应当跳过。 */
+function hasArticleContent(o){
+  o = o || {};
+  if ((o.title || '').trim() || (o.body || '').trim()) return true;
+  return (o.items || []).some(it => (it.title || it.body || it.scene || it.prompt || '').trim());
+}
+
 function bindDraft(id, key){
   state.draftId = id || null;
   state.draftKey = String(key || '').trim();
@@ -4749,10 +4871,17 @@ async function persistDraft(opts){
   if (!o.manual && state.demoPending) return null;   // 随机示例不落草稿
   const d = draftSnapshot();
   const key = draftKeyOf(d);
-  const empty = !key && !d.body.trim() && !d.items.length;
+  const hasArticle = hasArticleContent(d);
+  const empty = !key && !hasArticle;
   if (empty){
     if (o.manual){ toast('左边还什么都没有，先写点内容'); $('#topic').focus(); }
     else setSaveState('', '');
+    return null;
+  }
+  // 自动暂存：只有选题、还没成文（没有标题 / 正文 / 分镜内容）时，不单独存成草稿，
+  // 等「AI 生成文章」产出标题正文后再记一条新草稿。手动「暂存」仍然照常。
+  if (!o.manual && !hasArticle){
+    setSaveState('', '');
     return null;
   }
   // 「另存当前为新草稿」一定新建；其余情况只要还像同一篇，就写回绑定那份
@@ -4812,7 +4941,9 @@ function flushOnLeave(){
   if (state.demoPending) return;       // 随机示例不往草稿箱塞
   const d = draftSnapshot();
   const key = draftKeyOf(d);
-  if (!key && !d.body.trim() && !d.items.length) return;
+  const hasArticle = hasArticleContent(d);
+  if (!key && !hasArticle) return;
+  if (!hasArticle) return;             // 只有选题、还没成文：不单独留一份草稿，等 AI 生成文章
   const json = contentJson();
   if (json === _autoJson || json === _leaveJson) return;   // 已经存过 / 这次离开已发过
   let id = (!!state.draftId && keysCompatible(state.draftKey, key)) ? state.draftId : null;
@@ -4882,16 +5013,14 @@ async function openDrafts(){
     /* 名字优先用标题：标题才是这篇东西叫什么，选题只是「想写什么」的一句话，
        以前选题优先，标题写好了却看到草稿叫「33333」 */
     const draftLabel = () => safeText(it.name || it.title || it.topic || '（无标题）');
-    /* 小字只留「N 条分镜 · 跟主名不同的那条信息」：主名已经是标题了，
-       再拼一遍标题等于占地方；选题也跟主名一样就跳过，试下第一条分镜标题 */
-    const brief = [safeText(it.topic),
-                   safeText((it.titles || []).find(Boolean) || '')]
-      .find(t => t && t !== draftLabel()) || '';
-    const sub = clipText([it.count ? it.count + ' 条分镜' : '无分镜',
-                          brief ? clipText(brief, 12) : ''].filter(Boolean).join(' · '), 30);
-    row.innerHTML = `<span class="dc"><b data-role="label">${esc(draftLabel())}</b>`
+    /* 小字 = 时间 · 正文第一句话：时间保留，正文首句取后端算好的 preview（优先文档正文，图片型草稿退到第一张分镜正文）；
+       不拼张数 / 选题片段等其他内容；preview 为空时只显示时间 */
+    const preview = (it.preview || '').trim();
+    const dsTxt = preview ? (fmtTime(it.updated) + ' · ' + preview) : fmtTime(it.updated);
+    row.innerHTML = `<span class="dc"><b data-role="label" title="点击载入这份草稿">${esc(draftLabel())}</b>`
       + `<input class="rn-input" data-role="rn" type="text" maxlength="60" placeholder="输入草稿名称，留空恢复默认" style="display:none">`
-      + `<span class="ds">${esc(fmtTime(it.updated))} · ${esc(sub)}</span></span>`
+      + `<span class="ds" title="${esc(dsTxt)}">${esc(dsTxt)}</span>`
+      + `</span>`
       + (state.draftId === it.id ? '<span class="chipx on">使用中</span>' : '')
       + '<span class="dacts">'
       + '<button class="btn ghost mini" data-act="rename" type="button">重命名</button>'
@@ -4940,7 +5069,10 @@ async function openDrafts(){
       };
       rnEl.onblur = ()=> finish(true);
     };
-    row.querySelector('[data-act="load"]').onclick = async ()=>{
+    row.querySelector('[data-act="load"]').onclick = loadDraft;
+    // 草稿标题也能点：和点「载入」一样的效果，少一次瞄准按钮
+    labelEl.onclick = loadDraft;
+    async function loadDraft(){
       const has = $('#topic').value.trim() || $('#docTitle').value.trim() || $('#docBody').value.trim() || state.items.length;
       if (has && !confirm('载入草稿会覆盖左侧当前内容，继续？')) return;
       try{
@@ -4949,7 +5081,7 @@ async function openDrafts(){
         $('#draftsDlg').close();
         toast('已载入草稿');
       }catch(e){ toast('载入失败'); }
-    };
+    }
     row.querySelector('[data-act="del"]').onclick = async ()=>{
       if (!confirm('删除这份草稿？')) return;
       await fetch('/api/drafts/' + it.id, {method:'DELETE'});
@@ -5319,6 +5451,206 @@ setInterval(refreshPool, 10000);
   document.addEventListener('keydown', function(e){
     if(e.key === 'Escape' && !list.hidden) close();
   });
+})();
+</script>
+
+<script>
+/* AI 热点选题：左栏小卡片 + 放大弹窗。
+   列表走后端 /api/aihot/topics（代取 + 缓存十分钟），事件综述按需再取——
+   十条全预加载没必要，点开哪条拉哪条。 */
+(function(){
+  const listEl = document.getElementById('aihotList');
+  const dlg = document.getElementById('aihotDlg');
+  const dlistEl = document.getElementById('aihotDList');
+  const noteEl = document.getElementById('aihotNote');
+  const moreBtn = document.getElementById('aihotMore');
+  const closeBtn = document.getElementById('aihotClose');
+  const refreshBtn = document.getElementById('aihotRefresh');
+  if(!listEl || !dlg || !dlistEl || !moreBtn || !closeBtn || !refreshBtn) return;
+
+  const NOTE_DEFAULT = '过去 48 小时里被多个独立信源同时讨论的 AI 事件，越靠前讨论的人越多。点标题展开综述。';
+  let items = [];
+  let busy = false;
+  let lastErr = '';
+  const openIds = Object.create(null);   // 弹窗里已展开的条目（按 storyId 记，重渲染不丢）
+  const digs = Object.create(null);      // storyId -> {loading} | {text} | {err}
+
+  function ago(iso){
+    if(!iso) return '';
+    const t = new Date(iso);
+    if(isNaN(t.getTime())) return '';
+    const s = (Date.now() - t.getTime()) / 1000;
+    if(s < 90) return '刚刚';
+    if(s < 3600) return Math.round(s / 60) + ' 分钟前';
+    if(s < 86400) return Math.round(s / 3600) + ' 小时前';
+    return Math.round(s / 86400) + ' 天前';
+  }
+
+  function srcLabel(it){
+    return it.sourceCount ? it.sourceCount + ' 家' : '';
+  }
+
+  /* 左栏卡片：只露三条。这块是引子，读完得点开弹窗 */
+  function renderChip(){
+    if(!items.length){
+      listEl.innerHTML = '<div class="aihot-load">' +
+        (busy ? '正在拉今天的 AI 热点…'
+              : '暂时没拉到热点' + (lastErr ? '（' + esc(lastErr) + '）' : '') + '，点「全部 ›」重试') +
+        '</div>';
+      return;
+    }
+    listEl.innerHTML = items.slice(0, 3).map(function(it, i){
+      return '<button class="ai-row" type="button" data-i="' + i + '">' +
+        '<span class="ai-no">' + esc(it.rank || i + 1) + '</span>' +
+        '<span class="ai-tx">' + esc(it.title) + '</span>' +
+        '<span class="ai-n">' + esc(srcLabel(it)) + '</span>' +
+      '</button>';
+    }).join('');
+  }
+
+  function digestBlock(it){
+    const id = it.storyId;
+    if(!id) return '<div class="ai-cb ld">这条没有事件综述，可以直接看原文。</div>';
+    const d = digs[id];
+    if(!d || d.loading) return '<div class="ai-cb ld">正在拉综述…</div>';
+    if(d.err) return '<div class="ai-cb ld">' + esc(d.err) + '</div>';
+    const text = String(d.text || '').trim();
+    if(!text) return '<div class="ai-cb ld">这条暂时没有综述。</div>';
+    return '<div class="ai-cb">' + esc(text) + '</div>';
+  }
+
+  function actsBlock(it){
+    const parts = [];
+    if(it.latestAt) parts.push('<span class="ai-src">最近更新 ' + esc(ago(it.latestAt)) + '</span>');
+    parts.push('<span class="spacer"></span>');
+    parts.push('<button class="btn ghost mini ai-use" type="button">用作选题</button>');
+    if(it.aihot) parts.push('<a class="ai-lnk" href="' + esc(it.aihot) + '" target="_blank" rel="noopener noreferrer">站内看</a>');
+    if(it.original) parts.push('<a class="ai-lnk" href="' + esc(it.original) + '" target="_blank" rel="noopener noreferrer">原文</a>');
+    return '<div class="ai-acts">' + parts.join('') + '</div>';
+  }
+
+  function renderList(){
+    if(!items.length){
+      dlistEl.innerHTML = '<div class="ai-cb ld">' +
+        (busy ? '正在拉取…' : '没拉到内容，点右上「刷新」再试') + '</div>';
+      return;
+    }
+    dlistEl.innerHTML = items.map(function(it){
+      const id = it.storyId || '';
+      const on = !!(id && openIds[id]);
+      return '<div class="ai-card' + (on ? ' on' : '') + '" data-id="' + esc(id) + '">' +
+        '<div class="ai-ch">' +
+          '<span class="ai-cn">' + esc(it.rank || '') + '</span>' +
+          '<div class="ai-ct">' + esc(it.title) + '</div>' +
+          '<span class="ai-cm">' + esc(srcLabel(it)) + '</span>' +
+        '</div>' +
+        (on ? digestBlock(it) + actsBlock(it) : '') +
+      '</div>';
+    }).join('');
+  }
+
+  function ensureDigest(id){
+    if(!id || digs[id]) return;
+    digs[id] = {loading: true};
+    fetch('/api/aihot/story?id=' + encodeURIComponent(id), {cache: 'no-store'})
+      .then(function(r){ return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+      .then(function(d){ digs[id] = {text: d.digest || ''}; })
+      .catch(function(e){ digs[id] = {err: '综述没拉到：' + (e.message || '网络问题')}; })
+      .then(function(){ renderList(); });
+  }
+
+  function toggle(id){
+    if(!id) return;
+    if(openIds[id]) delete openIds[id];
+    else { openIds[id] = true; ensureDigest(id); }
+    renderList();
+  }
+
+  function setNote(text, warn){
+    if(!noteEl) return;
+    if(warn) noteEl.innerHTML = esc(text) + ' <b>' + esc(warn) + '</b>';
+    else noteEl.textContent = text;
+  }
+
+  function load(fresh){
+    if(busy) return;
+    busy = true; lastErr = '';
+    renderChip();
+    if(dlg.open) renderList();
+    fetch('/api/aihot/topics' + (fresh ? '?fresh=1' : ''), {cache: 'no-store'})
+      .then(function(r){ return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+      .then(function(d){
+        items = Array.isArray(d.items) ? d.items : [];
+        lastErr = d.ok ? '' : (d.err || '接口没返回内容');
+        if(d.stale && d.err) setNote('刚才没连上 AIHOT，下面是上一份缓存。', d.err);
+        else if(d.stale) setNote('用的是十分钟内取过的缓存。');
+        else setNote(NOTE_DEFAULT);
+        busy = false;
+        renderChip();
+        if(dlg.open) renderList();
+      })
+      .catch(function(e){
+        busy = false;
+        lastErr = e.message || '网络问题';
+        renderChip();
+        if(dlg.open){
+          setNote('没连上 AIHOT。', lastErr);
+          renderList();
+        }
+      });
+  }
+
+  function openDlg(expandId){
+    if(expandId && !openIds[expandId]){
+      openIds[expandId] = true;
+      ensureDigest(expandId);
+    }
+    if(!items.length && !busy) load(false);
+    if(!dlg.open) dlg.showModal();
+    renderList();
+    const sc = dlg.querySelector('.scroller');
+    if(sc) sc.focus();          // 焦点进框：滚轮直接滚列表，不会带着背景页跑
+  }
+
+  function useAsTopic(title){
+    const t = document.getElementById('topic');
+    if(!t) return;
+    t.value = String(title || '').trim();
+    // 选题 ≠ 成文：先断开上一份草稿的绑定，并清掉待存的指纹，
+    // 这样只填选题【不会】立刻存出一版草稿；等「AI 生成文章」产出标题正文，才会记一条新草稿。
+    bindDraft(null, '');
+    markContentClean();
+    // 仍派发 input：右侧预览 / 会话快照照常刷新，只是因为指纹已对齐，不会触发草稿暂存
+    t.dispatchEvent(new Event('input', {bubbles: true}));
+    if(dlg.open) dlg.close();
+    t.focus();
+    try{ t.setSelectionRange(t.value.length, t.value.length); }catch(e){}
+    toast('已填进选题，接着点「AI 生成文章」');
+  }
+
+  listEl.addEventListener('click', function(e){
+    const row = e.target.closest('.ai-row');
+    if(!row) return;
+    const it = items[Number(row.dataset.i)];
+    openDlg(it ? it.storyId : '');
+  });
+  moreBtn.addEventListener('click', function(){ openDlg(''); });
+  closeBtn.addEventListener('click', function(){ if(dlg.open) dlg.close(); });
+  refreshBtn.addEventListener('click', function(){ load(true); });
+
+  dlistEl.addEventListener('click', function(e){
+    const card = e.target.closest('.ai-card');
+    if(!card) return;
+    const id = card.dataset.id;
+    if(e.target.closest('.ai-use')){
+      const hit = items.filter(function(x){ return (x.storyId || '') === id; })[0];
+      if(hit) useAsTopic(hit.title);
+      return;
+    }
+    if(e.target.closest('.ai-ch')) toggle(id);
+  });
+
+  load(false);
 })();
 </script>
 </body>

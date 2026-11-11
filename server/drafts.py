@@ -7,12 +7,33 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 import uuid
 from pathlib import Path
 
 MAX_DRAFTS = 60  # 超出后按最后修改时间淘汰最旧的
+
+_SENT_SPLIT = re.compile(r'[。！？!?；;\n]')
+
+def first_sentence(text, max_len=48):
+    """取正文第一句话，超长截断加省略号。用于草稿列表的预览小字。"""
+    text = (text or '').strip()
+    if not text:
+        return ''
+    seg = ''
+    for part in _SENT_SPLIT.split(text):
+        part = part.strip()
+        if part:
+            seg = part
+            break
+    if not seg:
+        seg = text
+    if len(seg) > max_len:
+        seg = seg[:max_len].rstrip() + '…'
+    return seg
+
 
 
 class Drafts:
@@ -142,6 +163,15 @@ class Drafts:
             out = []
             for r in rows:
                 items = r.get("items") or []
+                # 草稿预览：优先文档正文；图片型草稿正文常为空，退而取第一张分镜的正文
+                body_text = r.get("body") or ""
+                if not body_text.strip():
+                    for it in items:
+                        b = (it.get("body") or "").strip()
+                        if b:
+                            body_text = b
+                            break
+                preview = first_sentence(body_text)
                 out.append({
                     "id": r["id"],
                     "updated": r.get("updated") or r.get("created"),
@@ -151,6 +181,7 @@ class Drafts:
                     "name": r.get("name") or "",
                     "group": r.get("group") or "",
                     "body": (r.get("body") or "")[:120],
+                    "preview": preview,
                     "count": len(items),
                     "titles": [(i.get("title") or "").strip() for i in items[:6]],
                     "mode": r.get("mode") or "image",

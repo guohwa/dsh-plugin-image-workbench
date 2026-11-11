@@ -295,6 +295,8 @@ class GenRequest(BaseModel):
     shoot_type: str | None = Field(default=None, max_length=40)
     # 单张重做：新图成功后删掉这条旧记录，实现同一任务内原位替换
     replace_id: str | None = Field(default=None, max_length=32)
+    # 「AI 生成文章」时正文要拆成多少条贴图条目（数字框控制，默认 7）；不传则按选题识别或走单篇
+    num_items: int | None = Field(default=None, ge=1, le=20)
 
 
 class ZipRequest(BaseModel):
@@ -376,30 +378,44 @@ _LIST_INTENT_RE = re.compile(
 
 
 def build_text_prompt(req: GenRequest) -> str:
-    """普通选题走小红书笔记模板；选题明确要「N 条贴图/分镜文案」或给了 01｜ 示例时，
-    改走编号清单模板，避免 AI 输出「开场导语 + 编号条目 + 结尾标签」的混合格式
-    （那种格式前端拆分只能识别成 1 条）。"""
+    """普通选题走小红书笔记模板；选题明确要「N 条贴图/分镜文案」、给了 01｜ 示例、
+    或前端「条数」框填了数字时，改走编号清单模板，避免 AI 输出
+    「开场导语 + 编号条目 + 结尾标签」的混合格式（那种格式前端拆分只能识别成 1 条）。
+    编号清单模板末尾带 3-5 个 #话题标签，方便直接贴图与回看。"""
     topic = req.topic.strip()
-    if _LIST_INTENT_RE.search(topic):
+    # 条数框优先；其次从选题里识别「N 条」意图；都没有就走单篇笔记模板
+    n = None
+    if req.num_items and req.num_items >= 1:
+        n = min(max(req.num_items, 1), 20)
+    elif _LIST_INTENT_RE.search(topic):
         m = re.search(r"(\d+)\s*条", topic)
         n = min(max(int(m.group(1)) if m else 8, 2), 20)
+    if n:
         return (
             f"你是贴图分镜文案写手。围绕选题「{topic}」，直接输出成品，不要任何解释。\n"
             f"第一行：整组标题（20字以内，带情绪钩子，可用一个emoji）。\n"
-            f"标题之后空一行，然后严格输出 {n} 条贴图文案，编号从 01 连续到 {n:02d}。\n"
+            "第二行：空一行后，先写一段 2-4 句的概述段落，用自然流畅的简体中文把这件事的来龙去脉"
+            "和为什么值得聊一句话点透，作为整组内容的总起；不要加「概述」「导语」之类的标题标记，"
+            "直接写正文段落，也不要写成客套话。\n"
+            f"概述之后空一行，严格输出 {n} 条贴图文案，编号从 01 连续到 {n:02d}。\n"
             "每一条占两行：第一行是两位编号、一个竖线、再加小标题（小标题 8 字以内），"
             "第二行是这一条的正文（60到100字，口语化，写具体场景和细节，不要空话）。\n"
             f"条与条之间用一个空行隔开，全文一共 {n} 个编号行。\n"
-            "硬性要求：不要开场导语、不要结尾总结、不要话题标签、不要 markdown 标记（不要 ** 和 #）、"
+            "硬性要求：编号条目里不要出现 markdown 标记（不要 ** 加粗、不要以 # 开头的标题行），"
             "不要写「以下是」「最后想告诉你」这类客套话；正文里不要出现新的编号行，"
-            "也不要把上面这些格式说明当成内容输出。"
+            "也不要把上面这些格式说明当成内容输出。\n"
+            "最后单独一行：3-5 个 #话题标签（每个标签 2-6 字，覆盖选题核心词与人群/场景，"
+            "格式如「#AI看病 #健康科普 #避坑」），标签之间用空格隔开，这一行不要再写别的字。\n"
+            "全程使用流畅的简体中文写作，不要输出英文碎片、URL、链接、乱码或无意义的字母数字"
+            "组合（例如 turn/5u8495ea07e7 这类字符串），也不要输出代码块或任何非正文内容。"
         )
     return (
-        f"你是小红书爆款笔记写手。围绕选题「{req.topic.strip()}」，直接输出成品，不要任何解释：\n"
+        f"你是小红书爆款笔记写手。围绕选题「{topic}」，直接输出成品，不要任何解释：\n"
         "第一行：标题（20字以内，带情绪钩子，可用一个emoji）\n"
         "空行后：正文 300-500 字，口语化、分段、适量emoji，有具体细节不要空话\n"
         "空行后：5 个 #话题标签\n"
-        "不要写“以下是”“希望对你有帮助”这类客套话。"
+        "不要写“以下是”“希望对你有帮助”这类客套话。\n"
+        "全程使用流畅的简体中文写作，不要输出英文碎片、URL、链接、乱码或无意义的字母数字组合。"
     )
 
 
@@ -725,6 +741,122 @@ async def api_upgrade_restart():
 @app.get("/api/catalog")
 async def api_catalog():
     return JSONResponse(CATALOG)
+
+
+# ---------------- AIHOT 热点选题 ----------------
+# 外部内容源：AIHOT（aihot.news）的公开只读接口，匿名可读、无需 key。
+# 前端直连会被跨域挡住，所以由后端代取；顺便当缓存层——官方建议最快 60 秒一次，
+# 这里 10 分钟一取，手动刷新只是把这个间隔提前，不至于把人家的接口打爆。
+# 自己按 AIHOT 仓库搭了站，把 AIHOT_API_BASE 指过去就换成自家的信源和精选标准。
+_AIHOT_API = os.environ.get("AIHOT_API_BASE", "https://aihot.news/api/v1").rstrip("/")
+_AIHOT_TTL = 600              # 热点榜缓存 10 分钟
+_AIHOT_STORY_TTL = 1800       # 事件综述缓存 30 分钟，综述是按天演化的，不用勤取
+_AIHOT_HOT: dict = {"at": 0.0, "items": [], "err": ""}
+_AIHOT_STORY: dict = {}
+
+
+async def _aihot_json(path: str) -> dict:
+    """取 AIHOT 的一个 JSON 接口。
+
+    trust_env=False：不吃系统代理变量。这个域名国内直连能通，反而是走代理更容易被拦；
+    和上面取版本号的做法保持一致。
+    """
+    import httpx
+
+    async with httpx.AsyncClient(
+        trust_env=False, timeout=12, follow_redirects=True,
+        headers={"User-Agent": "BluxeImageWorkbench (local workbench)"},
+    ) as c:
+        r = await c.get(_AIHOT_API + path)
+        if r.status_code == 429:
+            raise RuntimeError("请求太频繁，等一分钟再试")
+        r.raise_for_status()
+        return r.json()
+
+
+def _aihot_story_id(link: str) -> str:
+    """事件页地址 https://aihot.news/story/<uuid> → uuid。"""
+    s = str(link or "").rstrip("/")
+    if "/story/" not in s:
+        return ""
+    return s.rsplit("/", 1)[-1]
+
+
+def _aihot_slim(raw: dict) -> list:
+    """热点榜原样字段太多（信源名一长串、各种计数），只留前端要用的。"""
+    out = []
+    for it in raw.get("items") or []:
+        if not isinstance(it, dict):
+            continue
+        links = it.get("links") or {}
+        title = str(it.get("title") or "").strip()
+        if not title:
+            continue
+        out.append({
+            "rank": int(it.get("rank") or 0),
+            "title": title,
+            "sourceCount": int(it.get("sourceCount") or 0),
+            "participantCount": int(it.get("participantCount") or 0),
+            "latestAt": str(it.get("latestAt") or ""),
+            "storyId": _aihot_story_id(links.get("story")),
+            "aihot": str(links.get("aihot") or ""),
+            "original": str(links.get("original") or ""),
+            "sources": [str(x) for x in (it.get("sourceNames") or [])][:8],
+        })
+    return out
+
+
+@app.get("/api/aihot/topics")
+async def api_aihot_topics(fresh: int = 0):
+    """当前 AI 热点榜（事件级），给左栏选题卡片和放大弹窗用。
+
+    拉不到时退回上一次的结果并带上 err，前端标一句「刚才那份」，不让整块变空白。
+    """
+    now = time.time()
+    have = bool(_AIHOT_HOT["items"])
+    if have and not fresh and now - _AIHOT_HOT["at"] < _AIHOT_TTL:
+        return JSONResponse({"ok": True, "stale": False, "at": _AIHOT_HOT["at"],
+                             "items": _AIHOT_HOT["items"]})
+    try:
+        items = _aihot_slim(await _aihot_json("/hot-topics"))
+        if not items:
+            raise RuntimeError("接口没返回内容")
+        _AIHOT_HOT.update({"at": now, "items": items, "err": ""})
+        return JSONResponse({"ok": True, "stale": False, "at": now, "items": items})
+    except Exception as e:
+        msg = (str(e) or e.__class__.__name__)[:120]
+        _AIHOT_HOT["err"] = msg
+        return JSONResponse({"ok": have, "stale": have, "at": _AIHOT_HOT["at"],
+                             "items": _AIHOT_HOT["items"], "err": msg})
+
+
+@app.get("/api/aihot/story")
+async def api_aihot_story(id: str = ""):
+    """单个事件的 AI 综述。id 只来自热点榜返回的 storyId，不接受猜测。"""
+    sid = re.sub(r"[^0-9a-zA-Z\-]", "", str(id or ""))[:64]
+    if not sid:
+        raise HTTPException(status_code=400, detail="缺少事件 id")
+    hit = _AIHOT_STORY.get(sid)
+    if hit and time.time() - hit["at"] < _AIHOT_STORY_TTL:
+        return JSONResponse(hit["data"])
+    try:
+        raw = await _aihot_json("/stories/" + sid)
+    except Exception as e:
+        raise HTTPException(status_code=502,
+                            detail=(str(e) or "AIHOT 拉取失败")[:120])
+    st = raw.get("story") or {}
+    data = {
+        "ok": True,
+        "title": str(st.get("title") or ""),
+        "digest": str(st.get("digest") or ""),
+        "latest": str(st.get("latest") or ""),
+        "sourceCount": int(st.get("sourceCount") or 0),
+        "reportCount": int(st.get("reportCount") or 0),
+        "firstReportAt": str(st.get("firstReportAt") or ""),
+        "latestAt": str(st.get("latestAt") or ""),
+    }
+    _AIHOT_STORY[sid] = {"at": time.time(), "data": data}
+    return JSONResponse(data)
 
 
 _SAMPLES_CACHE = {"at": 0.0, "data": None}

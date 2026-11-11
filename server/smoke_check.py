@@ -63,6 +63,27 @@ ok('POST /api/upgrade/apply 已注册',
 ok('POST /api/upgrade/restart 已注册',
    any(getattr(r, 'path', '') == '/api/upgrade/restart'
        and 'POST' in getattr(r, 'methods', set()) for r in app.app.routes))
+# AI 热点选题：左栏那块资讯靠这两个路由，路由没了就是一块死内容
+ok('GET /api/aihot/topics 已注册',
+   any(getattr(r, 'path', '') == '/api/aihot/topics'
+       and 'GET' in getattr(r, 'methods', set()) for r in app.app.routes))
+ok('GET /api/aihot/story 已注册',
+   any(getattr(r, 'path', '') == '/api/aihot/story'
+       and 'GET' in getattr(r, 'methods', set()) for r in app.app.routes))
+ok('aihot 事件 id 解析：只认 /story/<id>',
+   app._aihot_story_id('https://aihot.news/story/760e0591-91c2-4b7a-aea8-5a33ba5d86b1')
+   == '760e0591-91c2-4b7a-aea8-5a33ba5d86b1'
+   and app._aihot_story_id('') == ''
+   and app._aihot_story_id('https://aihot.news/items/abc') == '')
+_tmp_hot = app._aihot_slim({"items": [
+    {"rank": 1, "title": "测试事件", "sourceCount": 7,
+     "links": {"story": "https://aihot.news/story/abc-1", "aihot": "https://aihot.news/items/x"}},
+    {"rank": 2, "title": "   "},          # 没标题的丢掉，别渲染成一行空白
+    "not a dict",
+]})
+ok('热点榜瘦身：丢空标题、字段齐全',
+   len(_tmp_hot) == 1 and _tmp_hot[0]['sourceCount'] == 7 and _tmp_hot[0]['storyId'] == 'abc-1')
+ok('热点榜瘦身：坏输入不抛异常', app._aihot_slim({}) == [] and app._aihot_slim({"items": None}) == [])
 # 版本比较：必须按数字段比，字符串比会把 1.1.9 判成比 1.1.10 新
 _ver_cases = [('1.1.9', '1.1.10', False), ('1.1.17', '1.1.16', True), ('1.1', '1.1.0', False),
               ('1.1.17', '1.1.17', False), ('1.1.17-beta.1', '1.1.17', False),
@@ -72,12 +93,69 @@ ok('版本比较：按数字段比，预发布版低于同号正式版',
 
 _src_pool = (ROOT / 'pool.py').read_text(encoding='utf-8')
 _src_html = (ROOT / 'static' / 'index.html').read_text(encoding='utf-8')
+_src_app = (ROOT / 'app.py').read_text(encoding='utf-8')
 ok('已停止状态不落盘', 'not in ("done", "error", "cancelled")' in _src_pool)
 ok('取消后不再换号重试', 'if job.get("status") == "cancelled":' in _src_pool)
 ok('前端两个停止按钮齐全', 'id="stopGen"' in _src_html and 'id="monStop"' in _src_html)
 ok('前端停止链路完整',
    all(x in _src_html for x in ('async function stopAllJobs', '/api/generate/stop',
                                 'clearBatch();', "d.status === 'cancelled'")))
+# AI 热点选题：卡片必须真的落在「选题」输入框上方，节点顺序错了会跑到下面去
+ok('前端 AI 热点选题节点齐全',
+   all(x in _src_html for x in ('id="aihotList"', 'id="aihotDlg"', 'id="aihotDList"',
+                                'id="aihotMore"', 'id="aihotRefresh"')))
+ok('前端选题卡片排在选题输入框之前',
+   0 < _src_html.find('id="aihotList"') < _src_html.find('label for="topic"'))
+ok('前端标注了数据来源 AIHOT', 'AIHOT（aihot.news）' in _src_html)
+ok('前端「用作选题」只填框、不立刻存草稿',
+   all(x in _src_html for x in ('function useAsTopic', 'bindDraft(null, \'\')',
+                                'markContentClean()', 'ai-use')),
+   '选题应当只填空、不立刻存草稿；漏了会退化成每选一次存一版')
+ok('前端自动暂存：只有选题、还没成文时不存草稿',
+   '只有选题、还没成文' in _src_html and 'hasArticleContent(d)' in _src_html,
+   '漏了会让「用作选题」又变成每次都存一版')
+ok('前端草稿标题可点击载入',
+   all(x in _src_html for x in ('b[data-role="label"]', 'labelEl.onclick = loadDraft',
+                                '点击载入这份草稿')),
+   '漏了草稿标题就点不动，只能去瞄那个小按钮')
+ok('草稿列表小字 = 时间 · 正文首句，不拼张数/选题片段',
+   all(x in _src_html for x in ('const preview = (it.preview ||',
+                                'fmtTime(it.updated)', '${esc(dsTxt)}</span>',
+                                "fmtTime(it.updated) + ' · ' + preview"))
+   and 'const sub = clipText([it.count' not in _src_html,
+   '漏了会让草稿卡片又冒出「N张图·选题片段」那行脏内容')
+ok('后端草稿列表返回 preview 首句字段',
+   'preview' in (drafts.Drafts(ROOT / 'workbench' / 'drafts.json').list().get('items', [{}])[0]
+                if drafts.Drafts(ROOT / 'workbench' / 'drafts.json').list().get('items') else {}),
+   '前端靠 it.preview 渲染，后端不返回就会整片空白')
+ok('AI 生成文章带「条数」输入框，默认 7，范围 1-20',
+   all(x in _src_html for x in ('id="genCount"', 'type="number"', 'value="7"',
+                                'min="1"', 'max="20"')),
+   '漏了条数框，正文就不知道要拆成几条贴图')
+ok('payload 把条数带进请求（num_items）',
+   "num_items: Number.isFinite(n)" in _src_html and "$('#genCount')" in _src_html,
+   '前端不传 num_items，后端就用不了条数框')
+ok('后端：num_items 优先控制编号清单条数并带标签',
+   'req.num_items and req.num_items >= 1' in _src_app
+   and '严格输出 {n} 条贴图文案' in _src_app
+   and '3-5 个 #话题标签' in _src_app,
+   '漏了会让条数框失效、或生成的正文没有标签')
+ok('编号清单模板先写概述段落、再列 01，且不禁止开场导语',
+   '先写一段 2-4 句的概述段落' in _src_app
+   and '作为整组内容的总起' in _src_app
+   and '不要开场导语' not in _src_app,
+   '漏了「概述」会导致正文直接 01 开头、很突兀')
+ok('文本提示词要求简体中文、禁止乱码/英文碎片/字母数字组合',
+   '全程使用流畅的简体中文写作' in _src_app
+   and '字母数字组合' in _src_app,
+   '漏了反乱码约束，模型偶发会吐 turn/5u8495ea07e7 这类碎片')
+ok('后端 sanitizer 清掉 word/hex 垃圾串、保留中文与 http 链接',
+   '_sanitize_text' in _src_pool
+   and '_GARBAGE_RE' in _src_pool
+   and '5u8495ea07e7' not in pool._sanitize_text('正文里有 turn/5u8495ea07e7 也该清')
+   and 'http://5u8495ea07e7' in pool._sanitize_text('链接 http://5u8495ea07e7 保留')
+   and '(?<!:)' in _src_pool,
+   '漏了清洗，正文会出现 turn/5u8495ea07e7 这类乱码')
 ok('选择器单击放大预览：弹窗 / 确认按钮 / 双击直选都在',
    all(x in _src_html for x in ('id="pickPrev"', 'id="ppPick"', 'function openPickPrev',
                                 'function confirmPick', 'b.ondblclick = ',

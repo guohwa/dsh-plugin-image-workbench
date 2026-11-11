@@ -460,6 +460,35 @@ def _json_of(r: httpx.Response) -> dict:
         return {}
 
 
+# 模型偶发会把内部协议碎片带进正文，典型形态是「英文词/长串字母数字」如 turn/5u8495ea07e7、
+# turn/5B4095ea0ew9，也可能是 unicode 替换符。这类垃圾只在不含中文的孤立片段里出现，
+# 所以清洗时只动这些片段，正常的简体中文正文一个字都不会被碰。
+# 注意后缀是「字母数字混合串」（含 u/e/a 这类非纯十六进制的字母），所以字符类要放宽到 [0-9a-zA-Z]；
+# 用 (?<!:) 排除 http(s):// 这类正常链接的协议段，避免误伤。
+_GARBAGE_RE = re.compile(r"(?<!:)\b[a-z]{2,}/[0-9a-zA-Z]{6,}\b")
+
+
+# 零宽与不可见字符：模型偶发会把 ZWSP/BOM/替换符带进正文，肉眼看不见但会污染复制与分镜解析
+_ZEROWIDTH_RE = re.compile(
+    "[" + "".join([
+        "\u200b",  # 零宽空格
+        "\u200c",  # 零宽不连字
+        "\u200d",  # 零宽连字
+        "\ufeff",  # BOM / 零宽不换行空格
+        "\ufffd",  # 替换符（乱码占位）
+    ]) + "]"
+)
+
+
+def _sanitize_text(text: str) -> str:
+    s = str(text or "")
+    s = _GARBAGE_RE.sub("", s)              # 清掉 turn/5u8495ea07e7 这类协议碎片
+    s = _ZEROWIDTH_RE.sub("", s)            # 清掉零宽/BOM/替换符
+    s = re.sub(r"[ \t]{2,}", " ", s)        # 清掉删词后留下的多余空格
+    s = re.sub(r"\n{3,}", "\n\n", s)        # 连续空行压成两段
+    return s.strip()
+
+
 def _err_text(j: dict) -> str:
     e = j.get("error") or j.get("detail") or j
     if isinstance(e, dict):
@@ -1462,6 +1491,7 @@ class PoolManager:
                 text = str(data["choices"][0]["message"]["content"] or "").strip()
             except Exception:
                 text = str(data.get("text") or "").strip()
+            text = _sanitize_text(text)
             if not text:
                 raise RuntimeError("文案返回为空")
             return {"text": text}
