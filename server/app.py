@@ -1953,6 +1953,7 @@ async def _wx_get_token(gateway: str, token: str) -> str | None:
 @app.post("/api/push_wechat_draft")
 async def api_push_wechat_draft(req: PushDraftRequest):
     """把一批生成的图作为「图文消息」推到微信公众号草稿箱（news，带正文）。"""
+    import httpx
     if not req.items:
         raise HTTPException(400, "没有要推送的图片")
     if len(req.items) > 20:
