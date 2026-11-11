@@ -4030,6 +4030,7 @@ function renderTasks(){
       + '<span class="tacts">'
       + '<button class="mini" data-act="load" type="button" title="把这个任务的分镜和提示词载回左侧，改完可以继续出图">载入</button>'
       + '<button class="mini" data-act="bundle" type="button" title="把这一批的图片和文案打包成 zip 下载">打包</button>'
+      + '<button class="mini" data-act="push" type="button" title="把这一批已生成成功的图作为图文消息推送到公众号草稿箱">推送</button>'
       + '<button class="mini del" data-act="del" type="button" title="删除这个任务，图片文件一起清理">删除</button>'
       + '</span>'
       + '</div>'
@@ -4049,11 +4050,32 @@ function renderTasks(){
         e.stopPropagation();
         if (b.dataset.act === 'load') loadTaskIntoWorkbench(task);
         else if (b.dataset.act === 'bundle') location.href = '/api/tasks/' + encodeURIComponent(task.task_id) + '/bundle';
+        else if (b.dataset.act === 'push') pushHistoryTask(task);
         else deleteHistoryTask(task);
       };
     });
     box.appendChild(row);
   });
+}
+
+// 历史任务「推送」按钮：把该任务里所有已成图的记录作为图文消息推到公众号草稿箱
+async function pushHistoryTask(task){
+  const items = (task.items || [])
+    .filter(r => r.status === 'done' && r.image_url && r.id)
+    .map(r => ({job_id: r.id, caption: (r.body || '').trim()}));
+  if (!items.length){ toast('这个任务没有可推送的成图', {type:'err', title:'无法推送'}); return; }
+  if (items.length > 20){ toast('一次最多推送 20 张，该任务有 ' + items.length + ' 张，请分批或精简后再推', {type:'err', title:'数量超限'}); return; }
+  const title = (task.title || 'AI 生成图文').slice(0, 32);
+  toast('正在推送图文消息到公众号草稿箱…', {type:'info', title:'推送中'});
+  try {
+    const r = await fetch('/api/push_wechat_draft', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({title, items})
+    });
+    const d = await r.json();
+    if (d.ok) toast(`已推送 ${d.screens || d.pushed} 屏图文消息到公众号草稿箱`, {type:'ok', title:'图文已推送'});
+    else toast('图文推送失败：' + (d.error || ''), {type:'err', title:'推送失败'});
+  } catch(e){ toast('图文推送异常：' + e.message, {type:'err', title:'推送异常'}); }
 }
 
 function fillTaskGrid(body, items, task){

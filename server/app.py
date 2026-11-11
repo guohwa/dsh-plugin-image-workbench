@@ -1888,8 +1888,10 @@ class PushDraftRequest(BaseModel):
 
 def _wx_cfg() -> tuple[str, str]:
     cfg = load_config()
-    return (str(cfg.get("wx_gateway") or "").strip(),
-            str(cfg.get("wx_token") or "").strip())
+    gw = str(cfg.get("wx_gateway") or "").strip()
+    if gw and "://" not in gw:        # 配置页可能只填了域名，自动补 https://
+        gw = "https://" + gw
+    return (gw, str(cfg.get("wx_token") or "").strip())
 
 def _wx_escape(s: str) -> str:
     return html.escape(str(s or ""), quote=False)
