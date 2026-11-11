@@ -1336,11 +1336,16 @@
         <label style="display:block;font-size:12px;color:var(--ink-3)">微信网关 Token
           <input id="cfgWxToken" type="password" autocomplete="off" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="留空沿用已保存 Token">
         </label>
-        <span style="font-size:11px;color:var(--ink-3);line-height:1.6">Token 只存本地 config（不随插件分发），别人装的插件默认无 Token、推不进来。换 Token 只需在这里重填。</span>
+        <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--ink-3);margin-top:4px">
+          <span>推送模式：</span>
+          <label style="display:flex;align-items:center;gap:5px;white-space:nowrap"><input type="radio" name="wxPushMode" value="news" style="width:auto;margin:0">图文消息（带正文+小标题）</label>
+          <label style="display:flex;align-items:center;gap:5px;white-space:nowrap"><input type="radio" name="wxPushMode" value="newspic" style="width:auto;margin:0">贴图（纯图片）</label>
+        </div>
+        <span style="font-size:11px;color:var(--ink-3);line-height:1.6">Token 只存本地 config（不随插件分发），别人装的插件默认无 Token、推不进来。换 Token 只需在这里重填。历史记录里每条也能临时切换图文/贴图。</span>
       </div>
       <div class="span2" style="border-top:1px solid #f0ecfa;padding-top:10px;display:flex;align-items:center;gap:8px">
         <input type="checkbox" id="pushWxDraft" style="width:auto;margin:0">
-        <span style="font-size:13px;color:var(--ink-2)" title="开关打开、且已配置网关与 Token 时，批量出图完成后自动把这批图作为「图文消息」（带正文）推送到微信公众号草稿箱">推送公众号</span>
+        <span style="font-size:13px;color:var(--ink-2)" title="开关打开、且已配置网关与 Token 时，批量出图完成后自动把这批图按上方「推送模式」推送到公众号草稿箱（图文=带正文+小标题，贴图=纯图片）">推送公众号</span>
       </div>
     </div>
     </div>
@@ -2808,19 +2813,21 @@ async function runImage(){
 
 // 公众号「图文消息」草稿箱自动推送：开关打开时，批量出图完成后把这批图作为图文消息（带正文）推到草稿箱
 async function pushWxDraft(){
-  const items = state.results.slice(0, 20).map(r => ({job_id: r.id, caption: (r.body || r.topic || '').trim()}));
+  const mode = (window.WX_PUSH_MODE || 'news');
+  const items = state.results.slice(0, 20).map(r => ({job_id: r.id, caption: (r.body || '').trim(), title: (r.topic || '').trim()}));
   if (!items.length) return;
-  const title = (($('#docTitle').value || $('#topic').value || 'AI 生成图文')).slice(0, 32);
-  toast('正在推送图文消息到公众号草稿箱…', {type:'info', title:'推送中'});
+  const title = (($('#docTitle').value || $('#topic').value || (mode === 'newspic' ? 'AI 生成贴图' : 'AI 生成图文'))).slice(0, 32);
+  const label = mode === 'newspic' ? '贴图' : '图文消息';
+  toast('正在推送' + label + '到公众号草稿箱…', {type:'info', title:'推送中'});
   try {
     const r = await fetch('/api/push_wechat_draft', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({title, items})
+      body: JSON.stringify({title, mode, items})
     });
     const d = await r.json();
-    if (d.ok) toast(`已推送 ${d.screens || d.pushed} 屏图文消息到公众号草稿箱`, {type:'ok', title:'图文已推送'});
-    else toast('图文推送失败：' + (d.error || ''), {type:'err', title:'推送失败'});
-  } catch(e){ toast('图文推送异常：' + e.message, {type:'err', title:'推送异常'}); }
+    if (d.ok) toast(`已推送 ${d.screens || d.pushed} 屏${label}到公众号草稿箱`, {type:'ok', title:label + '已推送'});
+    else toast(label + '推送失败：' + (d.error || ''), {type:'err', title:'推送失败'});
+  } catch(e){ toast(label + '推送异常：' + e.message, {type:'err', title:'推送异常'}); }
 }
 // 开关状态持久化到 localStorage
 $('#pushWxDraft').addEventListener('change', e => localStorage.setItem('wb_push_wx_draft', e.target.checked ? '1' : '0'));
@@ -3071,6 +3078,9 @@ function cfgFill(d){
   $('#cfgWxGateway').value = d.wx_gateway || '';
   $('#cfgWxToken').value = '';
   $('#cfgWxToken').placeholder = d.wx_token_set ? ('留空沿用已保存 Token（' + (d.wx_token_masked || '已配置') + '）') : '微信网关 Token';
+  const m = (d.wx_push_mode === 'newspic') ? 'newspic' : 'news';
+  window.WX_PUSH_MODE = m;
+  document.querySelectorAll('input[name="wxPushMode"]').forEach(r => { r.checked = (r.value === m); });
 }
 function cfgPayload(){
   return {
@@ -3085,6 +3095,7 @@ function cfgPayload(){
     image_response_format: $('#cfgFormat').value,
     wx_gateway: $('#cfgWxGateway').value.trim(),
     wx_token: $('#cfgWxToken').value.trim(),
+    wx_push_mode: (document.querySelector('input[name="wxPushMode"]:checked') || {}).value || 'news',
   };
 }
 async function openConfig(){
@@ -4030,7 +4041,11 @@ function renderTasks(){
       + '<span class="tacts">'
       + '<button class="mini" data-act="load" type="button" title="把这个任务的分镜和提示词载回左侧，改完可以继续出图">载入</button>'
       + '<button class="mini" data-act="bundle" type="button" title="把这一批的图片和文案打包成 zip 下载">打包</button>'
-      + '<button class="mini" data-act="push" type="button" title="把这一批已生成成功的图作为图文消息推送到公众号草稿箱">推送</button>'
+      + '<button class="mini" data-act="push" type="button" title="把这一批已生成成功的图推送到公众号草稿箱（模式看右侧下拉）">推送</button>'
+      + '<select class="push-mode-sel" data-act="pushmode" title="本次推送模式：图文（带正文+小标题）/ 贴图（纯图片）">'
+      +   '<option value="news"' + (window.WX_PUSH_MODE === 'newspic' ? '' : ' selected') + '>图文</option>'
+      +   '<option value="newspic"' + (window.WX_PUSH_MODE === 'newspic' ? ' selected' : '') + '>贴图</option>'
+      + '</select>'
       + '<button class="mini del" data-act="del" type="button" title="删除这个任务，图片文件一起清理">删除</button>'
       + '</span>'
       + '</div>'
@@ -4050,32 +4065,48 @@ function renderTasks(){
         e.stopPropagation();
         if (b.dataset.act === 'load') loadTaskIntoWorkbench(task);
         else if (b.dataset.act === 'bundle') location.href = '/api/tasks/' + encodeURIComponent(task.task_id) + '/bundle';
-        else if (b.dataset.act === 'push') pushHistoryTask(task);
+        else if (b.dataset.act === 'push') pushHistoryTask(task, row);
+        else if (b.dataset.act === 'pushmode') return;   // 仅阻止冒泡，模式由下方 change 读取
         else deleteHistoryTask(task);
       };
     });
+    // 模式下拉：阻止冒泡到任务折叠，变更时同步为全局默认
+    const modeSel = row.querySelector('.push-mode-sel');
+    if (modeSel){
+      modeSel.onclick = e => e.stopPropagation();
+      modeSel.onchange = e => {
+        e.stopPropagation();
+        window.WX_PUSH_MODE = modeSel.value;
+        // 同步配置页单选（若打开过）与其他行的下拉
+        document.querySelectorAll('input[name="wxPushMode"]').forEach(r => { r.checked = (r.value === modeSel.value); });
+        document.querySelectorAll('.push-mode-sel').forEach(s => { if (s !== modeSel) s.value = modeSel.value; });
+      };
+    }
     box.appendChild(row);
   });
 }
 
-// 历史任务「推送」按钮：把该任务里所有已成图的记录作为图文消息推到公众号草稿箱
-async function pushHistoryTask(task){
+// 历史任务「推送」按钮：把该任务里所有已成图的记录推到公众号草稿箱（模式看右侧下拉）
+async function pushHistoryTask(task, row){
+  const sel = row && row.querySelector('.push-mode-sel');
+  const mode = (sel && sel.value) || window.WX_PUSH_MODE || 'news';
   const items = (task.items || [])
     .filter(r => r.status === 'done' && r.image_url && r.id)
-    .map(r => ({job_id: r.id, caption: (r.body || '').trim()}));
+    .map(r => ({job_id: r.id, caption: (r.body || '').trim(), title: (r.title || '').trim()}));
   if (!items.length){ toast('这个任务没有可推送的成图', {type:'err', title:'无法推送'}); return; }
   if (items.length > 20){ toast('一次最多推送 20 张，该任务有 ' + items.length + ' 张，请分批或精简后再推', {type:'err', title:'数量超限'}); return; }
-  const title = (task.title || 'AI 生成图文').slice(0, 32);
-  toast('正在推送图文消息到公众号草稿箱…', {type:'info', title:'推送中'});
+  const label = mode === 'newspic' ? '贴图' : '图文消息';
+  const title = (task.title || (mode === 'newspic' ? 'AI 生成贴图' : 'AI 生成图文')).slice(0, 32);
+  toast('正在推送' + label + '到公众号草稿箱…', {type:'info', title:'推送中'});
   try {
     const r = await fetch('/api/push_wechat_draft', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({title, items})
+      body: JSON.stringify({title, mode, items})
     });
     const d = await r.json();
-    if (d.ok) toast(`已推送 ${d.screens || d.pushed} 屏图文消息到公众号草稿箱`, {type:'ok', title:'图文已推送'});
-    else toast('图文推送失败：' + (d.error || ''), {type:'err', title:'推送失败'});
-  } catch(e){ toast('图文推送异常：' + e.message, {type:'err', title:'推送异常'}); }
+    if (d.ok) toast(`已推送 ${d.screens || d.pushed} 屏${label}到公众号草稿箱`, {type:'ok', title:label + '已推送'});
+    else toast(label + '推送失败：' + (d.error || ''), {type:'err', title:'推送失败'});
+  } catch(e){ toast(label + '推送异常：' + e.message, {type:'err', title:'推送异常'}); }
 }
 
 function fillTaskGrid(body, items, task){

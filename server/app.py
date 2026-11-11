@@ -1193,6 +1193,7 @@ def _cfg_view() -> dict:
         "version": VERSION,
         # 微信公众号推送：网关地址可明文回显；Token 只回脱敏，绝不回传完整值
         "wx_gateway": load_config().get("wx_gateway") or "",
+        "wx_push_mode": (load_config().get("wx_push_mode") or "news").strip().lower(),
         "wx_token_set": bool(load_config().get("wx_token")),
         "wx_token_masked": (lambda t: (t[:3] + "***" + t[-3:]) if len(t) > 8 else "***")(load_config().get("wx_token") or ""),
     }
@@ -1271,6 +1272,9 @@ async def api_config_save(body: dict):
         put("wx_gateway", str(body["wx_gateway"]).strip())
     if body.get("wx_token"):
         put("wx_token", str(body["wx_token"]).strip())
+    if "wx_push_mode" in body:
+        m = str(body["wx_push_mode"]).strip().lower()
+        put("wx_push_mode", m if m in ("news", "newspic") else "news")
     if "monitor_mode" in body:
         put("monitor_mode", str(body["monitor_mode"]).strip() or "auto")
     cfg.setdefault("port", 8092)
@@ -1880,10 +1884,12 @@ WX_TOKEN = ""
 
 class PushDraftItem(BaseModel):
     job_id: str
-    caption: str = ""
+    caption: str = ""   # 正文
+    title: str = ""     # 小标题（每张分镜的标题，图文模式会渲染为带色条的 h2）
 
 class PushDraftRequest(BaseModel):
     title: str = ""
+    mode: str = "news"  # "news" 图文消息（带正文+小标题） / "newspic" 贴图（纯图片）
     items: list[PushDraftItem] = []
 
 def _wx_cfg() -> tuple[str, str]:
@@ -1963,22 +1969,53 @@ async def _wx_get_token(gateway: str, token: str) -> str | None:
         print("wx token failed:", e)
         return None
 
+# ---------- 图文消息（news）推送模板 ----------
+# 每一屏 = 一个小标题（h2，带左侧色条）+ 正文段落 + 一张配图。
+# 小标题来自每条分镜的 title 字段；若为空则只显示正文与图片，不出空标题。
+def _wx_news_section(title: str, caption: str, url: str) -> str:
+    esc_title = _wx_escape((title or "").strip())
+    esc_cap = _wx_escape((caption or "").strip())
+    parts: list[str] = ['<section style="margin:0 0 22px;">']
+    if esc_title:
+        parts.append(
+            '<h2 style="font-size:18px;font-weight:700;color:#1f9d6b;margin:0 0 10px;'
+            'padding:4px 0 4px 12px;line-height:1.45;'
+            'border-left:4px solid #1f9d6b;'
+            'background:linear-gradient(90deg,rgba(31,157,107,.10),rgba(31,157,107,0));">'
+            + esc_title + "</h2>")
+    if esc_cap:
+        parts.append('<p style="margin:0 0 14px;font-size:16px;line-height:1.85;'
+                     'color:#3a3a3a;letter-spacing:.2px;">' + esc_cap + "</p>")
+    parts.append('<p style="text-align:center;margin:6px 0 10px;">'
+                 '<img src="' + url + '" style="max-width:100%;border-radius:10px;'
+                 'box-shadow:0 2px 12px rgba(0,0,0,.08);"></p>')
+    parts.append("</section>")
+    return "".join(parts)
+
+
 @app.post("/api/push_wechat_draft")
 async def api_push_wechat_draft(req: PushDraftRequest):
-    """把一批生成的图作为「图文消息」推到微信公众号草稿箱（news，带正文）。"""
+    """把一批生成的图推到微信公众号草稿箱。
+
+    mode="news"    → 图文消息（带正文+小标题，每屏一张图）
+    mode="newspic" → 贴图（纯图片，无正文；每屏一张图，最多 20 张）
+    """
     import httpx
     if not req.items:
         raise HTTPException(400, "没有要推送的图片")
+    mode = (req.mode or "news").strip().lower()
+    if mode not in ("news", "newspic"):
+        raise HTTPException(400, "mode 只能是 news 或 newspic，收到：" + str(req.mode))
     if len(req.items) > 20:
-        raise HTTPException(400, "微信图文一次最多 20 张，当前 " + str(len(req.items)))
+        raise HTTPException(400, "微信一次最多 20 张，当前 " + str(len(req.items)))
     gateway, token = _wx_cfg()
     if not gateway or not token:
         return JSONResponse({"ok": False, "error": "未配置微信网关：请在「接口与号池」配置页填写微信网关地址和 Token"})
-    screens: list[dict] = []        # 每屏：{caption, url}
-    thumb_media_id: str | None = None
+
+    # 先逐张确认落盘并压缩，得到本地图字节（后面两种模式复用）
+    prepared: list[dict] = []   # {job_id, title, caption, jpg}
     errors: list[str] = []
-    for idx, it in enumerate(req.items):
-        # 反复确认落盘：出图刚完成、缩略图派生还在跑时，原图可能还没完全写完
+    for it in req.items:
         p = await _wx_confirm_on_disk(it.job_id)
         if not p or not p.is_file():
             errors.append("找不到图片或尚未落盘: " + it.job_id)
@@ -1988,36 +2025,73 @@ async def api_push_wechat_draft(req: PushDraftRequest):
         except Exception as e:
             errors.append("压缩失败: " + it.job_id + " " + str(e)[:80])
             continue
-        url = await _wx_post_media(gateway, token, jpg, "uploadimg", retries=3)
+        prepared.append({"job_id": it.job_id, "title": it.title or "",
+                         "caption": it.caption or "", "jpg": jpg})
+    if not prepared:
+        return JSONResponse({"ok": False, "error": "没有成功读取任何图片", "errors": errors})
+
+    if mode == "newspic":
+        # 贴图：每张都要永久素材 media_id
+        media_ids: list[str] = []
+        for it in prepared:
+            mid = await _wx_post_media(gateway, token, it["jpg"], "material/add", retries=3)
+            if not mid:
+                errors.append("贴图素材上传失败: " + it["job_id"])
+                continue
+            media_ids.append(mid)
+        if not media_ids:
+            return JSONResponse({"ok": False, "error": "没有成功上传任何贴图", "errors": errors})
+        article = {
+            "article_type": "newspic",
+            "title": ((req.title or "AI 生成的贴图").strip() or "AI 生成的贴图")[:32],
+            "image_info": {"image_list": [{"image_media_id": m} for m in media_ids]},
+            "need_open_comment": 0,
+            "only_fans_can_comment": 0,
+        }
+        wx_token = await _wx_get_token(gateway, token)
+        if not wx_token:
+            return JSONResponse({"ok": False, "error": "无法获取微信 access_token", "errors": errors})
+        payload = json.dumps({"articles": [article]}, ensure_ascii=False).encode()
+        url = gateway + "/draft/add" + ("?access_token=" + wx_token)
+        try:
+            async with httpx.AsyncClient(trust_env=False, timeout=30) as c:
+                r = await c.post(url, content=payload,
+                                headers={"Authorization": "Bearer " + token,
+                                         "Content-Type": "application/json",
+                                         "User-Agent": "Mozilla/5.0"})
+                return JSONResponse({"ok": True, "status": r.status_code, "mode": "newspic",
+                                     "screens": len(media_ids), "pushed": len(media_ids),
+                                     "body": r.text[:500], "errors": errors})
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": str(e), "errors": errors})
+
+    # ---- news 图文消息 ----
+    screens: list[dict] = []        # 每屏：{title, caption, url}
+    thumb_media_id: str | None = None
+    for idx, it in enumerate(prepared):
+        url = await _wx_post_media(gateway, token, it["jpg"], "uploadimg", retries=3)
         if not url:
-            errors.append("正文图上传失败: " + it.job_id)
+            errors.append("正文图上传失败: " + it["job_id"])
             continue
-        screens.append({"caption": it.caption, "url": url})
-        # 首图额外传一次 material/add 拿封面 media_id
+        screens.append({"title": it["title"], "caption": it["caption"], "url": url})
         if idx == 0:
-            thumb_media_id = await _wx_post_media(gateway, token, jpg, "material/add", retries=3)
+            thumb_media_id = await _wx_post_media(gateway, token, it["jpg"], "material/add", retries=3)
     if not screens:
         return JSONResponse({"ok": False, "error": "没有成功上传任何图片", "errors": errors})
     if not thumb_media_id:
-        # uploadimg 全成功但 material/add（封面）失败：这种概率极低，直接报缺封面
         return JSONResponse({"ok": False, "error": "封面 media_id 未取得（正文图已传完，material/add 失败）",
                              "errors": errors})
-    # 拼带插图的 HTML 正文：caption 作段落，图居中嵌入
-    parts: list[str] = []
-    for sc in screens:
-        cap = _wx_escape((sc["caption"] or "").strip())
-        if cap:
-            parts.append('<p style="margin:0 0 14px;font-size:16px;line-height:1.8;color:#3a3a3a;">' + cap + "</p>")
-        parts.append('<p style="text-align:center;margin:6px 0 22px;">'
-                     '<img src="' + sc["url"] + '" style="max-width:100%;border-radius:8px;'
-                     'box-shadow:0 2px 10px rgba(0,0,0,.08);"></p>')
+    # 拼带小标题+正文+插图的 HTML
+    parts = [_wx_news_section(sc["title"], sc["caption"], sc["url"]) for sc in screens]
     content_html = (
         '<div style="font-size:16px;line-height:1.85;color:#3a3a3a;letter-spacing:.2px;'
         "font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB',"
         "'Microsoft YaHei',sans-serif;padding:2px 2px 20px;\">"
         + "".join(parts) + "</div>"
     )
-    digest = ((screens[0]["caption"] or "").strip())[:64]
+    first_title = _wx_escape((screens[0]["title"] or "").strip())
+    first_cap = (screens[0]["caption"] or "").strip()
+    digest = ((first_title + "：" if first_title else "") + first_cap)[:64]
     title = ((req.title or "AI 生成的图文").strip() or "AI 生成的图文")[:32]
     wx_token = await _wx_get_token(gateway, token)
     if not wx_token:
@@ -2039,8 +2113,9 @@ async def api_push_wechat_draft(req: PushDraftRequest):
                             headers={"Authorization": "Bearer " + token,
                                      "Content-Type": "application/json",
                                      "User-Agent": "Mozilla/5.0"})
-            return JSONResponse({"ok": True, "status": r.status_code, "screens": len(screens),
-                                 "pushed": len(screens), "body": r.text[:500], "errors": errors})
+            return JSONResponse({"ok": True, "status": r.status_code, "mode": "news",
+                                 "screens": len(screens), "pushed": len(screens),
+                                 "body": r.text[:500], "errors": errors})
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e), "errors": errors})
 
