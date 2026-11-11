@@ -1191,6 +1191,10 @@ def _cfg_view() -> dict:
         "pool_message": pool.get("message") or "",
         "port": load_config().get("port", 8092),
         "version": VERSION,
+        # 微信公众号推送：网关地址可明文回显；Token 只回脱敏，绝不回传完整值
+        "wx_gateway": load_config().get("wx_gateway") or "",
+        "wx_token_set": bool(load_config().get("wx_token")),
+        "wx_token_masked": (lambda t: (t[:3] + "***" + t[-3:]) if len(t) > 8 else "***")(load_config().get("wx_token") or ""),
     }
 
 
@@ -1262,6 +1266,11 @@ async def api_config_save(body: dict):
         put("edits_style", str(body["edits_style"]).strip() or "auto")
     if "image_response_format" in body:
         put("image_response_format", str(body["image_response_format"]).strip() or "auto")
+    # 微信公众号推送：网关地址与 Token，留空表示不推送；Token 留空 = 沿用已保存值
+    if "wx_gateway" in body:
+        put("wx_gateway", str(body["wx_gateway"]).strip())
+    if body.get("wx_token"):
+        put("wx_token", str(body["wx_token"]).strip())
     if "monitor_mode" in body:
         put("monitor_mode", str(body["monitor_mode"]).strip() or "auto")
     cfg.setdefault("port", 8092)
@@ -1864,8 +1873,10 @@ async def static_page(path: str):
 # access_token 走 /token，草稿走 /draft/add?access_token=。
 # 推送前对每张图反复确认落盘（6×1.5s），解决「4 张只推 3 张」的竞态。
 # ============================================================
-WX_GATEWAY = "https://wx.hyiplist.biz/api"
-WX_TOKEN = "wxgw-666"
+# 默认不内置任何网关 / Token：必须在「接口与号池」配置页由用户自己填写，
+# 避免凭据随插件包（GitHub/npm）公开，导致他人装了也能往你的公众号草稿箱推。
+WX_GATEWAY = ""
+WX_TOKEN = ""
 
 class PushDraftItem(BaseModel):
     job_id: str
@@ -1877,8 +1888,8 @@ class PushDraftRequest(BaseModel):
 
 def _wx_cfg() -> tuple[str, str]:
     cfg = load_config()
-    return (str(cfg.get("wx_gateway") or WX_GATEWAY),
-            str(cfg.get("wx_token") or WX_TOKEN))
+    return (str(cfg.get("wx_gateway") or "").strip(),
+            str(cfg.get("wx_token") or "").strip())
 
 def _wx_escape(s: str) -> str:
     return html.escape(str(s or ""), quote=False)
@@ -1959,6 +1970,8 @@ async def api_push_wechat_draft(req: PushDraftRequest):
     if len(req.items) > 20:
         raise HTTPException(400, "微信图文一次最多 20 张，当前 " + str(len(req.items)))
     gateway, token = _wx_cfg()
+    if not gateway or not token:
+        return JSONResponse({"ok": False, "error": "未配置微信网关：请在「接口与号池」配置页填写微信网关地址和 Token"})
     screens: list[dict] = []        # 每屏：{caption, url}
     thumb_media_id: str | None = None
     errors: list[str] = []
