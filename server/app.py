@@ -399,7 +399,8 @@ def build_text_prompt(req: GenRequest) -> str:
             "直接写正文段落，也不要写成客套话。\n"
             f"概述之后空一行，严格输出 {n} 条贴图文案，编号从 01 连续到 {n:02d}。\n"
             "每一条占两行：第一行是两位编号、一个竖线、再加小标题（小标题 8 字以内），"
-            "第二行是这一条的正文（60到100字，口语化，写具体场景和细节，不要空话）。\n"
+            "第二行紧挨着写这一条的正文（60到100字，口语化，写具体场景和细节，不要空话），"
+            "编号行和正文之间不要有空行。\n"
             f"条与条之间用一个空行隔开，全文一共 {n} 个编号行。\n"
             "硬性要求：编号条目里不要出现 markdown 标记（不要 ** 加粗、不要以 # 开头的标题行），"
             "不要写「以下是」「最后想告诉你」这类客套话；正文里不要出现新的编号行，"
@@ -1309,7 +1310,35 @@ async def api_compose(req: ComposeRequest):
         "allow_blank": req.allow_blank,
         "items": [{"title": it.title, "body": it.body, "scene": it.scene} for it in req.items],
     }
-    return JSONResponse(composer.compose(payload, CATALOG["styles"], CATALOG["layouts"], CATALOG["colors"]))
+    return JSONResponse(await composer.compose(payload, CATALOG["styles"], CATALOG["layouts"], CATALOG["colors"]))
+
+
+@app.post("/api/autoscene")
+async def api_autoscene(req: ComposeRequest):
+    """只回填「中景小道具」：给所有空 scene 的条目挑一件实物道具，不拼完整提示词。
+
+    供「拆分镜」后立刻同步显示用——用户不必自己填，生成提示词前就能看见每一条挑了什么。
+    大模型批量挑，失败静默回退关键词规则，返回的 scene 数量与入参 items 一一对应。
+    """
+    payload = {
+        "style_id": req.style_id,
+        "layout_id": req.layout_id,
+        "color_id": req.color_id,
+        "ratio": req.ratio,
+        "mood": req.mood,
+        "fusion": req.fusion,
+        "whitespace": req.whitespace,
+        "note": req.note,
+        "topic": req.topic,
+        "ref": req.ref,
+        "image_mode": req.image_mode,
+        "shoot_type": req.shoot_type,
+        "instruction": req.instruction,
+        "allow_blank": req.allow_blank,
+        "items": [{"title": it.title, "body": it.body, "scene": it.scene} for it in req.items],
+    }
+    scenes = await composer.fill_scenes(payload["items"], bool(payload["fusion"]))
+    return JSONResponse({"items": [{"scene": s} for s in scenes]})
 
 
 @app.post("/api/preview")

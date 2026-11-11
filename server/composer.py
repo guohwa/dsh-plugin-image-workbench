@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+import json
+import random
 import re
 
 NEG_MARKERS = ("避免", "不要", "不准", "禁止")
@@ -59,6 +61,172 @@ REF_FUSION = (
 
 # 中层小辅助图没填时的兜底描述，保证三层版式不会空一层
 SCENE_FALLBACK = "一个涂鸦小人和一件具体实物道具，动作直接对应上层标题的意思，造型简单、线条少"
+
+# 元素库：按文案关键词匹配「一件具体实物道具」，解决"具体实物道具"被生图模型
+# 一律脑补成杯子的问题。命中类别里挑一个，且单次出图内相邻分镜不重复。
+# 刻意少放杯子/马克杯，保证画面元素多样。
+PROP_LIB = [
+    (["钱", "工资", "存款", "理财", "消费", "攒", "借款", "花呗", "信用卡", "账单", "物价", "涨价",
+      "基金", "股票", "钱包", "省", "花钱", "还款", "退税", "奖金"],
+     ["一枚硬币", "一只存钱罐", "一张工资条", "一张购物小票", "一张银行卡", "一只钱包"]),
+    (["健康", "病", "医院", "身体", "体检", "运动", "减肥", "睡眠", "失眠", "熬夜", "颈椎", "腰",
+      "锻炼", "跑步", "健身", "吃药", "感冒", "养生", "复查", "挂号"],
+     ["一只体温计", "一盒药", "一只运动鞋", "一只枕头", "一卷瑜伽垫", "一对哑铃"]),
+    (["工作", "开会", "加班", "老板", "同事", "面试", "邮件", "办公", "打卡", "工位", "KPI", "绩效",
+      "辞职", "离职", "摸鱼", "汇报", "项目", "打工人", "offer", "裁员"],
+     ["一台笔记本电脑", "一盏台灯", "一张工牌", "一叠便利贴", "一个文件筐", "一台打印机"]),
+    (["学习", "考试", "读书", "笔记", "上课", "课本", "学生", "考研", "刷题", "复习", "知识", "课堂", "老师"],
+     ["一本书", "一支铅笔", "一本笔记本", "一个书包", "一盏台灯", "一个地球仪"]),
+    (["爱情", "约会", "心动", "分手", "对象", "情侣", "结婚", "恋爱", "暧昧", "表白", "异地", "脱单"],
+     ["一封手写信", "一支玫瑰", "两张电影票", "一部手机", "一张双人沙发", "一条围巾"]),
+    (["美食", "吃", "外卖", "做饭", "咖啡", "茶", "餐厅", "饭", "饿了", "火锅", "奶茶", "早餐",
+      "夜宵", "下厨", "甜点", "聚餐"],
+     ["一只餐盘", "一口锅", "一只咖啡壶", "一只水果盘", "一双筷子", "一台微波炉"]),
+    (["旅行", "出门", "行李", "风景", "机票", "酒店", "度假", "出游", "拍照", "攻略", "打卡"],
+     ["一只行李箱", "一本护照", "一台相机", "一张地图", "一顶遮阳帽", "一双旅游鞋"]),
+    (["科技", "AI", "代码", "芯片", "数据", "程序", "算法", "智能", "机器人", "互联网", "软件",
+      "硬件", "显卡", "电脑", "大模型", "算力"],
+     ["一台手机", "一块电路板", "一个机械键盘", "一只机器人玩偶", "一块显示屏", "一块芯片"]),
+    (["宠物", "猫", "狗", "毛孩子", "撸猫", "遛狗", "喵", "汪"],
+     ["一团毛线球", "一根狗绳", "一只食盆", "一个猫爬架", "一根逗猫棒"]),
+    (["天气", "雨", "冷", "热", "太阳", "降温", "下雪", "台风", "刮风", "空调"],
+     ["一把雨伞", "一副太阳镜", "一台小风扇", "一件外套", "一条围巾", "一顶草帽"]),
+    (["时间", "拖延", "懒", "周末", "假期", "放假", "躺平", "无聊", "焦虑", "压力", "emo", "内卷", "摆烂"],
+     ["一个闹钟", "一张沙发", "一本日历", "一只沙漏", "一个抱枕", "一台游戏机"]),
+    (["家", "搬家", "装修", "妈妈", "爸爸", "孩子", "家人", "家务", "打扫", "带娃"],
+     ["一个收纳箱", "一只扫把", "一束花", "一只玩具熊", "一个相框", "一套餐具"]),
+]
+# 通用兜底池：不命中任何类别时随机挑，刻意不含杯子，保证多样
+PROP_GENERIC = [
+    "一枚邮票", "一只风筝", "一盒火柴", "一盏灯笼", "一串风铃", "一块肥皂", "一只陀螺", "一本杂志",
+    "一个放大镜", "一只蝴蝶标本", "一盒彩色铅笔", "一只小船模型", "一个沙漏", "一只口琴",
+    "一本日记", "一个地球仪", "一只拨浪鼓", "一束干花", "一只陶瓷摆件", "一只指南针",
+]
+
+
+def _pick_prop(title: str, body: str, used: list) -> str:
+    text = (title or "") + "\n" + (body or "")
+    matched = []
+    for kws, props in PROP_LIB:
+        if any(kw in text for kw in kws):
+            matched += list(props)
+    pool = matched if matched else PROP_GENERIC
+    fresh = [p for p in pool if p not in used]
+    if not fresh:
+        used.clear()
+        fresh = pool
+    chosen = random.choice(fresh)
+    used.append(chosen)
+    return chosen
+
+
+def _wrap_scene(prop: str, fusion: bool) -> str:
+    """把「具体道具」包成中层小辅助图描述，区分微缩融合 / 涂鸦两种小人。"""
+    who = "一个微缩尺寸的小人" if fusion else "一个涂鸦小人"
+    return f"{who}和{prop}，小人的动作直接呼应上层标题的意思，造型简单、线条少"
+
+
+def _auto_scene(title: str, body: str, used: list, fusion: bool) -> str:
+    """scene 没填时的规则兜底：按文案关键词挑一件具体实物道具，避免模型一律画杯子。"""
+    return _wrap_scene(_pick_prop(title, body, used), fusion)
+
+
+def _parse_props(raw: str, n: int) -> list[str]:
+    """把模型返回的道具清单解析成干净的短语列表。
+
+    兼容三种形态：纯 JSON 数组、JSON 字符串里套数组（"[\"a\"]"）、以及退化成逐行文本。
+    清洗每个元素（剥引号/方括号/逗号、丢无中文的垃圾），最终数量必须严格等于 n，
+    否则抛异常让调用方回退规则，绝不带着错位继续。
+    """
+    raw = raw.strip()
+    # 防御性兜底：即便调用方没 sanitize（理论上是 chat_once 已清过），
+    # 这里也清掉 ESC 等控制字符，避免污染 json.loads 造成错位
+    raw = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", raw).strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw).strip()
+    try:
+        arr = json.loads(raw)
+    except Exception:
+        arr = None
+    if isinstance(arr, str):
+        try:
+            arr = json.loads(arr)
+        except Exception:
+            arr = None
+    if not isinstance(arr, list) or not arr:
+        arr = [ln.strip().lstrip("0123456789.、，, ") for ln in raw.splitlines() if ln.strip()]
+    if not arr:
+        raise RuntimeError("AI 返回的道具清单无法解析")
+    clean = []
+    for x in arr:
+        c = str(x).strip().strip("[]\"'，, \t").strip()
+        if c and re.search(r"[一-鿿]", c):   # 必须含至少一个汉字，否则视为垃圾
+            clean.append(c)
+    if len(clean) != n:
+        raise RuntimeError(f"AI 道具数量不符：期望 {n} 实际 {len(clean)} -> {clean}")
+    return clean
+
+
+async def _ai_scene_batch(auto_items: list[dict], fusion: bool) -> list[str]:
+    """一次 LLM 调用，给所有空 scene 的分镜各挑一件具体实物道具，返回与 auto_items 等长的列表。
+
+    大模型读完每条文案后自行权衡「相关性 + 整体多样 + 不重复」，比关键词规则更准。
+    解析失败或返回不合法时直接抛异常，由调用方回退到关键词规则。
+    """
+    import pool as _pool
+    lines = []
+    for i, it in enumerate(auto_items, 1):
+        title = (it.get("title") or "").strip()
+        body = (it.get("body") or "").strip()
+        lines.append(f"{i}. 标题：{title} 正文：{body}")
+    prompt = (
+        "你是贴图分镜的「小道具搭配师」。下面是一组分镜的标题与正文（按编号顺序）。\n"
+        "请为每一条挑一件【具体的、可握在手里的小实物道具】，要求：\n"
+        "- 道具要和该条文案的情境或主题强相关（例如讲工资就挑硬币/存钱罐/工资条，讲体检就挑体温计/药盒/瑜伽垫）；\n"
+        "- 必须是看得见摸得着的实物，不要抽象概念；\n"
+        "- 整体尽量多样，相邻条目不要重复使用同一种东西；\n"
+        "- 绝对不要选杯子、马克杯、水杯这类（用户已经看腻了）。\n"
+        "只输出一个 JSON 数组，数组长度等于下面条目的数量，每个元素是对应条目的道具短名"
+        "（带量词，如「一枚硬币」「一台笔记本电脑」「一卷瑜伽垫」），不要任何解释，也不要 markdown 代码块标记。\n"
+        "条目：\n" + "\n".join(lines)
+    )
+    raw = await _pool.chat_once(prompt, max_tokens=400, temperature=0.5)
+    return _parse_props(raw, len(auto_items))
+
+
+async def fill_scenes(items: list[dict], fusion: bool) -> list[str]:
+    """给所有空 scene 的条目挑一件具体实物道具，返回与 items 等长的 scene 列表。
+
+    大模型一次性批量挑（更准、更省调用），不可用（没配号池 / 限流 / 返回非法 / 重试仍失败）
+    时静默回退关键词规则。无论哪条路径，返回列表长度一定等于 items 长度，调用方无需再判空。
+    """
+    used_props: list[str] = []        # 单次出图内已用过的元素，保证相邻分镜不重复
+    auto_items = [it for it in items if not (it.get("scene") or "").strip()]
+    ai_props: list[str] = []
+    if auto_items:
+        try:
+            ai_props = await _ai_scene_batch(auto_items, fusion)
+        except Exception:
+            # LLM 不可用（没配号池 / 超时 / 返回非法 / 限流重试仍失败）：静默回退规则匹配
+            ai_props = []
+    ai_idx = 0
+    out: list[str] = []
+    for it in items:
+        scene = (it.get("scene") or "").strip()
+        if not scene:
+            # scene 留空：先用大模型挑的道具，挑不到或 LLM 没覆盖这一条时回退关键词规则
+            prop = None
+            if ai_idx < len(ai_props) and ai_props[ai_idx].strip():
+                prop = ai_props[ai_idx].strip()
+                ai_idx += 1
+            if prop:
+                scene = _wrap_scene(prop, fusion)
+                used_props.append(prop)
+            else:
+                scene = _auto_scene(it["title"], it["body"], used_props, fusion)
+        out.append(scene)
+    return out
 
 
 def clean_traits(features: str, limit: int = 110) -> str:
@@ -321,8 +489,12 @@ def build_prompt(item: dict, sel: dict, ratio: str, moods: list[str],
     return "\n".join(b for b in blocks if b)
 
 
-def compose(payload: dict, styles: list[dict], layouts: list[dict], colors: list[dict]) -> dict:
-    """组装全部条目。payload 里 items 为空时用 topic 兜底生成一条。"""
+async def compose(payload: dict, styles: list[dict], layouts: list[dict], colors: list[dict]) -> dict:
+    """组装全部条目。payload 里 items 为空时用 topic 兜底生成一条。
+
+    scene 留空时优先让大模型读懂文案挑一件实物道具（一次批量调用、整体多样），
+    调用失败则回退关键词规则，保证永远有元素、且绝不像以前那样一律画杯子。
+    """
 
     def pick(items, item_id):
         if not item_id:
@@ -370,12 +542,17 @@ def compose(payload: dict, styles: list[dict], layouts: list[dict], colors: list
     instruction = custom_instr or build_instruction(
         sel, ratio, moods, fusion, whitespace, ref, image_mode, shoot)
     out_items = []
+    # scene 留空的条目统一交给 fill_scenes：大模型批量挑道具，失败静默回退关键词规则，
+    # 保证永远有元素、绝不像以前那样一律画杯子。拆分镜 / 生成提示词都复用同一份逻辑。
+    scenes = await fill_scenes(items, fusion)
     for idx, item in enumerate(items, 1):
+        scene = scenes[idx - 1]
+        item["scene"] = scene
         out_items.append({
             "index": idx,
             "title": item["title"],
             "body": item["body"],
-            "scene": item.get("scene", ""),
+            "scene": scene,
             "instruction": instruction,
             "prompt": build_prompt(item, sel, ratio, moods, fusion, whitespace, note, ref,
                                    image_mode, shoot, instr=custom_instr),

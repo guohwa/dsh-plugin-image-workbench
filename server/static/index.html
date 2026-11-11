@@ -2107,6 +2107,21 @@ async function postCompose(items){
   return r.json();
 }
 
+/* 拆分镜 / 导入后同步：给还没填小道具的条目自动挑一件，写回输入框。
+   只动空 scene，已手填的不覆盖；LLM 不可用时静默回退关键词规则，失败也不影响拆分。 */
+async function fillScenes(){
+  const need = state.items.filter(x=> !(x.scene||'').trim());
+  if (!need.length) return;
+  try{
+    const r = await fetch('/api/autoscene', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(composeBody(state.items))});
+    if(!r.ok) return;
+    const d = await r.json();
+    (d.items||[]).forEach((x,i)=>{ if(state.items[i] && x.scene) state.items[i].scene = x.scene; });
+    renderItems();
+  }catch(e){ /* 出图前点「生成提示词」会再补，这里失败不阻断 */ }
+}
+
 function addItem(title, body, scene){
   state.items.push({title: title || '', body: body || '', scene: scene || '', prompt: ''});
   renderItems();
@@ -2153,7 +2168,7 @@ function renderItems(){
       + '<button class="it-del" type="button" title="删除这条">×</button>'
       + '</div>'
       + '<textarea class="it-body" rows="2" placeholder="这张图要说什么：画面里的人或物、动作、细节，以及图里要出现的那句话"></textarea>'
-      + '<input class="it-scene" placeholder="中层小辅助图（可选）：涂鸦小人把一枚硬币投进小猪储蓄罐，旁边一张工资条">'
+      + '<input class="it-scene" placeholder="中层小辅助图（可选，留空则按文案自动选一件实物道具，如存钱罐/书/行李箱）">'
       + '<div class="it-pw' + (it.prompt ? '' : ' blank') + '">'
       + '<div class="it-ph"><span>' + (cover ? '主图 ' : '卡片 ') + tag + ' · '
       + (it.prompt ? '提示词（可手改，出图就用这一版）' : '提示词（留空自动拼，写了就用你这份）')
@@ -2195,6 +2210,7 @@ async function recomposeOne(i){
   try{
     const d = await postCompose([it]);
     state.items[i].prompt = leadFor(it) + d.items[0].prompt;
+    if (d.items[0].scene) state.items[i].scene = d.items[0].scene;
     renderItems();
     toast('第 ' + (i + 1) + ' 条已重拼');
   }catch(e){ toast('重拼失败：' + e.message); }
@@ -2212,6 +2228,7 @@ async function runOne(i){
       const d = await postCompose([it]);
       prompt = leadFor(it) + d.items[0].prompt;
       state.items[i].prompt = prompt;
+      if (d.items[0].scene) state.items[i].scene = d.items[0].scene;
       renderItems();
     }catch(e){ toast('拼提示词失败：' + e.message); return; }
   }
@@ -2303,6 +2320,8 @@ async function composeAll(){
     d.items.forEach((x, i)=>{
       if (!state.items[i]) return;
       state.items[i].prompt = leadFor(state.items[i]) + x.prompt;
+      // 把后端自动挑的小道具写回输入框，让用户看见「中层小图辅助」填了什么（之前被丢弃）
+      if (x.scene) state.items[i].scene = x.scene;
     });
     renderItems();
     st.className = 'status ok';
@@ -2408,6 +2427,7 @@ function applyImport(parsed){
     added++;
   });
   renderItems();
+  fillScenes();   // 拆分镜后立刻让「中层小图辅助」自动选好道具，不必等人去填
   return added;
 }
 

@@ -6,7 +6,7 @@
 """
 from __future__ import annotations
 
-import json, pathlib, sys, time
+import asyncio, json, pathlib, sys, time
 import httpx
 
 BASE = 'http://127.0.0.1:8092'
@@ -145,6 +145,9 @@ ok('编号清单模板先写概述段落、再列 01，且不禁止开场导语'
    and '作为整组内容的总起' in _src_app
    and '不要开场导语' not in _src_app,
    '漏了「概述」会导致正文直接 01 开头、很突兀')
+ok('编号清单模板要求编号行与正文紧挨、无中间空行',
+   '编号行和正文之间不要有空行' in _src_app,
+   '漏了会让「01｜标题」和正文之间多出一行空行')
 ok('文本提示词要求简体中文、禁止乱码/英文碎片/字母数字组合',
    '全程使用流畅的简体中文写作' in _src_app
    and '字母数字组合' in _src_app,
@@ -206,6 +209,62 @@ ok('提示词带横向安全区约束',
    bool(composer.WIDE_CROP_HINT) and composer.WIDE_CROP_HINT[:6] in
    composer.build_prompt({'title': '选题', 'body': ''}, {}, '2.35:1', [],
                          False, 'normal', '', False, 'graphic-text', ''))
+# 元素库自动选：空 scene 不再一律画杯子，且相邻不重复、按文案匹配
+ok('元素库自动选：PROP_LIB/_pick_prop/_auto_scene 就位',
+   hasattr(composer, 'PROP_LIB') and hasattr(composer, '_pick_prop') and hasattr(composer, '_auto_scene'),
+   '缺元素库，空 scene 会退回固定的「具体实物道具」被模型画成杯子')
+_L = [{'id': 'SC-002', 'prompt': '三层版式：上层主标题、中层小辅助图、下层副标题'}]
+_c = asyncio.run(composer.compose({'ratio': '3:4', 'mood': ['治愈'], 'fusion': True, 'layout_id': 'SC-002', 'items': [
+    {'title': '工资到账', 'body': '还完花呗钱包轻松'},
+    {'title': '熬夜体检', 'body': '颈椎睡眠亮红灯养生该提上日程'},
+    {'title': '周末躺平', 'body': '闹钟沙发日历一起休息'},
+]}, [], _L, []))
+ok('元素库自动选：空 scene 不再默认画杯子且进了提示词',
+   all('杯' not in it['scene'] for it in _c['items']) and
+   all('中层小辅助图' in it['prompt'] for it in _c['items']),
+   '仍出现杯子或没进提示词：' + str([it['scene'] for it in _c['items']]))
+ok('元素库自动选：相邻分镜元素不重复且不再单一（无杯子）',
+   len({it['scene'] for it in _c['items']}) == len(_c['items']) and
+   all('杯' not in it['scene'] for it in _c['items']),
+   '相邻重复或仍出现杯子：' + str([it['scene'] for it in _c['items']]))
+_c2 = asyncio.run(composer.compose({'ratio': '3:4', 'mood': ['治愈'], 'fusion': True, 'layout_id': 'SC-002', 'items': [
+    {'title': 't', 'body': '', 'scene': '我手填的：小人举着一杯奶茶'}]}, [], _L, []))
+ok('元素库自动选：用户手填 scene 不被覆盖',
+   _c2['items'][0]['scene'] == '我手填的：小人举着一杯奶茶',
+   '手填被覆盖：' + _c2['items'][0]['scene'])
+
+# _parse_props 健壮性：直接覆盖 LLM 返回变异形态（live 实测踩过的坑）
+_pp = composer._parse_props
+# 1) 纯 JSON 数组
+_a1 = _pp('["一枚硬币","一卷瑜伽垫","一张工资条"]', 3)
+ok('_parse_props：纯 JSON 数组解析正确',
+   _a1 == ['一枚硬币', '一卷瑜伽垫', '一张工资条'], '解析结果：' + str(_a1))
+# 2) JSON 字符串里套数组（模型把数组包成字符串返回：用 json.dumps 包两层，
+#    保证外层是「字符串」而非数组，复刻模型真实返回形态）
+_inner_json = json.dumps(['一枚硬币', '一卷瑜伽垫', '一张工资条'], ensure_ascii=False)
+_a2 = _pp(json.dumps(_inner_json, ensure_ascii=False), 3)
+ok('_parse_props：字符串套 JSON 双层解析正确',
+   _a2 == ['一枚硬币', '一卷瑜伽垫', '一张工资条'], '解析结果：' + str(_a2))
+# 3) ESC 等控制字符污染（实测出现 \x1b）
+_a3 = _pp('[\x1b"一枚硬币", "一卷瑜伽垫", "一张工资条"]', 3)
+ok('_parse_props：ESC/控制字符被清掉',
+   _a3 == ['一枚硬币', '一卷瑜伽垫', '一张工资条'], '解析结果：' + str(_a3))
+# 4) 夹带无中文的垃圾元素（如残留方括号/前缀符号）应被过滤，只留有效项
+_a4 = _pp('["一枚硬币", "abc123", "一卷瑜伽垫"]', 2)
+ok('_parse_props：无中文的垃圾元素被过滤、只留有效项',
+   _a4 == ['一枚硬币', '一卷瑜伽垫'], '解析结果：' + str(_a4))
+# 5) 返回数量与预期 n 不符时必须抛错，绝不带着错位继续
+try:
+    _bad = _pp('["一枚硬币", "一卷瑜伽垫"]', 3)
+    _raise_ok = False
+except RuntimeError:
+    _raise_ok = True
+ok('_parse_props：返回数量与预期不符时抛错（绝不带着错位继续）',
+   _raise_ok, '期望抛 RuntimeError 却返回：' + (str(_bad) if not _raise_ok else ''))
+# 5) 退化成逐行文本也能解析
+_a5 = _pp('一枚硬币\n一卷瑜伽垫\n一张工资条', 3)
+ok('_parse_props：逐行文本退化形态可解析',
+   _a5 == ['一枚硬币', '一卷瑜伽垫', '一张工资条'], '解析结果：' + str(_a5))
 try:
     from PIL import Image as _Img
     _src = _Img.new('RGB', (1536, 1024), (250, 245, 255))

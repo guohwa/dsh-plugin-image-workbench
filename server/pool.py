@@ -48,6 +48,10 @@ WORKERS = max(1, min(WORKERS_ABS_MAX,
 RETIRE_TOKEN = "__wb_retire__"
 IMAGE_TIMEOUT = 300      # 实测单张 45~62 秒，留足余量
 TEXT_TIMEOUT = 180
+# 文本模型（选道具）被单号限流时换号重试：号池内部严格轮转，重试即换下一个号。
+# 只重试 429 / 5xx / 超时这三类「临时不可用」；401/403/404 是配置错，重试没用。
+CHAT_RETRY_MAX = 3
+CHAT_RETRY_BACKOFF = [4, 8, 15]
 # 失败不中断任务：重新排队就是换号（号池按 round-robin 取号），最多换 3 轮。
 # 每轮之间留出时间让号池把刚失败的号标掉，避免立刻又撞同一个号。
 RETRY_MAX = 3
@@ -452,6 +456,59 @@ def size_for_ratio(ratio) -> str | None:
     return RATIO_SIZE.get(str(ratio or "").strip())
 
 
+async def chat_once(prompt: str, *, max_tokens: int = 600, temperature: float = 0.5,
+                   timeout: float | None = None) -> str:
+    """轻量级单轮文本调用：直接走已配置的号池 / OpenAI 兼容接口，不建 job、不写历史。
+
+    用于「让模型读懂文案再挑元素」这类轻量辅助决策。被单号限流（429）时自动换号重试：
+    号池内部严格轮转，每次请求都带唯一 user 强制穿透缓存、落到下一个号，重试即换号。
+    重试耗尽仍失败才抛异常，由调用方回退到关键词规则。
+    """
+    p = provider_cfg()
+    key = p["api_key"]
+    if not key:
+        raise RuntimeError("未配置接口 API Key，无法用 AI 挑选元素（请在「接口与号池」面板填写）")
+    headers = {"Authorization": "Bearer " + key, "Content-Type": "application/json"}
+    payload = {
+        "model": p["model_text"],
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        # 唯一 user：穿透号池 60s 聊天缓存，保证每次重试真的换号轮转，而不是命中缓存的同一份 429
+        "user": f"wb-scene-{int(time.time() * 1000)}",
+    }
+    last_err = ""
+    for attempt in range(CHAT_RETRY_MAX):
+        try:
+            async with httpx.AsyncClient(trust_env=False, timeout=timeout or TEXT_TIMEOUT) as c:
+                r = await c.post(api_url(p, "chat/completions"), json=payload, headers=headers)
+            if r.status_code == 200:
+                data = _json_of(r)
+                try:
+                    text = str(data["choices"][0]["message"]["content"] or "").strip()
+                except Exception:
+                    text = str(data.get("text") or "").strip()
+                text = _sanitize_text(text)
+                if not text:
+                    raise RuntimeError("AI 挑选元素返回为空")
+                return text
+            # 4xx 配置错误重试没用；只有 429 / 5xx 才重试（号池会换号）
+            if r.status_code in (429, 500, 502, 503, 504):
+                last_err = f"HTTP {r.status_code}"
+                if attempt < CHAT_RETRY_MAX - 1:
+                    await asyncio.sleep(CHAT_RETRY_BACKOFF[min(attempt, len(CHAT_RETRY_BACKOFF) - 1)])
+                    continue
+            raise_for_response(r)
+        except httpx.TimeoutException as e:
+            last_err = f"超时：{e}"
+            if attempt < CHAT_RETRY_MAX - 1:
+                await asyncio.sleep(CHAT_RETRY_BACKOFF[min(attempt, len(CHAT_RETRY_BACKOFF) - 1)])
+                continue
+            raise RuntimeError(f"AI 挑选元素失败（重试 {CHAT_RETRY_MAX} 次仍超时）") from e
+    raise RuntimeError(f"AI 挑选元素失败（重试 {CHAT_RETRY_MAX} 次仍失败：{last_err or '未知错误'}）")
+
+
 def _json_of(r: httpx.Response) -> dict:
     try:
         j = r.json()
@@ -484,6 +541,10 @@ def _sanitize_text(text: str) -> str:
     s = str(text or "")
     s = _GARBAGE_RE.sub("", s)              # 清掉 turn/5u8495ea07e7 这类协议碎片
     s = _ZEROWIDTH_RE.sub("", s)            # 清掉零宽/BOM/替换符
+    # 清掉 ESC(\x1b) 等终端控制字符：模型偶发把这类不可见字符带进 JSON，
+    # 会污染 json.loads 造成解析错位（如把数组前缀变成垃圾元素）
+    s = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", s)
+    s = s.replace("<escape>", "")           # 个别接口把 ESC 渲染成字面 <escape>
     s = re.sub(r"[ \t]{2,}", " ", s)        # 清掉删词后留下的多余空格
     s = re.sub(r"\n{3,}", "\n\n", s)        # 连续空行压成两段
     return s.strip()
