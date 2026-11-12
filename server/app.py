@@ -1993,6 +1993,139 @@ def _wx_news_section(title: str, caption: str, url: str) -> str:
     return "".join(parts)
 
 
+_WX_FOLLOW = "觉得有用，点个「关注」，我会持续分享能落地的 AI 新技术、新玩法。"
+_WX_BRAND_TAG = "#Bluxe的AI办公笔记"
+
+
+def _wx_topic_key(topic: str, screens: list[dict]) -> str:
+    """从文章标题或第一屏小标题里抠一个本期主题词，供兜底文案使用。"""
+    raw = (topic or "").strip()
+    if not raw and screens:
+        raw = (screens[0].get("title") or "").strip()
+    raw = re.sub(r"^\s*\d+\s*[｜|、.:：\-]\s*", "", raw)
+    raw = re.sub(r"[\s#《》「」“”\"'，,。！!？?]+", "", raw)
+    return raw[:12] or "这期内容"
+
+
+def _wx_clean_line(s: str, limit: int) -> str:
+    """清洗模型输出：去 markdown 残留、弯引号、破折号，压成单行并限长。"""
+    s = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", str(s or "")).strip()
+    s = s.replace("**", "").replace("`", "")
+    s = s.replace("“", "「").replace("”", "」").replace("‘", "「").replace("’", "」")
+    s = s.replace("——", "，").replace("—", "，").replace("–", "，")
+    s = re.sub(r"\s+", " ", s).strip().strip('"\'')
+    return s[:limit]
+
+
+def _wx_parse_footer(raw: str) -> dict:
+    """解析模型给的结尾 JSON，字段不齐直接抛，交给调用方降级。"""
+    raw = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", (raw or "").strip())
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw).strip()
+    try:
+        d = json.loads(raw)
+    except Exception:
+        m = re.search(r"\{[\s\S]*\}", raw)
+        if not m:
+            raise ValueError("结尾文案不是 JSON")
+        d = json.loads(m.group(0))
+    if not isinstance(d, dict):
+        raise ValueError("结尾文案不是对象")
+    out = {
+        "closing": _wx_clean_line(d.get("closing"), 90),
+        "quote": _wx_clean_line(d.get("quote"), 50),
+        "discuss": _wx_clean_line(d.get("discuss"), 60),
+        "follow": _WX_FOLLOW,
+    }
+    tags = [t for t in dict.fromkeys(re.findall(r"#[^\s#]+", str(d.get("tags") or "")))][:6]
+    if _WX_BRAND_TAG not in tags:
+        tags.append(_WX_BRAND_TAG)
+    out["tags"] = " ".join(tags)
+    for k in ("closing", "quote", "discuss", "tags"):
+        if not out[k] or not re.search(r"[一-鿿]", out[k]):
+            raise ValueError("结尾文案字段缺失：" + k)
+    return out
+
+
+def _wx_footer_fallback(topic: str, screens: list[dict]) -> dict:
+    """AI 不可用时的兜底：也紧扣本期主题，不再塞通用 AI 金句。"""
+    key = _wx_topic_key(topic, screens)
+    words: list[str] = []
+    for sc in screens[:4]:
+        t = re.sub(r"^\s*\d+\s*[｜|、.:：\-]\s*", "", (sc.get("title") or "").strip())
+        t = re.sub(r"[\s#《》「」“”\"'，,。！!？?]+", "", t)[:8]
+        if t and t not in words:
+            words.append(t)
+    tags = ["#" + w for w in words[:3]] + [_WX_BRAND_TAG]
+    step = words[0] if words else key
+    focus = words[1] if len(words) > 1 else key
+    return {
+        "closing": f"这期聊到的「{key}」，看着是小事，真上手才知道卡在哪一步。"
+                   f"今晚先挑其中一条试一次，做过一遍，再回来看这几张图会有不一样的感受。",
+        "quote": f"把「{step}」这一步做实了，比多收藏十篇教程管用。",
+        "discuss": f"关于「{focus}」，你踩过哪一次坑？评论区说说，我挑几条写进下一期。",
+        "follow": _WX_FOLLOW,
+        "tags": " ".join(tags),
+    }
+
+
+async def _wx_footer_content(topic: str, screens: list[dict]) -> dict:
+    """按这一期图文的标题和正文现写结尾；没配号池/限流/返回非法时静默降级。"""
+    lines = []
+    for i, sc in enumerate(screens[:12], 1):
+        t = re.sub(r"\s+", " ", (sc.get("title") or "").strip())[:40]
+        c = re.sub(r"\s+", " ", (sc.get("caption") or "").strip())[:160]
+        lines.append(f"{i}. 小标题：{t}｜正文：{c}")
+    if not any((sc.get("title") or sc.get("caption") or "").strip() for sc in screens):
+        return _wx_footer_fallback(topic, screens)   # 纯图片没文字，别让模型瞎编
+    prompt = (
+        "你是公众号编辑，要给下面这期图文写结尾。只输出一个 JSON 对象，字段：\n"
+        "closing：60 字以内的收尾感悟，紧扣本期具体主题，写一个具体场景或一个能上手的动作，"
+        "可以带一点人生感悟或正能量，不要讲道理\n"
+        "quote：30 字以内的一句金句，紧扣本期主题，口语、有画面\n"
+        "discuss：35 字以内，一个引导读者在评论区讨论的具体问题，必须和本期主题相关\n"
+        "tags：4 到 6 个与本期主题相关的中文话题标签，空格分隔，每个以 # 开头\n"
+        "要求：\n"
+        "- 只写本期内容里真实出现的东西。本期没讲 AI、工具、效率，就一个字都不要提它们\n"
+        "- 禁止空词大词：坚持、努力、重要、重视、关键、认知、思维、突破、赋能、打造、助力、"
+        "旨在、标志着、大家都知道、我们要、一定要\n"
+        "- 不要破折号、不要弯引号（用「」）、不要加粗、不要 emoji、不要 markdown、"
+        "不要碎片化短句、不要复述标题、不要写「以上就是本期内容」\n"
+        "- 只输出 JSON，不要解释，不要代码块\n\n"
+        f"本期标题：{(topic or '').strip() or '（无）'}\n"
+        "本期分镜：\n" + "\n".join(lines)
+    )
+    try:
+        raw = await pool_mod.chat_once(prompt, max_tokens=500, temperature=0.7, timeout=25)
+        return _wx_parse_footer(raw)
+    except Exception as e:
+        print("wx footer AI failed:", e)
+        return _wx_footer_fallback(topic, screens)
+
+
+def _wx_news_footer(data: dict) -> str:
+    """图文消息结尾：版式与正文每一屏完全一致（同款 h2 + 同款正文段落），仅 news 追加。"""
+    h2 = ('<h2 style="font-size:18px;font-weight:700;color:#1f9d6b;margin:0 0 10px;'
+          'padding:4px 0 4px 12px;line-height:1.45;'
+          'border-left:4px solid #1f9d6b;'
+          'background:linear-gradient(90deg,rgba(31,157,107,.10),rgba(31,157,107,0));">')
+    p = ('<p style="margin:0 0 14px;font-size:16px;line-height:1.85;'
+         'color:#3a3a3a;letter-spacing:.2px;">')
+    p_gap = ('<p style="margin:22px 0 14px;font-size:16px;line-height:1.85;'
+             'color:#3a3a3a;letter-spacing:.2px;">')
+    p_end = ('<p style="margin:0;font-size:16px;line-height:1.85;'
+             'letter-spacing:.2px;color:#1f9d6b;">')
+    parts = ['<section style="margin:0 0 22px;">', h2, '写在最后', '</h2>']
+    parts.append(p + _wx_escape(data["closing"]) + "</p>")
+    parts.append(p + _wx_escape(data["quote"]) + "</p>")
+    parts.append(p + "💬 " + _wx_escape(data["discuss"]) + "</p>")
+    parts.append(p_gap + "⭐ " + _wx_escape(data["follow"]) + "</p>")
+    parts.append(p_end + _wx_escape(data["tags"]) + "</p>")
+    parts.append("</section>")
+    return "".join(parts)
+
+
 @app.post("/api/push_wechat_draft")
 async def api_push_wechat_draft(req: PushDraftRequest):
     """把一批生成的图推到微信公众号草稿箱。
@@ -2081,8 +2214,10 @@ async def api_push_wechat_draft(req: PushDraftRequest):
     if not thumb_media_id:
         return JSONResponse({"ok": False, "error": "封面 media_id 未取得（正文图已传完，material/add 失败）",
                              "errors": errors})
-    # 拼带小标题+正文+插图的 HTML
+    # 拼带小标题+正文+插图的 HTML；结尾按本期文案现写，AI 不可用时自动降级
     parts = [_wx_news_section(sc["title"], sc["caption"], sc["url"]) for sc in screens]
+    footer_data = await _wx_footer_content(req.title, screens)
+    parts.append(_wx_news_footer(footer_data))
     content_html = (
         '<div style="font-size:16px;line-height:1.85;color:#3a3a3a;letter-spacing:.2px;'
         "font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB',"

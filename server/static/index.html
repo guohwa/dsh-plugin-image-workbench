@@ -49,8 +49,22 @@
     padding:8px 10px;border-radius:8px;font-size:13px;color:var(--ink-1);font-family:inherit;white-space:nowrap}
   .dd-item:hover{background:#f3f7ff}
   #moreToggle .caret{font-size:10px;margin-left:2px;opacity:.7}
-  .pool-chip{display:flex;align-items:center;gap:8px;background:var(--chip);margin-left:8px;
-    color:var(--primary);border:1px solid #ddd6fb;border-radius:20px;padding:5px 12px;font-size:12px}
+  .pool-chip{display:flex;align-items:center;gap:5px;background:var(--chip);margin-left:4px;
+    color:var(--primary);border:1px solid #ddd6fb;border-radius:20px;padding:3px 8px;
+    font-size:11px;white-space:nowrap;flex:none;max-width:150px;overflow:hidden}
+  /* 号池状态：文本多时走马灯横向滚动，不撑成两行（圆角药丸里，左侧圆点固定，文字滚动）
+     关键：副本与间隔默认隐藏，只有溢出启动滚动时才放出来，否则会把徽章撑成双倍宽 */
+  .pool-chip .pool-marquee{overflow:hidden;white-space:nowrap;flex:0 1 auto;min-width:0}
+  .pool-chip .pool-track{display:inline-block;white-space:nowrap;will-change:transform}
+  .pool-chip .pool-track > .pool-dup,
+  .pool-chip .pool-track > .pmsep{display:none}
+  .pool-chip .pool-track.scroll > .pool-dup{display:inline}
+  .pool-chip .pool-track.scroll > .pmsep{display:inline-block;width:2.4em}
+  .pool-chip .pool-track.scroll{animation:poolMarquee 16s linear infinite}
+  .pool-chip .pool-marquee.marquee-on{
+    -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 8px,#000 calc(100% - 8px),transparent 100%);
+            mask-image:linear-gradient(90deg,transparent 0,#000 8px,#000 calc(100% - 8px),transparent 100%)}
+  @keyframes poolMarquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
   .dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
   .dot.off{background:var(--err)}
   main{display:grid;grid-template-columns:20% minmax(0,1fr) 440px;gap:14px;padding:14px;align-items:start}
@@ -499,12 +513,25 @@
     color:#fff;border-radius:9px;padding:5px 12px;cursor:pointer;font:inherit;text-decoration:none}
   /* 顶栏入口 */
   /* 顶栏操作区：出图三连放到右上角跟着页面走，不用滚到底部去点 */
-  .head-acts{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:nowrap}
-  .head-acts .btn{padding:8px 13px;font-size:12.5px}
-  .head-acts .btn.mini{padding:6px 11px;font-size:11.5px}
-  .head-acts .status{margin:0;max-width:220px;overflow:hidden;text-overflow:ellipsis;
-    white-space:nowrap;font-size:11.5px;line-height:1.3}
-  .head-acts .ha-sep{width:1px;height:20px;background:var(--line);margin:0 3px;flex:none}
+  .head-acts{margin-left:auto;display:flex;gap:5px;align-items:center;flex-wrap:nowrap}
+  .head-acts .btn{padding:5px 9px;font-size:11.5px}
+  .head-acts .btn.mini{padding:4px 8px;font-size:11px}
+  /* 顶栏状态：信息多时走马灯横向滚动，不撑成两行。
+     副本与间隔默认隐藏，只有溢出滚动时才显示，避免静止时文字重复撑宽 */
+  .head-acts .status-marquee{margin:0;max-width:170px;overflow:hidden;white-space:nowrap;
+    font-size:11px;line-height:1.3;flex:none;position:relative}
+  .head-acts .status-track{display:inline-block;white-space:nowrap;will-change:transform}
+  .head-acts .status-track > .status-dup,
+  .head-acts .status-track > .msep{display:none}
+  .head-acts .status-track.scroll > .status-dup{display:inline}
+  .head-acts .status-track.scroll > .msep{display:inline-block;width:2.6em}
+  .head-acts .status-track.scroll{animation:statusMarquee 18s linear infinite}
+  .head-acts .status-marquee.marquee-on{
+    -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 10px,#000 calc(100% - 10px),transparent 100%);
+            mask-image:linear-gradient(90deg,transparent 0,#000 10px,#000 calc(100% - 10px),transparent 100%)}
+  @keyframes statusMarquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  .head-acts .status{margin:0;white-space:nowrap;font-size:11px}
+  .head-acts .ha-sep{width:1px;height:16px;background:var(--line);margin:0 1px;flex:none}
   /* 空间不够时：提示条留在标题同一行的右侧空档，操作区独占第二行，别把标题挤变形。
      断点 1520 = 单行放得下最长提示条（文字 306px + 外壳 65px）的宽度，再窄就换行。 */
   @media (max-width:1520px){
@@ -802,7 +829,7 @@
     </div></div>
   </div>
   <div class="head-acts">
-    <span class="status" id="imageStatus"></span>
+    <span class="status-marquee" id="imageStatusWrap" title=""><span class="status-track" id="imageStatusTrack"><span class="status" id="imageStatus"></span><span class="msep">　　</span><span class="status status-dup" id="imageStatusDup"></span><span class="msep">　　</span></span></span>
     <button class="btn ghost mini" id="resetAll" type="button"
       title="清掉选题、标题、正文、分镜清单、补充要求和参考图；图型 / 风格 / 主题色变成不限。画幅、情绪、留白、出图模式保留">一键清空</button>
     <button class="btn" id="composeAll" type="button">生成提示词</button>
@@ -818,7 +845,7 @@
         <button class="dd-item" id="openConfig" type="button" title="出图接口、本地号池与账号导入">接口与号池</button>
       </div>
     </div>
-    <div class="pool-chip"><span class="dot" id="poolDot"></span><span id="poolText">号池连接中…</span></div>
+    <div class="pool-chip"><span class="dot" id="poolDot"></span><span class="pool-marquee" id="poolTextWrap"><span class="pool-track" id="poolTextTrack"><span id="poolText">号池连接中…</span><span class="pmsep">　　</span><span class="pool-dup" id="poolTextDup">号池连接中…</span><span class="pmsep">　　</span></span></span></div>
   </div>
 </header>
 
@@ -1439,6 +1466,62 @@
 
 <script>
 const $ = s => document.querySelector(s);
+
+/* 顶栏状态走马灯：文本溢出容器宽度才横向滚动，装得下就静止显示（不撑成两行） */
+(function(){
+  const wrap = document.getElementById('imageStatusWrap');
+  const track = document.getElementById('imageStatusTrack');
+  const main = document.getElementById('imageStatus');
+  const dup = document.getElementById('imageStatusDup');
+  if (!wrap || !track || !main || !dup) return;
+  let busy = false;
+  function fitStatus(){
+    if (busy) return;
+    busy = true;
+    const txt = main.textContent;
+    dup.textContent = txt;
+    dup.className = 'status status-dup';
+    track.classList.remove('scroll');
+    wrap.classList.remove('marquee-on');
+    void track.offsetWidth;                       // 强制 reflow 后重新测量（此时副本隐藏，量的是单份宽度）
+    if (txt.trim() && track.scrollWidth > wrap.clientWidth + 1){
+      track.classList.add('scroll');
+      wrap.classList.add('marquee-on');
+    }
+    busy = false;
+  }
+  new MutationObserver(fitStatus).observe(main, {childList:true, characterData:true, subtree:true});
+  window.addEventListener('resize', fitStatus);
+  fitStatus();
+})();
+
+/* 号池状态走马灯：与顶栏状态同一思路，圆点固定、文字溢出才滚动 */
+(function(){
+  const wrap = document.getElementById('poolTextWrap');
+  const track = document.getElementById('poolTextTrack');
+  const main = document.getElementById('poolText');
+  const dup = document.getElementById('poolTextDup');
+  if (!wrap || !track || !main || !dup) return;
+  let busy = false;
+  function fitPool(){
+    if (busy) return;
+    busy = true;
+    const txt = main.textContent;
+    dup.textContent = txt;
+    track.classList.remove('scroll');
+    wrap.classList.remove('marquee-on');
+    void track.offsetWidth;
+    if (txt.trim() && track.scrollWidth > wrap.clientWidth + 1){
+      track.classList.add('scroll');
+      wrap.classList.add('marquee-on');
+    }
+    busy = false;
+  }
+  new MutationObserver(fitPool).observe(main, {childList:true, characterData:true, subtree:true});
+  window.addEventListener('resize', fitPool);
+  fitPool();
+})();
+
 const state = {styles:[], layouts:[], colors:[], sel:{style:null, layout:null, color:null},
   picker:{kind:'style', group:'全部'},
   results:[], idx:0, instrCustom:null, redo:null, selTouched:false};
