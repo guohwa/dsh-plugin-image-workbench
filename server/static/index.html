@@ -573,6 +573,10 @@
   .task-head .tacts{display:flex;gap:5px;flex:none;margin-left:2px}
   .task-head .tacts .mini{padding:3px 8px;font-size:10.5px;line-height:1.45;white-space:nowrap}
   .task-head .tacts .mini.del:hover{color:var(--err);border-color:#f2c6c6}
+  /* 推送模式下拉：字号与按钮一致，别掉回浏览器默认大字 */
+  .task-head .tacts .push-mode-sel{padding:3px 6px;font-size:10.5px;line-height:1.45;white-space:nowrap;
+    border:1px solid var(--line);background:#fff;color:var(--ink-2);border-radius:7px;cursor:pointer}
+  .task-head .tacts .push-mode-sel:hover{border-color:#cfc6f7;color:var(--primary)}
   .task-body{border-top:1px dashed var(--line);padding:10px 10px 14px;background:#fcfbff;
     border-radius:0 0 11px 11px}
   .task-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:9px}
@@ -1345,7 +1349,7 @@
       </div>
       <div class="span2" style="border-top:1px solid #f0ecfa;padding-top:10px;display:flex;align-items:center;gap:8px">
         <input type="checkbox" id="pushWxDraft" style="width:auto;margin:0">
-        <span style="font-size:13px;color:var(--ink-2)" title="开关打开、且已配置网关与 Token 时，批量出图完成后自动把这批图按上方「推送模式」推送到公众号草稿箱（图文=带正文+小标题，贴图=纯图片）">推送公众号</span>
+        <span style="font-size:13px;color:var(--ink-2)" title="开关打开、且已配置网关与 Token 时，批量出图完成后自动把这批图按上方「推送模式」推送到公众号草稿箱（图文=带正文+小标题，贴图=纯图片）">自动推送公众号</span>
       </div>
     </div>
     </div>
