@@ -74,8 +74,9 @@
     box-shadow:0 6px 22px rgba(80,60,160,.05);padding:14px}
   .panel h2{font-size:13px;margin:0 0 2px;display:flex;align-items:center;gap:6px}
   .panel .hint{font-size:11px;color:var(--ink-3);margin:0 0 10px}
-  /* 自动暂存状态：跟在提示语右边，不占额外高度 */
-  .panel .hint.save-hint{display:flex;gap:8px;align-items:baseline;justify-content:space-between}
+  /* 提示语在左、自动暂存状态在右；固定最小高度，避免状态文字出现时把下方内容顶下去 */
+  .panel .hint.save-hint{display:flex;gap:8px;align-items:baseline;justify-content:space-between;
+    min-height:18px;margin-bottom:6px}
   .save-state{flex:none;font-size:11px;color:var(--ink-3);white-space:nowrap;cursor:pointer}
   .save-state.ok{color:var(--ok)}
   .save-state.saving{color:var(--warn)}
@@ -857,7 +858,7 @@
       <button class="btn ghost mini" id="saveDraft" type="button" title="内容会自动暂存；点这里是立刻存一次">暂存</button>
       <button class="btn ghost mini" id="openDrafts" type="button">草稿 <em id="draftCount">0</em></button>
     </h2>
-    <p class="hint save-hint"><span>文案不满意可让 AI 润色</span><span class="save-state" id="saveState" title="内容一改，1.5 秒没有新操作就自动存成草稿；切走页面也会立刻存一次。点这里可以马上保存"></span></p>
+    <p class="hint save-hint"><span>支持AI热点添加选题</span><span class="save-state" id="saveState" title="内容一改，1.5 秒没有新操作就自动存成草稿；切走页面也会立刻存一次。点这里可以马上保存"></span></p>
 
     <!-- AI 热点选题：内容来自 AIHOT（aihot.news）的热点榜，后端代取并缓存 10 分钟。
          只露三条，点任一条或「全部」打开放大弹窗，里面能展开 AI 写的事件综述 -->

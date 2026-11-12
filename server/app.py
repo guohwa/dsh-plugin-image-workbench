@@ -756,6 +756,27 @@ async def api_catalog():
     return JSONResponse(CATALOG)
 
 
+@app.post("/api/catalog/reload")
+async def api_catalog_reload():
+    """上游风格库自动同步后热更新内存目录，免重启 8092。
+
+    scripts/sync-handraw-style.mjs 只负责写 catalog.json；这里重读文件并原地
+    clear+update，保持 CATALOG 的对象引用不变，其它模块持有的引用也能看到新数据。
+    """
+    try:
+        data = json.loads((LAB / "catalog.json").read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or not all(isinstance(data.get(k), list)
+                                                 for k in ("styles", "layouts", "colors")):
+            raise ValueError("catalog.json 结构不完整")
+        CATALOG.clear()
+        CATALOG.update(data)
+        return JSONResponse({"ok": True, "styles": len(CATALOG["styles"]),
+                            "layouts": len(CATALOG["layouts"]),
+                            "colors": len(CATALOG["colors"])})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)})
+
+
 # ---------------- AIHOT 热点选题 ----------------
 # 外部内容源：AIHOT（aihot.news）的公开只读接口，匿名可读、无需 key。
 # 前端直连会被跨域挡住，所以由后端代取；顺便当缓存层——官方建议最快 60 秒一次，
