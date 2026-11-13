@@ -142,7 +142,9 @@
   .tile span{font-size:11.5px;color:var(--ink-2);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* 图型 / 风格 / 主题色 + 参考图：用 flex 排，宁可让参考图换到下一行铺满，
      也不把前三张卡挤成 155px —— 挤到那个宽度，缩略图和「更换」会叠在一起 */
-  .pick-row{display:flex;flex-wrap:wrap;gap:12px;margin:10px 0 2px}
+  .pick-row{display:flex;flex-wrap:wrap;gap:12px;margin:10px 0 4px;
+    padding:12px;border:1px solid var(--line);border-radius:14px;
+    background:linear-gradient(180deg,#faf9ff,#f5f3fc)}
   .pick-row .pick-card{flex:1 1 210px;min-width:0;max-width:360px}
   /* 参考图单独占一行时铺满整行，看起来才像一块上传区，不是半截卡片 */
   #cardRef{flex:1 1 190px;max-width:none}
