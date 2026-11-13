@@ -383,6 +383,7 @@ def build_image_prompt(req: GenRequest) -> str:
         parts.append(f"画面比例：{req.ratio}，适合小红书图文排版。")
     if req.note:
         parts.append(f"补充要求：{req.note.strip()}")
+    parts.append(composer.NO_CUP_RULE)
     parts.append("请立即生成图片，不要反问，不要输出任何解释文字。")
     return "\n".join(parts)
 
@@ -3227,7 +3228,8 @@ async def _wx_get_token(gateway: str, token: str) -> str | None:
 # ---------- 图文消息（news）推送模板 ----------
 # 每一屏 = 一个小标题（h2，带左侧色条）+ 正文段落 + 一张配图。
 # 小标题来自每条分镜的 title 字段；若为空则只显示正文与图片，不出空标题。
-def _wx_news_section(title: str, caption: str, url: str) -> str:
+# tail_html：首屏专用，在第一张图之后追加「内容要点」等区块。
+def _wx_news_section(title: str, caption: str, url: str, tail_html: str = "") -> str:
     esc_title = _wx_escape((title or "").strip())
     esc_cap = _wx_escape((caption or "").strip())
     parts: list[str] = ['<section style="margin:0 0 22px;">']
@@ -3244,8 +3246,98 @@ def _wx_news_section(title: str, caption: str, url: str) -> str:
     parts.append('<p style="text-align:center;margin:6px 0 10px;">'
                  '<img src="' + url + '" style="max-width:100%;border-radius:10px;'
                  'box-shadow:0 2px 12px rgba(0,0,0,.08);"></p>')
+    if tail_html:
+        parts.append(tail_html)
     parts.append("</section>")
     return "".join(parts)
+
+
+def _wx_lead_block(points: list[str]) -> str:
+    """首图下方的「内容要点」区块：同款 h2 + 每条一个段落，紧扣事实、不抒情。"""
+    h2 = ('<h2 style="font-size:18px;font-weight:700;color:#1f9d6b;margin:6px 0 10px;'
+          'padding:4px 0 4px 12px;line-height:1.45;'
+          'border-left:4px solid #1f9d6b;'
+          'background:linear-gradient(90deg,rgba(31,157,107,.10),rgba(31,157,107,0));">'
+          "内容要点</h2>")
+    ps = []
+    for pt in points[:5]:
+        ps.append('<p style="margin:0 0 8px;font-size:15px;line-height:1.7;'
+                  'color:#3a3a3a;letter-spacing:.2px;">' + _wx_escape(pt) + "</p>")
+    return '<section style="margin:14px 0 4px;">' + h2 + "".join(ps) + "</section>"
+
+
+def _wx_parse_points(raw: str) -> list[str]:
+    """解析模型返回的要点 JSON 数组，清洗成带「· 」前缀的要点列表。"""
+    raw = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", (raw or "").strip())
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw).strip()
+    try:
+        d = json.loads(raw)
+    except Exception:
+        m = re.search(r"\[[\s\S]*\]", raw)
+        if not m:
+            return []
+        try:
+            d = json.loads(m.group(0))
+        except Exception:
+            return []
+    if not isinstance(d, list) or not d:
+        return []
+    out = []
+    for x in d:
+        s = _wx_clean_line(x, 34)
+        if s and re.search(r"[一-鿿]", s):
+            out.append("· " + re.sub(r"^\s*·\s*", "", s))
+    return out[:5]
+
+
+def _wx_lead_fallback(screens: list[dict]) -> list[str]:
+    """AI 不可用时的兜底：取前 3 屏正文第一句当作要点。"""
+    out = []
+    for sc in screens[:3]:
+        c = re.sub(r"\s+", "", (sc.get("caption") or "").strip())
+        if not c:
+            continue
+        first = re.split(r"(?<=[。！？!?])", c)[0].strip()[:32]
+        if first and re.search(r"[一-鿿]", first):
+            out.append("· " + first)
+        if len(out) >= 3:
+            break
+    return out
+
+
+async def _wx_lead_summary(topic: str, screens: list[dict]) -> list[str]:
+    """从本期图文正文提炼 3-5 条事实要点，放在首图下方。AI 不可用/非法时降级。"""
+    lines = []
+    for i, sc in enumerate(screens[:12], 1):
+        t = re.sub(r"\s+", " ", (sc.get("title") or "").strip())[:40]
+        c = re.sub(r"\s+", " ", (sc.get("caption") or "").strip())[:200]
+        if t or c:
+            lines.append(f"{i}. 小标题：{t}｜正文：{c}")
+    if not lines:
+        return []
+    prompt = (
+        "你是公众号编辑，下面是一期图文的内容（各屏小标题与正文）。请提炼 3 到 5 条「内容要点」，"
+        "放在首图下方给读者快速过一遍。\n"
+        "要求：\n"
+        "- 只说清楚事实，不抒情、不喊口号、不写金句、不复述小标题原话\n"
+        "- 每条是一句完整的话，不超过 32 字，直接点出关键信息（数字、人物、结论）\n"
+        "- 禁止空词大词：坚持、努力、重要、重视、关键、认知、思维、突破、赋能、打造、助力、"
+        "旨在、标志着、大家都知道、我们要、一定要\n"
+        "- 不要破折号、不要弯引号（用「」）、不要加粗、不要 emoji、不要 markdown\n"
+        "- 只输出一个 JSON 数组，元素是字符串，不要解释，不要代码块\n\n"
+        f"本期标题：{(topic or '').strip() or '（无）'}\n"
+        "本期内容：\n" + "\n".join(lines)
+    )
+    try:
+        raw = await pool_mod.chat_once(prompt, max_tokens=400, temperature=0.4, timeout=25)
+        pts = _wx_parse_points(raw)
+        if pts:
+            return pts
+    except Exception as e:
+        print("wx lead summary AI failed:", e)
+    return _wx_lead_fallback(screens)
 
 
 _WX_FOLLOW = "觉得有用，点个「关注」，我会持续分享能落地的 AI 新技术、新玩法。"
@@ -3470,9 +3562,14 @@ async def api_push_wechat_draft(req: PushDraftRequest):
         return JSONResponse({"ok": False, "error": "封面 media_id 未取得（正文图已传完，material/add 失败）",
                              "errors": errors})
     # 拼带小标题+正文+插图的 HTML；结尾按本期文案现写，AI 不可用时自动降级
-    parts = [_wx_news_section(sc["title"], sc["caption"], sc["url"]) for sc in screens]
+    # 首图下方追加「内容要点」：从本期正文提炼 3-5 条事实，直接说清关键信息
+    lead_points = await _wx_lead_summary(req.title, screens)
+    sections = []
+    for i, sc in enumerate(screens):
+        tail = _wx_lead_block(lead_points) if (i == 0 and lead_points) else ""
+        sections.append(_wx_news_section(sc["title"], sc["caption"], sc["url"], tail_html=tail))
     footer_data = await _wx_footer_content(req.title, screens)
-    parts.append(_wx_news_footer(footer_data))
+    parts = sections + [_wx_news_footer(footer_data)]
     content_html = (
         '<div style="font-size:16px;line-height:1.85;color:#3a3a3a;letter-spacing:.2px;'
         "font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB',"

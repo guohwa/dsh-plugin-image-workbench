@@ -50,6 +50,14 @@ PHOTO_LEAD = "摄影写真模式。"
 PHOTO_KEYWORDS = "通用摄影关键词：高级摄影师风格，创意构图，强烈的戏剧张力。"
 PHOTO_MODES = ("graphic-text", "photo")
 
+# 主图（hero / 首图）的硬约束：scene 层有黑名单拦截，但主图提示词里没有禁杯规则，
+# 模型自由发挥时把杯子画进了主图（截图里就出现过 NVIDIA 马克杯）。这条补在主图尾部，
+# 图文 / 摄影两种模式都生效，和 BANNED_PROP_TOKENS 形成双层保险。
+NO_CUP_RULE = (
+    "画面里禁止出现任何饮用容器：杯子、马克杯、水杯、茶杯、咖啡杯、玻璃杯、酒杯、"
+    "保温杯、纸杯都不要画；若需要手持道具，改用与主题相关的其它实物。"
+)
+
 TAIL_INSTRUCTION = ""
 
 # 参考图两种用法（对齐 Midjourney 的 --sref / --cref 解耦思路）：
@@ -93,7 +101,7 @@ PROP_LIB = [
       "一块橡皮", "一只钢笔", "一张试卷", "一只书签", "一副圆规", "一只笔袋"]),
     (["爱情", "约会", "心动", "分手", "对象", "情侣", "结婚", "恋爱", "暧昧", "表白", "异地", "脱单"],
      ["一封手写信", "一支玫瑰", "两张电影票", "一部手机", "一张双人沙发", "一条围巾",
-      "一只戒指盒", "一条手链", "一张拍立得", "一只心形挂锁", "一盒巧克力", "一只情侣杯（非饮用）摆件"]),
+      "一只戒指盒", "一条手链", "一张拍立得", "一只心形挂锁", "一盒巧克力", "一只心形摆件"]),
     (["美食", "吃", "外卖", "做饭", "咖啡", "茶", "餐厅", "饭", "饿了", "火锅", "奶茶", "早餐",
       "夜宵", "下厨", "甜点", "聚餐"],
      ["一只餐盘", "一口锅", "一只咖啡壶", "一只水果盘", "一双筷子", "一台微波炉",
@@ -144,8 +152,14 @@ BANNED_PROP_TOKENS = ("杯子", "马克杯", "水杯", "茶杯", "咖啡杯", "�
 
 
 def _prop_is_banned(prop: str) -> bool:
-    """元素里出现饮用容器字样就判为违规，绝不进画面。"""
+    """元素里出现饮用容器字样就判为违规，绝不进画面。
+
+    除了完整词（杯子/马克杯…），只要含「杯」字也一并拦截——否则「情侣杯」这种
+    带「杯」的道具会漏过黑名单、又被模型画成真杯子。
+    """
     p = (prop or "").strip()
+    if "杯" in p:
+        return True
     return any(tok in p for tok in BANNED_PROP_TOKENS)
 
 
@@ -541,6 +555,7 @@ def build_prompt(item: dict, sel: dict, ratio: str, moods: list[str],
     if whitespace in WHITESPACE:
         blocks.append(WHITESPACE[whitespace])
 
+    blocks.append(NO_CUP_RULE)
     blocks.append(TAIL_INSTRUCTION)
     return "\n".join(b for b in blocks if b)
 

@@ -956,6 +956,29 @@ ok('点条目填进选题并复用原有 pick 逻辑',
 ok('界面把加工题和实时榜区分开',
    '平台向 · 加工题' in _src_html and '不冒充实时' in _src_app)
 
+# ---- 图文首图下的「内容要点」----
+print('=== 图文首图内容要点 ===')
+_lead_raw = '["· 英伟达内网投票 97% 员工支持恢复黄仁勋职务","· 《硅谷》报道内部评论超 1600 条","· 两种表达指向同一问题"]'
+ok('要点 JSON 解析并统一加「· 」前缀',
+   app._wx_parse_points(_lead_raw) == [
+       '· 英伟达内网投票 97% 员工支持恢复黄仁勋职务',
+       '· 《硅谷》报道内部评论超 1600 条',
+       '· 两种表达指向同一问题'], str(app._wx_parse_points(_lead_raw)))
+ok('AI 返回带代码块也能解析',
+   len(app._wx_parse_points('```json\n' + _lead_raw + '\n```')) == 3)
+_lead_screens = [{"title": "97%员工支持！",
+                  "caption": "一场来自英伟达内部的员工声援，正在引发关注。据内网科技报道，员工发起的内网投票中，超过97%的投票者希望恢复英伟达解信首席执行官。"}]
+ok('AI 不可用兜底从正文第一句提炼要点',
+   app._wx_lead_fallback(_lead_screens)[0].startswith('· 一场来自英伟达'),
+   str(app._wx_lead_fallback(_lead_screens)))
+ok('要点区块带「内容要点」标题且不含图片',
+   '内容要点' in app._wx_lead_block(['· 要点一']) and '<img' not in app._wx_lead_block(['· 要点一']))
+ok('首图区块能把要点插在图片之后',
+   app._wx_news_section('标题', '正文', 'http://x/y.jpg',
+                        tail_html=app._wx_lead_block(['· 要点一'])).count('内容要点') == 1)
+ok('普通屏不带要点区块',
+   app._wx_news_section('标题', '正文', 'http://x/y.jpg').count('内容要点') == 0)
+
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')
 sys.exit(0 if failed == 0 else 1)
