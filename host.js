@@ -18,6 +18,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetchStyleImages } from './scripts/fetch-style-images.mjs';
+import { startStyleSync } from './scripts/style-sync-scheduler.mjs';
 
 export const inject = ['connection'];
 
@@ -264,6 +265,21 @@ export function apply(ctx, config = {}) {
     restarts: 0, lastRestart: '',
   };
 
+  /**
+   * 上游 handraw-style 风格库同步：插件自带定时器，不依赖 WorkBuddy。
+   * 默认每天本地 6:00 跑一次；6 点之后才开 DSH 会补跑，失败一小时后再试。
+   * 可在 profile 的 config 里用 styleSync:false 关掉、styleSyncHour 改时间。
+   */
+  const styleSync = startStyleSync({
+    pluginDir: PLUGIN_DIR,
+    serverDir: state.serverDir,
+    runtimeDir: RUNTIME_DIR,
+    port: state.port,
+    python: state.python,
+    hour: Number(config.styleSyncHour ?? process.env.DSH_IMAGE_STYLE_SYNC_HOUR ?? 6),
+    enabled: config.styleSync !== false && process.env.DSH_IMAGE_STYLE_SYNC !== '0',
+  });
+
   // 只回收自己 spawn 的子进程；守护定时器属于插件生命周期，不被「手动启动」清掉。
   const stopChild = () => {
     const child = state.serverChild;
@@ -272,6 +288,7 @@ export function apply(ctx, config = {}) {
   };
   const cleanup = () => {
     if (watchdog.timer) { clearInterval(watchdog.timer); watchdog.timer = null; }
+    styleSync.stop();
     stopChild();
   };
   if (typeof ctx.effect === 'function') ctx.effect(() => cleanup, PLUGIN_NAME + ': backend lifecycle');
@@ -633,6 +650,7 @@ export function apply(ctx, config = {}) {
       }
       if (action === 'start') await ensureServer(true);
       else if (action === 'samples') void ensureSamples();
+      else if (action === 'style-sync') void styleSync.triggerNow();
       else if (action === 'open') {
         const result = await openExternal(state.url);
         note('open', result);
@@ -671,6 +689,11 @@ export function apply(ctx, config = {}) {
         lastError: state.lastServerStart,
         // 样例图（风格 / 图型 / 配色）下载进度：没下完时画廊显示的是占位色块
         samples,
+        // 上游风格库定时同步（每天 6:00，插件自带，不依赖 WorkBuddy）
+        styleSync: {
+          ...styleSync.state,
+          retryInMs: Math.max(0, styleSync.state.nextRetryAt - Date.now()),
+        },
         // 进程起来又退出时，真正的原因在 backend.log 末尾（缺依赖、端口被占…）
         backendTail: tailOf(join(RUNTIME_DIR, 'backend.log'), 900),
         lastAction,

@@ -300,6 +300,9 @@ class GenRequest(BaseModel):
     replace_id: str | None = Field(default=None, max_length=32)
     # 「AI 生成文章」时正文要拆成多少条贴图条目（数字框控制，默认 7）；不传则按选题识别或走单篇
     num_items: int | None = Field(default=None, ge=1, le=20)
+    # 从「AI 热点选题」点「用作选题」带来的事件 id：有它就取事件综述当唯一事实来源，
+    # 不让模型只凭一句标题脑补日期、名单和数字。前端只在选题文字没被改动时才传。
+    story_id: str | None = Field(default=None, max_length=64)
 
 
 class ZipRequest(BaseModel):
@@ -317,6 +320,8 @@ class ComposeItem(BaseModel):
     title: str = ""
     body: str = ""
     scene: str = ""
+    # 小说拆分给出的「画面表演要点」；老链路不带这个字段，行为完全不变
+    visual: str = ""
 
 
 class ComposeRequest(BaseModel):
@@ -389,12 +394,51 @@ _LIST_INTENT_RE = re.compile(
 )
 
 
-def build_text_prompt(req: GenRequest) -> str:
+def _story_fact_block(story: dict | None) -> str:
+    """热点事件的资料块：先划清事实边界，再让模型按格式写。
+
+    不要求「全文照抄资料」——综述常常只有四五百字，硬锁死会让 7 条文案变成复读；
+    只锁住会翻车的部分：时间、人名、公司名、产品名、数字、名单。
+    """
+    if not story:
+        return ""
+    digest = str(story.get("digest") or "").strip()[:3000]
+    if not digest:
+        return ""
+    parts = ["下面是这条热点事件的资料，来自第三方热点聚合站，是本次写作唯一的事实来源。"]
+    title = str(story.get("title") or "").strip()[:200]
+    if title:
+        parts.append("事件：" + title)
+    parts.append("综述：" + digest)
+    latest = str(story.get("latest") or "").strip()[:600]
+    if latest and latest not in digest:
+        parts.append("最新进展：" + latest)
+    meta = []
+    if story.get("sourceCount"):
+        meta.append(f"{story['sourceCount']} 个信源")
+    for key, label in (("firstReportAt", "首次报道"), ("latestAt", "最近更新")):
+        val = str(story.get(key) or "").strip()[:19]
+        if val:
+            meta.append(label + " " + val.replace("T", " "))
+    if meta:
+        parts.append("资料元信息：" + "，".join(meta))
+    parts.append(
+        "事实红线：时间、人名、公司名、产品名、数字和名单只能取自上面的资料；"
+        "资料里没写的不要补，也不要把「据报道」「据称」改写成确定事实。"
+        "观点、场景、口语化表达和情绪可以自由发挥，但不能编造新的事件细节。")
+    return "\n".join(parts) + "\n\n"
+
+
+def build_text_prompt(req: GenRequest, story: dict | None = None) -> str:
     """普通选题走小红书笔记模板；选题明确要「N 条贴图/分镜文案」、给了 01｜ 示例、
     或前端「条数」框填了数字时，改走编号清单模板，避免 AI 输出
     「开场导语 + 编号条目 + 结尾标签」的混合格式（那种格式前端拆分只能识别成 1 条）。
-    编号清单模板末尾带 3-5 个 #话题标签，方便直接贴图与回看。"""
+    编号清单模板末尾带 3-5 个 #话题标签，方便直接贴图与回看。
+
+    story 由 /api/preview、/api/generate 从 AIHOT 事件综述取来；为空时提示词逐字不变。
+    """
     topic = req.topic.strip()
+    head = _story_fact_block(story)
     # 条数框优先；其次从选题里识别「N 条」意图；都没有就走单篇笔记模板
     n = None
     if req.num_items and req.num_items >= 1:
@@ -403,7 +447,7 @@ def build_text_prompt(req: GenRequest) -> str:
         m = re.search(r"(\d+)\s*条", topic)
         n = min(max(int(m.group(1)) if m else 8, 2), 20)
     if n:
-        return (
+        return head + (
             f"你是贴图分镜文案写手。围绕选题「{topic}」，直接输出成品，不要任何解释。\n"
             f"第一行：整组标题（20字以内，带情绪钩子，可用一个emoji）。\n"
             "第二行：空一行后，先写一段 2-4 句的概述段落，用自然流畅的简体中文把这件事的来龙去脉"
@@ -422,7 +466,7 @@ def build_text_prompt(req: GenRequest) -> str:
             "全程使用流畅的简体中文写作，不要输出英文碎片、URL、链接、乱码或无意义的字母数字"
             "组合（例如 turn/5u8495ea07e7 这类字符串），也不要输出代码块或任何非正文内容。"
         )
-    return (
+    return head + (
         f"你是小红书爆款笔记写手。围绕选题「{topic}」，直接输出成品，不要任何解释：\n"
         "第一行：标题（20字以内，带情绪钩子，可用一个emoji）\n"
         "空行后：正文 300-500 字，口语化、分段、适量emoji，有具体细节不要空话\n"
@@ -864,10 +908,72 @@ async def api_aihot_topics(fresh: int = 0):
                              "items": _AIHOT_HOT["items"], "err": msg})
 
 
+def _aihot_story_clean(sid: str) -> str:
+    """事件 id 只认 AIHOT 自己给的 uuid，顺手挡掉拼 URL 的花样。"""
+    return re.sub(r"[^0-9a-zA-Z\-]", "", str(sid or ""))[:64]
+
+
+def _aihot_story_pack(raw: dict) -> dict:
+    """事件详情压成前端和写作提示词共用的字段。"""
+    st = raw.get("story") or {}
+    return {
+        "ok": True,
+        "title": str(st.get("title") or ""),
+        "digest": str(st.get("digest") or ""),
+        "latest": str(st.get("latest") or ""),
+        "sourceCount": int(st.get("sourceCount") or 0),
+        "reportCount": int(st.get("reportCount") or 0),
+        "firstReportAt": str(st.get("firstReportAt") or ""),
+        "latestAt": str(st.get("latestAt") or ""),
+    }
+
+
+async def _aihot_story_data(sid: str) -> dict | None:
+    """「AI 生成文章」取事实资料：优先用 30 分钟缓存，用户没点开过综述就现拉一次。
+
+    取不到就返回 None，提示词退回老模板，绝不因为热点接口抖动挡住用户写稿。
+    """
+    sid = _aihot_story_clean(sid)
+    if not sid:
+        return None
+    hit = _AIHOT_STORY.get(sid)
+    if hit and time.time() - hit["at"] < _AIHOT_STORY_TTL:
+        return hit["data"] if str((hit["data"] or {}).get("digest") or "").strip() else None
+    try:
+        raw = await _aihot_json("/stories/" + sid)
+    except Exception:
+        return None
+    data = _aihot_story_pack(raw)
+    if not data["digest"].strip():
+        return None
+    _AIHOT_STORY[sid] = {"at": time.time(), "data": data}
+    return data
+
+
+async def _text_story(req: "GenRequest") -> dict | None:
+    """写文章时才取热点资料，并核对选题确实就是这条热点。
+
+    前端已经比对过标题，这里再兜一层：手动构造请求、或者会话恢复出旧 id 时，
+    不会把 A 事件的综述塞进 B 选题的提示词。
+    """
+    if req.mode != "text" or not req.story_id:
+        return None
+    story = await _aihot_story_data(req.story_id)
+    if not story:
+        return None
+    st = str(story.get("title") or "").strip()
+    topic = (req.topic or "").strip()
+    if not st or not topic:
+        return None
+    if not (st == topic or st in topic or topic in st or st[:8] == topic[:8]):
+        return None
+    return story
+
+
 @app.get("/api/aihot/story")
 async def api_aihot_story(id: str = ""):
     """单个事件的 AI 综述。id 只来自热点榜返回的 storyId，不接受猜测。"""
-    sid = re.sub(r"[^0-9a-zA-Z\-]", "", str(id or ""))[:64]
+    sid = _aihot_story_clean(id)
     if not sid:
         raise HTTPException(status_code=400, detail="缺少事件 id")
     hit = _AIHOT_STORY.get(sid)
@@ -878,17 +984,7 @@ async def api_aihot_story(id: str = ""):
     except Exception as e:
         raise HTTPException(status_code=502,
                             detail=(str(e) or "AIHOT 拉取失败")[:120])
-    st = raw.get("story") or {}
-    data = {
-        "ok": True,
-        "title": str(st.get("title") or ""),
-        "digest": str(st.get("digest") or ""),
-        "latest": str(st.get("latest") or ""),
-        "sourceCount": int(st.get("sourceCount") or 0),
-        "reportCount": int(st.get("reportCount") or 0),
-        "firstReportAt": str(st.get("firstReportAt") or ""),
-        "latestAt": str(st.get("latestAt") or ""),
-    }
+    data = _aihot_story_pack(raw)
     _AIHOT_STORY[sid] = {"at": time.time(), "data": data}
     return JSONResponse(data)
 
@@ -1182,6 +1278,167 @@ async def api_pool_use_builtin():
     })
 
 
+# ---------- 接口配置历史（用过的号池 / 接口，一键切回来） ----------
+# 切接口最容易翻车的是三件套不同步：Base URL 换了、用户 Key 还是上一个池的、
+# pool_dir 也没跟着走，/api/accounts 立刻 401。所以档案必须整套管参数一起存，
+# 切换时一起恢复，不能只记个地址让用户自己补 Key。
+# 档案随 config.local.json 走，明文 Key 只落本机（这个文件本来就不随插件分发），
+# 对外视图一律脱敏。图片保存目录、微信推送这些全局设置不跟接口走，不进档案。
+PROFILE_KEYS = (
+    "api_base_url", "pool_base_url", "pool_dir", "api_key", "provider_name",
+    "model_image", "model_text", "supports_edits", "edits_style",
+    "image_response_format", "monitor_mode",
+)
+PROFILE_MAX = 12
+
+
+def _profile_id(base_url: str) -> str:
+    return hashlib.sha1(norm_base_url(str(base_url or "")).encode("utf-8")).hexdigest()[:12]
+
+
+def _profile_values(cfg: dict) -> dict:
+    """从完整配置里抽出接口相关的键；密钥取实际生效值（含号池目录兜底）。"""
+    v = {k: cfg.get(k) for k in PROFILE_KEYS if cfg.get(k) is not None}
+    try:
+        v["api_key"] = provider_cfg(cfg)["api_key"]
+    except Exception:
+        pass
+    base = norm_base_url(str(cfg.get("api_base_url") or cfg.get("pool_base_url") or ""))
+    v["api_base_url"] = base
+    v["pool_base_url"] = base
+    # 手填地址切池时 pool_dir 常常没跟着换（38650 却还指着生图池目录）。
+    # 档案里按端口校正一次，避免把这套脏参数固化，日后切回来又 401。
+    try:
+        from urllib.parse import urlparse
+        port = str(urlparse(base).port or "")
+        mapped = pool_mod.LOCAL_POOL_PORTS.get(port)
+        if mapped:
+            d = pool_mod._dsh_home() / mapped
+            if (d / "admin-key").exists() or (d / "user-api-keys.json").exists():
+                v["pool_dir"] = str(d)
+    except Exception:
+        pass
+    return v
+
+
+def _profile_name(cfg: dict, v: dict) -> str:
+    n = str(cfg.get("provider_name") or "").strip()
+    # 旧版默认名「生图接口」和现行「当前接口」都不该当档案名，改成用地址识别
+    if n and n not in ("生图接口", "当前接口"):
+        return n[:40]
+    base = str(v.get("api_base_url") or "")
+    try:
+        from urllib.parse import urlparse
+        return (urlparse(base).netloc or base or "未命名接口")[:40]
+    except Exception:
+        return (base or "未命名接口")[:40]
+
+
+def _profiles(cfg: dict) -> list[dict]:
+    raw = cfg.get("provider_profiles")
+    if not isinstance(raw, list):
+        return []
+    return [x for x in raw if isinstance(x, dict) and x.get("id") and isinstance(x.get("values"), dict)]
+
+
+def _upsert_profile(cfg: dict, values: dict | None = None, name: str = "") -> list[dict]:
+    """把一套接口配置记进历史；同地址只留一份，最近用过的排最前。"""
+    v = dict(values or _profile_values(cfg))
+    base = str(v.get("api_base_url") or "").strip()
+    if not base:
+        return _profiles(cfg)
+    pid = _profile_id(base)
+    items = _profiles(cfg)
+    hit = next((x for x in items if x.get("id") == pid), None)
+    now = int(time.time())
+    if hit:
+        merged = dict(hit.get("values") or {})
+        # 空值不覆盖已有值：API Key 留空是「沿用」，别把历史里的 Key 抹掉
+        merged.update({k: val for k, val in v.items() if val not in (None, "")})
+        hit["values"] = merged
+        hit["name"] = name or hit.get("name") or _profile_name(cfg, merged)
+        hit["base_url"] = base
+        hit["last_used"] = now
+        items.remove(hit)
+        items.insert(0, hit)
+    else:
+        items.insert(0, {
+            "id": pid, "name": name or _profile_name(cfg, v), "base_url": base,
+            "values": v, "last_used": now, "created": now,
+        })
+    return items[:PROFILE_MAX]
+
+
+def _seed_profiles(cfg: dict) -> list[dict]:
+    """首次启用历史：当前这套 + 本机已知的两个号池端口一次补齐。
+
+    过去没记过档案，但 38650 / 38651 的用户 Key 都在各自数据目录里，
+    直接读出来就能让下拉框一开始就有得切，不用用户回去翻旧配置。
+    """
+    items = _upsert_profile(cfg)
+    cur = _active_profile_id(cfg)
+    now = int(time.time())
+    for port, dirname in pool_mod.LOCAL_POOL_PORTS.items():
+        d = pool_mod._dsh_home() / dirname
+        if not (d / "user-api-keys.json").exists():
+            continue
+        base = norm_base_url(f"http://127.0.0.1:{port}/v1")
+        pid = _profile_id(base)
+        if pid == cur or any(x.get("id") == pid for x in items):
+            continue
+        seed = {
+            "api_base_url": base, "pool_base_url": base, "pool_dir": str(d),
+            "provider_name": ("本地写作号池" if port == "38650" else "本地生图号池"),
+            "model_image": str(cfg.get("model_image") or "gpt-image-2"),
+            "model_text": str(cfg.get("model_text") or "auto"),
+            "supports_edits": bool(cfg.get("supports_edits", True)),
+            "edits_style": str(cfg.get("edits_style") or "auto"),
+            "image_response_format": str(cfg.get("image_response_format") or "auto"),
+            "monitor_mode": "pool",
+        }
+        key = pool_mod._read_pool_user_key(seed)
+        if not key:
+            continue
+        seed["api_key"] = key
+        items.append({
+            "id": pid, "name": seed["provider_name"], "base_url": base,
+            "values": seed, "last_used": 0, "created": now,
+        })
+    return items[:PROFILE_MAX]
+
+
+def _profile_view_item(x: dict) -> dict:
+    v = x.get("values") or {}
+    key = str(v.get("api_key") or "")
+    masked = (key[:6] + "***" + key[-4:]) if len(key) > 12 else ("***" if key else "")
+    return {
+        "id": x.get("id"), "name": x.get("name") or "未命名接口",
+        "base_url": x.get("base_url") or "", "last_used": int(x.get("last_used") or 0),
+        "api_key_set": bool(key), "api_key_masked": masked,
+        "model_image": str(v.get("model_image") or ""),
+        "pool_dir": str(v.get("pool_dir") or ""),
+    }
+
+
+def _active_profile_id(cfg: dict) -> str:
+    return _profile_id(str(cfg.get("api_base_url") or cfg.get("pool_base_url") or ""))
+
+
+def _read_cfg_file() -> dict:
+    try:
+        if POOL_CONFIG_FILE.exists():
+            got = json.loads(POOL_CONFIG_FILE.read_text(encoding="utf-8"))
+            return got if isinstance(got, dict) else {}
+    except Exception:
+        pass
+    return {}
+
+
+def _write_cfg_file(cfg: dict) -> None:
+    POOL_CONFIG_FILE.write_text(
+        json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 # ---------- 接口设置（通用 OpenAI 兼容接口） ----------
 def _cfg_view() -> dict:
     """当前接口配置的脱敏视图，绝不回传完整 API Key。"""
@@ -1212,6 +1469,10 @@ def _cfg_view() -> dict:
         "pool_message": pool.get("message") or "",
         "port": load_config().get("port", 8092),
         "version": VERSION,
+        "active_profile_id": _profile_id(p["base_url"]),
+        # 自动清理失效号：默认开，可在「本地号池」页签关掉
+        "auto_purge_dead": (lambda v: v is not False and str(v).lower() not in ("0", "false", "no", "off"))(
+            load_config().get("auto_purge_dead", True)),
         # 微信公众号推送：网关地址可明文回显；Token 只回脱敏，绝不回传完整值
         "wx_gateway": load_config().get("wx_gateway") or "",
         "wx_push_mode": (load_config().get("wx_push_mode") or "news").strip().lower(),
@@ -1227,21 +1488,19 @@ async def api_config_get():
 
 @app.post("/api/config")
 async def api_config_save(body: dict):
-    cfg: dict = {}
-    if POOL_CONFIG_FILE.exists():
-        try:
-            cfg = json.loads(POOL_CONFIG_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            cfg = {}
+    cfg = _read_cfg_file()
 
     def put(k: str, v) -> None:
         cfg[k] = v
+
+    # 先把「保存前」这套接口存档：第一次换池时，旧池的 Key / 数据目录不能丢
+    cfg["provider_profiles"] = _upsert_profile(cfg)
 
     if "app_name" in body:
         # 只影响显示名：留空 = 回到内置默认名
         put("app_name", str(body["app_name"] or "").strip()[:40])
     if "provider_name" in body:
-        put("provider_name", str(body["provider_name"]).strip() or "生图接口")
+        put("provider_name", str(body["provider_name"]).strip() or "当前接口")
     if "base_url" in body:
         b = norm_base_url(str(body["base_url"]))
         put("api_base_url", b)
@@ -1298,13 +1557,276 @@ async def api_config_save(body: dict):
         put("wx_push_mode", m if m in ("news", "newspic") else "news")
     if "monitor_mode" in body:
         put("monitor_mode", str(body["monitor_mode"]).strip() or "auto")
+    if "auto_purge_dead" in body:
+        put("auto_purge_dead", bool(body["auto_purge_dead"]))
     cfg.setdefault("port", 8092)
-    POOL_CONFIG_FILE.write_text(
-        json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # 再把「保存后」这套存档（可能是个全新地址）
+    cfg["provider_profiles"] = _upsert_profile(cfg)
+    _write_cfg_file(cfg)
     # 立即重探，让前端保存后马上看到新状态
     await POOL.refresh_env_ids()
     await POOL.refresh_accounts(force=True)
     return JSONResponse(_cfg_view())
+
+
+@app.get("/api/config/profiles")
+async def api_config_profiles():
+    """用过的接口 / 号池列表（脱敏）。老配置没有历史时拿当前这套种第一条。"""
+    cfg = _read_cfg_file()
+    items = _profiles(cfg)
+    if not items:
+        items = _seed_profiles(cfg)
+        cfg["provider_profiles"] = items
+        _write_cfg_file(cfg)
+    return JSONResponse({
+        "active_id": _active_profile_id(cfg),
+        "items": [_profile_view_item(x) for x in items],
+    })
+
+
+@app.post("/api/config/profiles/switch")
+async def api_config_profile_switch(body: dict):
+    """整套恢复一份历史接口：Base URL、用户 Key、号池数据目录、模型、开关一起换。"""
+    pid = str((body or {}).get("id") or "").strip()
+    cfg = _read_cfg_file()
+    hit = next((x for x in _profiles(cfg) if x.get("id") == pid), None)
+    if not hit:
+        raise HTTPException(404, "这份接口配置不存在")
+    v = dict(hit.get("values") or {})
+    raw = str(v.get("api_base_url") or v.get("pool_base_url") or "").strip()
+    base = norm_base_url(raw) if raw else ""
+    if not base:
+        raise HTTPException(400, "这份配置缺接口地址")
+    # 切走之前先把当前这套（含可能被手改过的 Key）存好
+    cfg["provider_profiles"] = _upsert_profile(cfg)
+    for k in PROFILE_KEYS:
+        if k in v and v[k] not in (None, ""):
+            cfg[k] = v[k]
+    cfg["api_base_url"] = base
+    cfg["pool_base_url"] = base
+    cfg["provider_profiles"] = _upsert_profile(cfg)
+    _write_cfg_file(cfg)
+    await POOL.refresh_env_ids()
+    await POOL.refresh_accounts(force=True)
+    return JSONResponse(_cfg_view())
+
+
+@app.post("/api/config/profiles/delete")
+async def api_config_profile_delete(body: dict):
+    pid = str((body or {}).get("id") or "").strip()
+    cfg = _read_cfg_file()
+    if pid == _active_profile_id(cfg):
+        raise HTTPException(400, "正在用的这份不能删，先切到别的号池")
+    old = _profiles(cfg)
+    items = [x for x in old if x.get("id") != pid]
+    if len(items) == len(old):
+        raise HTTPException(404, "这份接口配置不存在")
+    cfg["provider_profiles"] = items
+    _write_cfg_file(cfg)
+    return JSONResponse({"ok": True, "items": [_profile_view_item(x) for x in items]})
+
+
+def _profile_detail(x: dict, cfg: dict) -> dict:
+    """单份档案的可编辑详情。API Key 只回脱敏值，绝不回明文。"""
+    v = dict(x.get("values") or {})
+    key = str(v.get("api_key") or "")
+    masked = (key[:6] + "***" + key[-4:]) if len(key) > 12 else ("***" if key else "")
+    return {
+        "id": x.get("id"), "name": x.get("name") or "未命名接口",
+        "base_url": str(v.get("api_base_url") or x.get("base_url") or ""),
+        "active": x.get("id") == _active_profile_id(cfg),
+        "api_key_set": bool(key), "api_key_masked": masked,
+        "model_image": str(v.get("model_image") or ""),
+        "model_text": str(v.get("model_text") or ""),
+        "pool_dir": str(v.get("pool_dir") or ""),
+        "supports_edits": bool(v.get("supports_edits", True)),
+        "edits_style": str(v.get("edits_style") or "auto"),
+        "image_response_format": str(v.get("image_response_format") or "auto"),
+        "last_used": int(x.get("last_used") or 0),
+    }
+
+
+def _profile_check_dir(raw: str) -> str:
+    p = str(raw or "").strip()
+    if p and not Path(os.path.expandvars(os.path.expanduser(p))).is_dir():
+        raise HTTPException(400, "号池数据目录不存在：" + p)
+    return p
+
+
+@app.get("/api/config/profiles/{pid}")
+async def api_config_profile_get(pid: str):
+    """查看态用：取一份档案的完整可编辑字段（Key 脱敏）。"""
+    cfg = _read_cfg_file()
+    hit = next((x for x in _profiles(cfg) if x.get("id") == pid), None)
+    if not hit:
+        raise HTTPException(404, "这份接口配置不存在")
+    return JSONResponse(_profile_detail(hit, cfg))
+
+
+@app.post("/api/config/profiles")
+async def api_config_profile_create(body: dict):
+    """新增态用：只往历史里加一份档案，不改当前运行配置（新增 ≠ 启用）。"""
+    b = body or {}
+    name = str(b.get("name") or "").strip()[:40]
+    base = norm_base_url(str(b.get("base_url") or "").strip())
+    key = str(b.get("api_key") or "").strip()
+    if not name:
+        raise HTTPException(400, "请填名称（用于列表展示）")
+    # norm_base_url 会补协议头与 /v1（既有约定），这里只拦空值；
+    # 严格格式校验放在前端，避免把「少打 https://」这种正常输入误判成错误。
+    if not base:
+        raise HTTPException(400, "请填接口地址")
+    if not key:
+        raise HTTPException(400, "新增接口必须填 API Key")
+    cfg = _read_cfg_file()
+    items = _profiles(cfg)
+    pid = _profile_id(base)
+    if any(x.get("id") == pid for x in items):
+        dup = next(x for x in items if x.get("id") == pid)
+        raise HTTPException(409, "该地址已有档案：" + str(dup.get("name") or "未命名接口"))
+    if any(str(x.get("name") or "") == name for x in items):
+        raise HTTPException(409, "已有同名号池，换个名字")
+    pool_dir = _profile_check_dir(str(b.get("pool_dir") or ""))
+    v = {
+        "api_base_url": base, "pool_base_url": base, "api_key": key,
+        "provider_name": name, "pool_dir": pool_dir,
+        "model_image": str(b.get("model_image") or "gpt-image-2").strip(),
+        "model_text": str(b.get("model_text") or "auto").strip(),
+        "supports_edits": bool(b.get("supports_edits", True)),
+        "edits_style": str(b.get("edits_style") or "auto"),
+        "image_response_format": str(b.get("image_response_format") or "auto"),
+        "monitor_mode": "auto",
+    }
+    items = _upsert_profile(cfg, values=v, name=name)
+    for x in items:
+        if x.get("id") == pid:
+            x["last_used"] = 0      # 没启用过，别在列表里冒充「最近使用」
+    cfg["provider_profiles"] = items
+    _write_cfg_file(cfg)
+    return JSONResponse({"ok": True, "created_id": pid,
+                         "active_id": _active_profile_id(cfg),
+                         "items": [_profile_view_item(x) for x in items]})
+
+
+@app.patch("/api/config/profiles/{pid}")
+async def api_config_profile_patch(pid: str, body: dict):
+    """编辑态用：只改这一份档案。改的是当前在用的那份时，同步顶层运行配置。"""
+    b = body or {}
+    cfg = _read_cfg_file()
+    items = _profiles(cfg)
+    hit = next((x for x in items if x.get("id") == pid), None)
+    if not hit:
+        raise HTTPException(404, "这份接口配置不存在")
+    v = dict(hit.get("values") or {})
+    name = str(b.get("name") if "name" in b else (hit.get("name") or "")).strip()[:40]
+    raw_base = b.get("base_url") if "base_url" in b else (v.get("api_base_url") or hit.get("base_url") or "")
+    base = norm_base_url(str(raw_base or "").strip())
+    if not name:
+        raise HTTPException(400, "请填名称（用于列表展示）")
+    # norm_base_url 会补协议头与 /v1（既有约定），这里只拦空值；
+    # 严格格式校验放在前端，避免把「少打 https://」这种正常输入误判成错误。
+    if not base:
+        raise HTTPException(400, "请填接口地址")
+    new_pid = _profile_id(base)
+    if new_pid != pid and any(x.get("id") == new_pid for x in items):
+        dup = next(x for x in items if x.get("id") == new_pid)
+        raise HTTPException(409, "该地址已有档案：" + str(dup.get("name") or "未命名接口"))
+    if any(str(x.get("name") or "") == name and x.get("id") != pid for x in items):
+        raise HTTPException(409, "已有同名号池，换个名字")
+    if b.get("api_key"):        # 留空 = 沿用，绝不把已保存的 Key 清空
+        v["api_key"] = str(b["api_key"]).strip()
+    for k in ("model_image", "model_text", "edits_style", "image_response_format", "pool_dir"):
+        if k in b:
+            v[k] = str(b[k] or "").strip()
+    if "supports_edits" in b:
+        v["supports_edits"] = bool(b["supports_edits"])
+    v["pool_dir"] = _profile_check_dir(v.get("pool_dir") or "")
+    v["api_base_url"] = base
+    v["pool_base_url"] = base
+    v["provider_name"] = name
+    hit.update({"values": v, "name": name, "base_url": base, "id": new_pid})
+    was_active = pid == _active_profile_id(cfg)
+    if was_active:
+        for k in PROFILE_KEYS:
+            if k in v and v[k] not in (None, ""):
+                cfg[k] = v[k]
+        cfg["api_base_url"] = base
+        cfg["pool_base_url"] = base
+    cfg["provider_profiles"] = items
+    _write_cfg_file(cfg)
+    if was_active:
+        await POOL.refresh_env_ids()
+        await POOL.refresh_accounts(force=True)
+    return JSONResponse({"ok": True, "id": new_pid,
+                         "active_id": _active_profile_id(cfg),
+                         "items": [_profile_view_item(x) for x in items],
+                         "config": _cfg_view() if was_active else None})
+
+
+# ---------- 出图 / 文案模型下拉的候选来源 ----------
+# 号池与 OpenAI 兼容接口都提供 /v1/models，实测本机 38650 会返回 auto、gpt-image-2
+# 以及一批文本模型。候选必须从「当前正在编辑的那份档案」取，不能用全局在用的接口：
+# 用户在编辑一份还没启用的档案时，模型列表跟着全局接口走会给出错误选项。
+# 编辑态的 API Key 允许留空（沿用已保存值），密钥只能在后端补齐，绝不回传浏览器。
+_IMAGE_MODEL_HINTS = ("image", "dall-e", "flux", "imagen", "seedream",
+                      "wanx", "qwen-image", "kolors", "midjourney", "sd-")
+_FALLBACK_IMAGE_MODELS = ("gpt-image-2", "gpt-image-1", "dall-e-3")
+_FALLBACK_TEXT_MODELS = ("auto", "gpt-4o", "gpt-4o-mini", "gpt-5", "gpt-5-mini")
+
+
+def _is_image_model(name: str) -> bool:
+    low = str(name or "").lower()
+    return any(k in low for k in _IMAGE_MODEL_HINTS)
+
+
+@app.post("/api/config/models")
+async def api_config_models(body: dict):
+    """给编辑态的两个模型下拉取候选；接口不通时退回常用值，仍可手动输入。"""
+    b = body or {}
+    cfg = _read_cfg_file()
+    pid = str(b.get("profile_id") or "").strip()
+    explicit_base = "base_url" in b
+    hit = next((x for x in _profiles(cfg) if x.get("id") == pid), None) if pid else None
+    v = dict((hit or {}).get("values") or {})
+    base = (str(b.get("base_url") or "").strip()
+            or str(v.get("api_base_url") or (hit or {}).get("base_url") or ""))
+    key = str(b.get("api_key") or "").strip() or str(v.get("api_key") or "")
+    if not key and not hit:
+        key = str(cfg.get("api_key") or "")
+    # 表单里明确把地址清空了，别悄悄拿「当前在用的接口」去探，那会把别的号池
+    # 模型塞进这份档案；整个 body 为空则是「查当前生效接口」，正常走全局配置。
+    if not base and explicit_base:
+        return JSONResponse({"ok": False, "source": "fallback", "all": [],
+                             "message": "先填接口地址再读取模型",
+                             "image": list(_FALLBACK_IMAGE_MODELS),
+                             "text": list(_FALLBACK_TEXT_MODELS),
+                             "image_extra": []})
+    if not base:
+        base = str(cfg.get("api_base_url") or cfg.get("pool_base_url") or "")
+    ov = {"base_url": base}
+    if key:
+        ov["api_key"] = key
+    r = await test_connection(ov)
+    live = [str(m).strip() for m in (r.get("models") or []) if str(m).strip()]
+    if live:
+        images = [m for m in live if _is_image_model(m)]
+        texts = [m for m in live if not _is_image_model(m)]
+        source = "live"
+        message = str(r.get("message") or "已读取接口模型列表")
+        # 号池的 /v1/models 会按账号能力动态追加图像模型，普通账号池常常只列出
+        # 一个 gpt-image-2，一个选项的下拉等于没得选。把常见图像模型作为「未列出」
+        # 候选补上，但单独返回，前端必须分组注明「需上游支持」，不能冒充可用。
+        image_extra = [m for m in _FALLBACK_IMAGE_MODELS if m not in images]
+    else:
+        images, texts = list(_FALLBACK_IMAGE_MODELS), list(_FALLBACK_TEXT_MODELS)
+        source = "fallback"
+        message = str(r.get("message") or "接口未返回模型") + "，已显示常用候选"
+        image_extra = []
+    # auto 是号池「自动挑号」的内部约定，永远排在文案候选第一位
+    texts = (["auto"] if "auto" in texts else []) + [m for m in texts if m != "auto"]
+    return JSONResponse({"ok": bool(r.get("ok")), "source": source, "message": message,
+                         "image": images[:40], "text": texts[:40], "all": live[:60],
+                         "image_extra": image_extra})
 
 
 @app.post("/api/config/test")
@@ -1336,6 +1858,228 @@ async def api_config_open_dir(request: Request):
         return JSONResponse({"ok": False, "path": str(d), "message": f"打开失败：{e}"})
 
 
+# ---------------- 小说拆最小单元 ----------------
+# 独立链路：不碰 splitDoc / splitToItems 那套老拆分。核心约束是「忠实原文」，
+# 所以模型只给分页的句子编号区间与画面表演要点，正文由程序按编号从原文逐字截取，
+# 模型根本没有改写正文的机会。AI 不可用时降级成按句窗口的保守拆分，并如实标记 degraded。
+NOVEL_MIN_CHARS = 4
+NOVEL_MAX_CHARS = 8000
+NOVEL_MAX_PAGES = 120
+_SENT_END = "。！？!?…"
+_QUOTE_TAIL = "」』”\"’')）】"
+
+
+class NovelSplitRequest(BaseModel):
+    text: str = ""
+    title: str = ""
+
+
+def _novel_clean(s, limit: int) -> str:
+    """模型字段统一清洗：去 markdown / 破折号 / 弯引号 / 多余空白。"""
+    t = str(s or "").strip()
+    t = t.replace("**", "").replace("`", "").replace("#", "")
+    t = t.replace("——", "，").replace("—", "，").replace("–", "，")
+    t = t.replace("“", "「").replace("”", "」").replace("‘", "「").replace("’", "」")
+    t = re.sub(r"\s+", " ", t).strip().strip('"\'')
+    return t[:limit].strip()
+
+
+def _novel_sentences(text: str) -> list[str]:
+    """按句末标点 / 换行切原文，保留全部字符（拼接后与原文逐字相同）。
+
+    纯空白段并进上一句，不单独占编号，免得给模型的编号里夹一堆空行。
+    """
+    out: list[str] = []
+    buf: list[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        buf.append(c)
+        cut = False
+        if c in _SENT_END:
+            while i + 1 < n and text[i + 1] in _QUOTE_TAIL:
+                i += 1
+                buf.append(text[i])
+            cut = True
+        elif c == "\n":
+            cut = True
+        if cut:
+            seg = "".join(buf)
+            if not seg.strip() and out:
+                out[-1] += seg
+            else:
+                out.append(seg)
+            buf = []
+        i += 1
+    if buf:
+        seg = "".join(buf)
+        if not seg.strip() and out:
+            out[-1] += seg
+        else:
+            out.append(seg)
+    return out
+
+
+def _novel_autotitle(unit: str, limit: int = 14) -> str:
+    t = re.sub(r"\s+", "", str(unit or ""))
+    t = re.split(r"[。！？!?…，,；;：:]", t)[0] or t
+    return t[:limit] or "这一页"
+
+
+def _novel_local_split(text: str) -> list[dict]:
+    """AI 不可用时的保守拆分：按 120 到 180 字窗口合并原句，正文逐字取自原文，画面要点留空。"""
+    sents = _novel_sentences(text)
+    pages: list[dict] = []
+    a = 0
+    while a < len(sents):
+        b, size = a, 0
+        while b < len(sents):
+            ln = len(sents[b])
+            if size and size + ln > 180:
+                break
+            size += ln
+            b += 1
+            if size >= 120:
+                break
+        if b <= a:
+            b = a + 1
+        body = "".join(sents[a:b]).strip()
+        if body:
+            pages.append({"title": _novel_autotitle(body), "body": body, "visual": ""})
+        a = b
+    return pages
+
+
+def _novel_prompt(text: str, sents: list[str], title: str) -> str:
+    numbered = "\n".join(f"[{i + 1}] {s.strip()}" for i, s in enumerate(sents))
+    return (
+        "你是漫画分镜编辑。下面是一篇连贯小说的原文，已经按句编号。请通读全文后把它拆成一页页分镜，"
+        "每页是一个最小完整表达。只输出一个 JSON 对象，不要解释、不要代码块。\n\n"
+        "【输出格式】\n"
+        '{"pages":[{"from":1,"to":3,"title":"本页小标题","visual":"本页画面与表演要点"}]}\n'
+        "- from / to 是句子编号，含两端。所有页必须连续且不重不漏：第一页 from=1，"
+        "下一页 from = 上一页 to + 1，最后一页 to = 总句数。\n"
+        "- 正文由程序按编号从原文逐字截取，你不要复述、不要改写、不要输出 body 字段。\n"
+        "- title 从本页原文里摘 6 到 14 个字，不要编号、不要引号、不要新增原文没有的信息。\n"
+        "- visual 用 60 到 120 字写清本页画面，不要标签式情绪词。\n"
+        "- 顶层只输出 pages 一个字段。\n\n"
+        "【六条制作准则，必须逐条落实】\n"
+        "1. 先理解全文：结合人物关系、事件因果、情绪变化与信息揭露顺序，再安排分页和画面。"
+        "核心目标是在忠实于原文的前提下，让读者读得顺、看得懂、情绪接得上，翻页有意义；"
+        "文字讲清经过，配图表现重点。\n"
+        "2. 每页要形成最小完整表达，或承担明确的情绪、期待与停顿作用。"
+        "不要把引出动作和实际内容机械拆开，也不要把多个需要强调的重要变化挤在同一页。"
+        "页数与每页字数服从实际表达，不机械凑数。\n"
+        "3. 画面抓住最有表现力的瞬间：先确定本页要让读者理解什么、感受到什么，再选代表瞬间。"
+        "优先抓人物做出决定、动作发生、受到触动或反应显露的时刻，让画面准确承接本页文字。\n"
+        "4. 人物情绪、表情、动作必须准确、鲜明、看得见。根据原文支持的情绪及强度，"
+        "把反应落实到具体的眉眼、嘴部、视线、手部、肩背、身体重心和人物间距离；"
+        "动作写清对象、方向、接触关系和所处阶段，让人看出力度、迟疑或停顿；"
+        "景别和取景要让这些细节看得见。克制、沉默的场面也要体现内在变化。"
+        "表现强度符合原文，不擅自增加哭喊、摔物、攻击等原文没有的行为。"
+        "禁止只写生气、难过、震惊这类标签。\n"
+        "5. 表演和情绪要连续、有变化：文字、画面与翻页共同服务本页重点，"
+        "保持人物、物件和空间状态连续。相邻页要体现情绪的积累、变化或释放，"
+        "避免反复使用相同站姿、表情和动作，不提前揭露后文信息。\n"
+        "6. 定稿前连续回看相邻页，检查零碎页、拥挤页、图文不对应、阅读顺序问题；"
+        "检查关键情绪能否从表演看出来、动作是否明确、力度是否合情境、"
+        "连续页是否只是换了文字却重复同一种状态。不达标的页在原文范围内重新选瞬间、"
+        "调整取景或补足可见细节。\n\n"
+        "【硬性约束】\n"
+        "- 严禁改写、概括、扩写、删减原文，严禁调换事件顺序，严禁提前透露后文。\n"
+        "- 不要破折号、不要弯引号（用「」）、不要 markdown、不要 emoji、不要碎片化短句。\n\n"
+        f"整组标题（可空）：{(title or '（无）').strip()}\n"
+        f"原文共 {len(sents)} 句：\n{numbered}"
+    )
+
+
+def _novel_build_pages(raw: str, text: str, sents: list[str]) -> list[dict]:
+    """解析模型的分页区间，正文按编号从原文逐字拼回，顺带做覆盖率校验。"""
+    raw = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", (raw or "").strip())
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw).strip()
+    try:
+        d = json.loads(raw)
+    except Exception:
+        m = re.search(r"\{[\s\S]*\}", raw)
+        if not m:
+            raise ValueError("模型没有返回 JSON")
+        d = json.loads(m.group(0))
+    rows = d.get("pages") if isinstance(d, dict) else (d if isinstance(d, list) else None)
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("模型没有给出分镜页")
+    if len(rows) > NOVEL_MAX_PAGES:
+        raise ValueError("分镜页数过多")
+    n = len(sents)
+    pages: list[dict] = []
+    prev = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            a, b = int(row.get("from")), int(row.get("to"))
+        except Exception:
+            continue
+        a = max(prev + 1, min(a, n))
+        b = max(a, min(b, n))
+        if a > n:
+            continue
+        body = "".join(sents[a - 1:b]).strip()
+        if not body:
+            continue
+        pages.append({
+            "title": _novel_clean(row.get("title"), 20) or _novel_autotitle(body),
+            "body": body,
+            "visual": _novel_clean(row.get("visual"), 220),
+        })
+        prev = b
+    if prev < n:
+        body = "".join(sents[prev:]).strip()
+        if body:
+            pages.append({"title": _novel_autotitle(body), "body": body, "visual": ""})
+    if not pages:
+        raise ValueError("分镜页为空")
+    joined = re.sub(r"\s+", "", "".join(p["body"] for p in pages))
+    origin = re.sub(r"\s+", "", text)
+    if len(joined) < len(origin) * 0.92:
+        raise ValueError("分镜没有覆盖全文")
+    return pages
+
+
+@app.post("/api/novel/split")
+async def api_novel_split(req: NovelSplitRequest):
+    text = (req.text or "").strip()
+    n = len(text)
+    if n < NOVEL_MIN_CHARS:
+        return JSONResponse({"ok": False, "error": f"小说太短，至少 {NOVEL_MIN_CHARS} 个字"}, status_code=400)
+    if n > NOVEL_MAX_CHARS:
+        return JSONResponse({"ok": False, "error": f"小说超过 {NOVEL_MAX_CHARS} 字，请先删减到 8000 字以内"}, status_code=400)
+    sents = _novel_sentences(text)
+    if not sents:
+        return JSONResponse({"ok": False, "error": "没有可拆分的正文"}, status_code=400)
+    title = (req.title or "").strip()[:60]
+    err = ""
+    try:
+        raw = await pool_mod.chat_once(
+            _novel_prompt(text, sents, title),
+            max_tokens=min(12000, 3600 + n * 2),
+            temperature=0.35,
+            # 长文实测 7900 字约 122 秒；按字数留余量，避免临界超时掉进保守拆分
+            timeout=min(300, 120 + n // 25),
+        )
+        pages = _novel_build_pages(raw, text, sents)
+        degraded = False
+    except Exception as e:
+        pages = _novel_local_split(text)
+        degraded = True
+        err = str(e)[:160]
+    return JSONResponse({
+        "ok": True, "degraded": degraded, "pages": pages,
+        "chars": n, "sentences": len(sents), "error": err,
+    })
+
+
 @app.post("/api/compose")
 async def api_compose(req: ComposeRequest):
     """把风格 + 主题色 + 图型 + 融合 + 每条文字，拼成出图指令与完整提示词。"""
@@ -1355,7 +2099,8 @@ async def api_compose(req: ComposeRequest):
         "shoot_type": req.shoot_type,
         "instruction": req.instruction,
         "allow_blank": req.allow_blank,
-        "items": [{"title": it.title, "body": it.body, "scene": it.scene} for it in req.items],
+        "items": [{"title": it.title, "body": it.body, "scene": it.scene,
+                   "visual": it.visual} for it in req.items],
     }
     return JSONResponse(await composer.compose(payload, CATALOG["styles"], CATALOG["layouts"], CATALOG["colors"]))
 
@@ -1383,7 +2128,8 @@ async def api_autoscene(req: ComposeRequest):
         "shoot_type": req.shoot_type,
         "instruction": req.instruction,
         "allow_blank": req.allow_blank,
-        "items": [{"title": it.title, "body": it.body, "scene": it.scene} for it in req.items],
+        "items": [{"title": it.title, "body": it.body, "scene": it.scene,
+                   "visual": it.visual} for it in req.items],
     }
     scenes = await composer.fill_scenes(payload["items"], bool(payload["fusion"]))
     return JSONResponse({"items": [{"scene": s} for s in scenes]})
@@ -1391,8 +2137,9 @@ async def api_autoscene(req: ComposeRequest):
 
 @app.post("/api/preview")
 async def api_preview(req: GenRequest):
+    story = await _text_story(req)
     if req.mode == "text":
-        prompt = build_text_prompt(req)
+        prompt = build_text_prompt(req, story)
     elif req.mode == "polish":
         prompt = build_polish_prompt(req)
     else:
@@ -1416,18 +2163,18 @@ async def api_generate(req: GenRequest):
         if not base:
             raise HTTPException(
                 400,
-                "尚未配置生图号池。请在「接口与号池」面板填写号池地址与 API Key 后再出图。")
+                "尚未配置接口。请在「接口与号池」面板填写接口地址与 API Key 后再生成。")
         if not user_set:
             raise HTTPException(
                 400,
-                "尚未配置生图号池：当前仍指向内置空号池。请在「接口与号池」面板填写你自己的号池地址"
+                "尚未配置接口：当前仍指向内置空号池。请在「接口与号池」面板填写你自己的接口地址"
                 "（例如 http://127.0.0.1:38650/v1）与 API Key，或先启动内置号池并导入账号。")
         raise HTTPException(
             400,
             f"号池 {base} 已配置但暂无可用账号。请确认号池进程已启动并已导入账号；"
             "可在「接口与号池」面板点「测试」验证连通性。")
     if req.mode == "text":
-        prompt = build_text_prompt(req)
+        prompt = build_text_prompt(req, await _text_story(req))
     elif req.mode == "polish":
         prompt = build_polish_prompt(req)
     else:

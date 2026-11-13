@@ -95,6 +95,10 @@
   .gen-count input::-webkit-outer-spin-button,
   .gen-count input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
   .gen-count input:focus{outline:2px solid var(--primary-2)}
+  /* 拆成分镜旁的标题编号开关：默认勾选，保持标题带 01 02 前缀的原有行为 */
+  .num-chk{display:flex;align-items:center;gap:5px;margin:0 0 0 2px;font-size:11px;
+    color:var(--ink-2);white-space:nowrap;cursor:pointer;user-select:none}
+  .num-chk input{width:auto;flex:0 0 auto;margin:0;padding:0;accent-color:var(--primary);cursor:pointer}
   .btn{border:0;border-radius:10px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer;
     background:#f1eefe;color:var(--primary);transition:.15s;white-space:nowrap}
   .btn:hover{filter:brightness(.97)}
@@ -108,6 +112,19 @@
   .section-title{display:flex;align-items:center;gap:8px;margin:12px 0 6px;font-size:11px;color:var(--ink-2)}
   .section-title b{color:var(--ink);font-size:12px}
   .section-title .tag{margin-left:auto;color:var(--ink-3);font-weight:400}
+  /* 文案 / 小说 页签：小说走独立拆分链路，老「正文」面板与拆分逻辑保持原样 */
+  .section-title.with-tabs .tag{margin-left:0}
+  .doc-tabs{display:inline-flex;gap:2px;padding:2px;background:var(--chip);border-radius:8px;margin-left:auto}
+  .doc-tabs button{border:0;background:transparent;color:var(--ink-2);font:inherit;font-size:11px;
+    padding:3px 10px;border-radius:6px;cursor:pointer;white-space:nowrap}
+  .doc-tabs button.on{background:#fff;color:var(--primary);font-weight:600;box-shadow:0 1px 3px rgba(80,70,140,.12)}
+  #docPane[hidden],#novelPane[hidden]{display:none}
+  #novelBody{min-height:230px;line-height:1.75}
+  .novel-foot{display:flex;align-items:center;gap:8px;margin:5px 2px 0;font-size:11px;color:var(--ink-3)}
+  .novel-foot.bad{color:var(--err)}
+  .it-visual{margin-top:6px;font-size:11.5px;padding:6px 9px;background:#f2fbf7;color:#2b6b50;
+    border-color:#cfe9dc;line-height:1.6}
+  .it-visual::placeholder{color:#8bb8a3}
   .scroller{max-height:188px;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:8px;background:#fdfcff}
   .scroller::-webkit-scrollbar{width:8px}
   .scroller::-webkit-scrollbar-thumb{background:#ded8f4;border-radius:8px}
@@ -710,6 +727,79 @@
   .iface-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px}
   .iface-grid > *{min-width:0}
   .iface-grid > .span2{grid-column:1/-1}
+  /* 配置档案：第一项全局重命名 + 第二项左右分栏四态详情 */
+  .cfg-sec{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 12px;background:#fff}
+  .cfg-sec-t{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:10px;flex-wrap:wrap}
+  .cfg-no{width:18px;height:18px;border-radius:5px;background:#f0edff;color:var(--primary);font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .cfg-tip{font-weight:400;color:var(--ink-3);font-size:11px}
+  .cfg-rename{display:flex;gap:8px;align-items:center}
+  .cfg-rename input{flex:1;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;color:var(--ink);outline:none;font:inherit}
+  .cfg-rename input:focus{border-color:var(--primary);box-shadow:0 0 0 3px #f0edff}
+  .cfg-more{border:1px solid var(--line);border-radius:10px;background:#fbfaff;margin-top:4px}
+  .cfg-more > summary{cursor:pointer;padding:10px 12px;font-size:12px;color:var(--ink-2);font-weight:600;list-style:none}
+  .cfg-more > summary::-webkit-details-marker{display:none}
+  .cfg-more > summary::before{content:'▸';display:inline-block;margin-right:6px;color:var(--ink-3)}
+  .cfg-more[open] > summary::before{content:'▾'}
+  .cfg-more > .iface-grid{padding:2px 12px 12px}
+  .prof-split{display:grid;grid-template-columns:250px minmax(0,1fr);border:1px solid var(--line);border-radius:10px;overflow:hidden;min-height:320px}
+  .prof-left{border-right:1px solid var(--line);background:#fcfbff;display:flex;flex-direction:column;min-width:0}
+  .prof-left-h{padding:9px 11px;font-size:11px;font-weight:600;color:var(--ink-2);border-bottom:1px solid #f0ecfa;display:flex;gap:6px;align-items:center}
+  .prof-left-h span{font-weight:400;color:var(--ink-3)}
+  .prof-list{padding:7px;flex:1;max-height:280px;overflow:auto}
+  .prof-item{display:block;width:100%;text-align:left;border:1px solid transparent;background:transparent;border-radius:8px;padding:8px 9px;margin-bottom:3px;cursor:pointer;font:inherit}
+  .prof-item:hover{background:#f4f1ff}
+  .prof-item.on{background:#f0edff;border-color:#d9d1ff}
+  .prof-item .n{font-size:12px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .prof-item .n em{font-style:normal;font-size:10px;font-weight:400;color:#1f9d6b;flex:0 0 auto}
+  .prof-item .u,.prof-item .k{font-size:10.5px;color:var(--ink-3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .prof-add{display:block;width:100%;text-align:left;border:1px dashed #d9d1ff;background:#fff;border-radius:8px;padding:8px 9px;margin-top:3px;cursor:pointer;color:var(--primary);font:inherit;font-size:12px}
+  .prof-add.on{background:#f0edff;border-style:solid}
+  .prof-add:hover{background:#f4f1ff}
+  .prof-left-foot{padding:8px 11px;border-top:1px solid #f0ecfa;font-size:10.5px;color:var(--ink-3);line-height:1.5}
+  .prof-right{padding:12px 14px;min-width:0}
+  .prof-state{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .prof-state h4{margin:0;font-size:13px}
+  .prof-chip{font-size:10.5px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);background:#faf9fd;color:var(--ink-3)}
+  .prof-chip.view{background:#f0edff;color:var(--primary);border-color:#d9d1ff}
+  .prof-chip.edit{background:#fff6e5;color:#b7791f;border-color:#f4dfae}
+  .prof-chip.create{background:#e8f6ef;color:#1f9d6b;border-color:#bfe8d4}
+  .prof-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px 12px}
+  .prof-grid .full{grid-column:1/-1}
+  /* 全局 label 带 margin:10px 0 5px，只覆盖 margin-bottom 会留下 10px 顶部空白 */
+  .prof-f label{display:block;font-size:11px;color:var(--ink-3);margin:0 0 3px}
+  .prof-f label i{color:#d94a5a;font-style:normal}
+  .prof-f input,.prof-f select{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px;background:#fff;color:var(--ink);outline:none;font:inherit}
+  .prof-f input:focus{border-color:var(--primary);box-shadow:0 0 0 3px #f0edff}
+  .prof-f .hint{display:block;font-size:10.5px;color:var(--ink-3);margin-top:3px;line-height:1.4}
+  .prof-f .hint.bad{color:#d94a5a}
+  .prof-ro{border:1px solid var(--line);border-radius:9px;padding:8px 11px;background:#fcfbff}
+  .prof-ro .r{display:flex;gap:8px;padding:4px 0;font-size:12px;border-bottom:1px solid #f4f1fb}
+  .prof-ro .r:last-child{border-bottom:0}
+  .prof-ro .r b{flex:0 0 104px;font-weight:400;color:var(--ink-3)}
+  .prof-ro .r span{flex:1;min-width:0;word-break:break-all;color:var(--ink)}
+  .prof-foot{display:flex;gap:7px;align-items:center;padding-top:10px;margin-top:10px;border-top:1px solid #f0ecfa;flex-wrap:wrap}
+  .prof-foot .sp{flex:1}
+  .prof-foot .note{font-size:10.5px;color:var(--ink-3)}
+  .prof-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:225px;text-align:center;color:var(--ink-3)}
+  .prof-empty h4{margin:0 0 6px;font-size:13px;color:var(--ink-2)}
+  .prof-empty p{margin:0 0 12px;font-size:11.5px;max-width:330px;line-height:1.7}
+  @media (max-width:900px){.prof-split{grid-template-columns:1fr}.prof-left{border-right:0;border-bottom:1px solid var(--line)}.prof-list{max-height:150px}}
+  /* 编辑 / 新增态专用紧凑版式：查看态是键值表，本来就紧；编辑态九个字段
+     每个都带说明小字，按查看态的间距铺开会显得又高又散。只收紧编辑态。 */
+  .prof-split.dense{min-height:0}
+  .prof-split.dense .prof-list{max-height:215px}
+  .prof-split.dense .prof-right{padding:8px 10px}
+  .prof-split.dense .prof-state{margin-bottom:4px}
+  .prof-split.dense .prof-grid{gap:4px 10px}
+  .prof-split.dense .prof-f label{margin:0 0 2px;font-size:10.5px}
+  .prof-split.dense .prof-f input,.prof-split.dense .prof-f select{padding:4px 7px;font-size:11.5px}
+  .prof-split.dense .prof-f .hint{margin-top:1px;font-size:10px;line-height:1.25}
+  .prof-split.dense .prof-f .hint:empty{display:none}
+  .prof-split.dense .prof-foot{padding-top:6px;margin-top:6px}
+  .prof-split.dense .prof-foot .note{font-size:10px}
+  .prof-f input[hidden]{display:none!important}
+  .prof-foot .pmodel-reload{border:0;background:transparent;color:var(--primary);cursor:pointer;font:inherit;font-size:10px;padding:0 2px;margin-left:6px;line-height:1.4}
+  .prof-foot .pmodel-reload:hover{text-decoration:underline}
   .cfg-tabs{display:flex;gap:6px;background:#f6f4fd;border:1px solid var(--line);border-radius:10px;padding:4px;margin:0 0 14px}
   .cfg-tab{flex:1;border:0;background:transparent;border-radius:8px;padding:7px 10px;font:inherit;font-weight:600;
     color:var(--ink-3);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:.15s}
@@ -843,7 +933,7 @@
       <div class="dropdown-list" id="moreList" hidden>
         <button class="dd-item" id="openHistory" type="button">历史记录</button>
         <button class="dd-item" id="openMonitor" type="button">运行监控</button>
-        <button class="dd-item" id="openConfig" type="button" title="出图接口、本地号池与账号导入">接口与号池</button>
+        <button class="dd-item" id="openConfig" type="button" title="接口配置、本地号池与账号导入">接口与号池</button>
       </div>
     </div>
     <div class="pool-chip"><span class="dot" id="poolDot"></span><span class="pool-marquee" id="poolTextWrap"><span class="pool-track" id="poolTextTrack"><span id="poolText">号池连接中…</span><span class="pmsep">　　</span><span class="pool-dup" id="poolTextDup">号池连接中…</span><span class="pmsep">　　</span></span></span></div>
@@ -888,12 +978,28 @@
     <label for="docTitle">标题</label>
     <input id="docTitle" placeholder="标题会出现在这里">
 
-    <div class="section-title"><b>正文</b><span class="tag" id="textAccount"></span></div>
-    <textarea id="docBody" rows="14" placeholder="正文会出现在这里，可直接编辑"></textarea>
+    <div class="section-title with-tabs">
+      <b id="docPaneLabel">正文</b><span class="tag" id="textAccount"></span>
+      <div class="doc-tabs" role="tablist" aria-label="内容类型">
+        <button type="button" class="on" data-tab="doc" role="tab" aria-selected="true">文案</button>
+        <button type="button" data-tab="novel" role="tab" aria-selected="false">小说</button>
+      </div>
+    </div>
+    <div id="docPane"><textarea id="docBody" rows="14" placeholder="正文会出现在这里，可直接编辑"></textarea></div>
+    <div id="novelPane" hidden>
+      <textarea id="novelBody" rows="16" placeholder="把 4 到 8000 字的小说整篇粘贴进来。点「拆成分镜」会通读全文，按原文拆成最小单元，正文逐字取自原文，不改写不删减"></textarea>
+      <div class="novel-foot" id="novelFoot">
+        <span id="novelCount">0 字 / 4-8000 字</span><span class="spacer" style="flex:1"></span>
+        <span>文字讲清经过，配图表现重点</span>
+      </div>
+    </div>
     <button class="btn primary full" id="splitToItems" type="button">拆成分镜 →</button>
     <div class="row" style="margin-top:8px">
       <button class="btn ghost" id="polishText">AI 润色</button>
       <button class="btn ghost" id="copyText">复制</button>
+      <label class="num-chk" for="titleNumbered" title="默认勾选：拆出的分镜标题带 01 02 03 编号，编号会一起写进画面文字。取消勾选后标题不带编号，卡片左侧改用序号标记顺序。改动在下次点「拆成分镜」时生效。">
+        <input type="checkbox" id="titleNumbered" checked><span>标题带编号</span>
+      </label>
     </div>
     <div class="status" id="splitStatus"></div>
     <div class="md" id="docRaw" style="display:none"></div>
@@ -1311,15 +1417,55 @@
       <button class="btn ghost mini" id="cfgClose" type="button">关闭</button>
     </div>
     <div class="cfg-tabs" role="tablist">
-      <button class="cfg-tab on" type="button" data-tab="iface" role="tab">出图接口</button>
+      <button class="cfg-tab on" type="button" data-tab="iface" role="tab">接口配置</button>
       <button class="cfg-tab" type="button" data-tab="pool" role="tab">本地号池<i id="poolTabTag"></i></button>
     </div>
 
     <div id="tabIface">
     <p style="font-size:12px;color:var(--ink-3);margin:0 0 12px;line-height:1.6">
-      填任意 OpenAI 兼容接口即可出图。默认连本机生图号池；换第三方接口只要改 Base URL 与 API Key。API Key 留空表示沿用已保存的密钥，不会清掉。
+      工作台名称是全局的；接口地址、API Key、模型等按号池档案分开管理，选中即可查看和编辑，保存只改这一份。底部的「其他设置」只放图片保存目录、公众号推送这类与号池无关的全局项，不会出现第二套接口表单。
     </p>
+
+    <div class="cfg-sec">
+      <div class="cfg-sec-t"><span class="cfg-no">1</span>工作台名称<span class="cfg-tip">全局项，不随号池切换；留空恢复默认名</span></div>
+      <div class="cfg-rename">
+        <input id="cfgRenameInput" maxlength="40" placeholder="例：Bluxe手绘工坊 · 生图工作台">
+        <button class="btn ghost mini" id="cfgRenameBtn" type="button">重命名</button>
+      </div>
+      <span class="cfg-tip" id="cfgRenameHint" style="display:block;margin-top:5px">改完点「重命名」，页头标题与浏览器标签同步更新，最多 40 字。</span>
+    </div>
+
+    <div class="cfg-sec">
+      <div class="cfg-sec-t"><span class="cfg-no">2</span>用过的号池<span class="cfg-tip">左侧选档案，右侧查看或编辑；列表末尾固定「＋ 新增接口」</span></div>
+      <div class="prof-split">
+        <div class="prof-left">
+          <div class="prof-left-h">用过的号池 <span id="profCnt">读取中…</span></div>
+          <div class="prof-list" id="profList"></div>
+          <div class="prof-left-foot">当前使用中的档案不能删，先切换再删。</div>
+        </div>
+        <div class="prof-right" id="profDetail"></div>
+      </div>
+    </div>
+
+    <details class="cfg-more">
+      <summary>其他设置：图片保存目录 / 公众号推送</summary>
     <div class="iface-grid">
+      <div class="span2" style="font-size:11px;color:var(--ink-3);line-height:1.6;background:#f6f3ff;border:1px solid #e9e4f7;border-radius:8px;padding:7px 10px">
+        接口地址、API Key、出图/文案模型、参考图与返回格式都在上面第 2 项里按号池档案管理，这里不再重复放一套，避免两处改动互相覆盖。
+      </div>
+      <!-- 老接口表单的 DOM 与 id 全部保留（cfgFill / cfgPayload / 切回内置池等仍会读写），
+           但不再对用户显示：接口参数的唯一入口是上方的号池档案区。 -->
+      <div id="cfgLegacyIface" style="display:none" aria-hidden="true">
+      <div class="span2" hidden style="border:1px solid #e9e4f7;background:#fbfaff;border-radius:10px;padding:9px 11px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--ink-2);font-weight:600">用过的接口 / 号池</span>
+          <span id="cfgProfHint" style="font-size:11px;color:var(--ink-3)"></span>
+          <span style="flex:1"></span>
+          <button class="btn ghost mini" id="cfgProfDel" type="button">删除这份</button>
+        </div>
+        <select id="cfgProfile" style="width:100%;margin-top:6px;padding:7px 8px;border:1px solid #e4dff2;border-radius:8px;font-size:12px;background:#fff"></select>
+        <div style="font-size:11px;color:var(--ink-3);line-height:1.6;margin-top:4px">选中即整套切换：接口地址、API Key、号池数据目录、模型一起恢复，不用再手填。当前正在用的这份不能删。</div>
+      </div>
       <label style="display:block;font-size:12px;color:var(--ink-3)">工作台名称
         <input id="cfgAppName" maxlength="40" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="例：Bluxe手绘工坊 · 生图工作台">
         <span id="cfgAppNameHint" style="font-size:11px;color:var(--ink-3)">改完保存，页头标题和浏览器标签一起变；留空回到默认名。</span>
@@ -1352,6 +1498,7 @@
           <select id="cfgEditsStyle" style="padding:4px;border:1px solid #e4dff2;border-radius:6px"><option value="auto">自动</option><option value="json">JSON（号池）</option><option value="multipart">multipart（标准）</option><option value="off">关闭</option></select>
         </div>
       </div>
+      </div>
       <div class="span2" style="border-top:1px solid #f0ecfa;padding-top:10px">
         <div style="font-size:12px;color:var(--ink-3);margin-bottom:4px">生成图片保存目录</div>
         <div style="display:flex;gap:8px;align-items:center">
@@ -1379,7 +1526,7 @@
         <input type="checkbox" id="pushWxDraft" style="width:auto;margin:0">
         <span style="font-size:13px;color:var(--ink-2)" title="开关打开、且已配置网关与 Token 时，批量出图完成后自动把这批图按上方「推送模式」推送到公众号草稿箱（图文=带正文+小标题，贴图=纯图片）">自动推送公众号</span>
       </div>
-    </div>
+    </div></details>
     </div>
 
     <div id="tabPool" hidden>
@@ -1394,7 +1541,7 @@
           <button class="btn ghost mini" id="pStop" type="button" hidden>停止</button>
           <button class="btn ghost mini" id="pReload" type="button">刷新</button>
           <button class="btn primary mini" id="pUseBuiltin" type="button" hidden
-            title="把出图接口改回本机内置号池 38651，并对齐密钥、启动它。外部号池的账号与进程不受影响">↩ 切回内置池</button>
+            title="把当前接口切回本机内置号池 38651，并对齐密钥、启动它。外部号池的账号与进程不受影响">↩ 切回内置池</button>
         </div>
         <div class="prow">
           <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--ink-3);white-space:nowrap">
@@ -1447,7 +1594,14 @@
         </div>
       </div>
       <div class="pool-col pool-right">
-        <div class="psec"><b>账号</b><span class="tag" id="pAccTag"></span></div>
+        <div class="psec" style="align-items:center">
+          <b>账号</b><span class="tag" id="pAccTag"></span>
+          <span style="flex:1"></span>
+          <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--ink-3);white-space:nowrap;cursor:pointer"
+            title="自动删除「状态异常 + 额度 0 + 明确的令牌失效」三项同时命中的号；限流、停用、临时报错、代理故障一律保留。删除会进剔除名单，以后重导也不会混回来。">
+            <input id="pPurgeDead" type="checkbox" style="width:auto;margin:0"> 自动清理失效号
+          </label>
+        </div>
         <div id="pAccList" class="pacc"></div>
       </div>
     </div>
@@ -1455,8 +1609,8 @@
     <div class="cfg-foot" id="cfgFoot">
       <span id="cfgResult" style="font-size:12px;min-height:18px;line-height:1.5"></span>
       <span class="spacer"></span>
-      <button class="btn ghost" id="cfgTest" type="button">测试连接</button>
-      <button class="btn primary" id="cfgSave" type="button">保存</button>
+      <button class="btn ghost" id="cfgTest" type="button" title="测当前生效的那份号池配置；接口参数在上面的档案区改">测试当前接口</button>
+      <button class="btn primary" id="cfgSave" type="button" title="只保存图片目录与公众号推送等全局项，不碰接口配置">保存全局设置</button>
     </div>
   </div>
 </dialog>
@@ -1525,7 +1679,10 @@ const $ = s => document.querySelector(s);
 
 const state = {styles:[], layouts:[], colors:[], sel:{style:null, layout:null, color:null},
   picker:{kind:'style', group:'全部'},
-  results:[], idx:0, instrCustom:null, redo:null, selTouched:false};
+  results:[], idx:0, instrCustom:null, redo:null, selTouched:false,
+  /* 从「AI 热点选题」带过来的事件：{id, title}。生成文章时随请求发 story_id，
+     让后端把事件综述当事实依据；选题文字一改就不再匹配，自动失效。 */
+  hotStory:null};
 
 /* 气泡：默认是轻提示；出图完成走 ok（带勾，停 5 秒），失败走 err。
    页面在后台时不硬弹（反正看不见），先攒一条，切回来再补。 */
@@ -1915,8 +2072,13 @@ function wirePickerWheel(){
 
 function payload(mode, topic){
   const n = parseInt($('#genCount').value, 10);
+  const text = (topic ?? $('#topic').value).trim();
+  const hs = state.hotStory;
+  // 选题框必须还是当初那条热点标题才带资料，免得拿 A 事件的综述去写 B 选题
+  const story_id = (mode === 'text' && hs && hs.id && text === hs.title) ? hs.id : '';
   return {
-    mode, topic: (topic ?? $('#topic').value).trim(),
+    mode, topic: text,
+    story_id: story_id || undefined,
     group: state.group || $('#docTitle').value.trim() || undefined,
     style_id: state.sel.style && state.sel.style.id,
     layout_id: state.sel.layout && state.sel.layout.id,
@@ -1930,7 +2092,7 @@ function payload(mode, topic){
   };
 }
 
-// 统一的出图提交入口：把后端返回的明确错误（如「尚未配置生图号池」）原样透出，
+// 统一的生成提交入口：把后端返回的明确错误（如「尚未配置接口」）原样透出，
 // 而不是笼统的「提交失败 HTTP 400」，方便用户直接照提示操作。
 async function submitGenerate(p){
   const r = await fetch('/api/generate', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(p)});
@@ -1945,14 +2107,15 @@ async function submitGenerate(p){
 async function run(mode, statusEl){
   const p = payload(mode);
   if (!p.topic){ toast('先写一个选题'); $('#topic').focus(); return; }
-  statusEl.className = 'status run'; statusEl.textContent = '排队中…';
+  const waitTxt = (mode === 'text' && p.story_id) ? '按热点综述生成 · 排队中…' : '排队中…';
+  statusEl.className = 'status run'; statusEl.textContent = waitTxt;
   try{
     const {job_id} = await submitGenerate(p);
-    poll(job_id, statusEl, mode);
+    poll(job_id, statusEl, mode, waitTxt);
   }catch(e){ statusEl.className='status err'; statusEl.textContent = e.message; toast(e.message, 'err'); }
 }
 
-async function poll(id, statusEl, mode){
+async function poll(id, statusEl, mode, waitTxt){
   // 失败会自动换号重试（15s / 40s / 90s），四次尝试最坏接近 7 分钟，
   // 轮询预算给到 15 分钟，别把还在重试的任务当成超时
   for (let i=0;i<450;i++){
@@ -1960,14 +2123,17 @@ async function poll(id, statusEl, mode){
     let d;
     try { d = await (await fetch('/api/jobs/' + id)).json(); } catch { continue; }
     if (d.status === 'queued'){
-      statusEl.textContent = d.auto_retry ? `换号重试中（第 ${d.auto_retry}/3 次）…` : '排队中…';
+      statusEl.textContent = d.auto_retry ? `换号重试中（第 ${d.auto_retry}/3 次）…` : (waitTxt || '排队中…');
       continue;
     }
     if (d.status === 'running'){ statusEl.textContent = '生成中 · ' + (d.account || ''); continue; }
     if (d.status === 'done'){
       statusEl.className = 'status ok';
-      statusEl.textContent = '完成 · ' + (d.account || '');
-      if (mode !== 'image'){ drawText(d.result.text || ''); $('#textAccount').textContent = d.account || ''; }
+      // 只有真实账号（脱敏邮箱）才跟在「完成」后面；「文案任务 / 出图任务 /
+      // 当前接口」这类占位不算账号，别让用户误读成接口类型。
+      const who = /@/.test(d.account || '') ? d.account : '';
+      statusEl.textContent = '完成' + (who ? ' · ' + who : '');
+      if (mode !== 'image'){ drawText(d.result.text || ''); $('#textAccount').textContent = who; }
       else {
         // job id 唯一，URL 天然不会撞缓存；去掉 ?t= 时间戳，浏览器才能复用派生图
         const raw = d.image_url;
@@ -2213,7 +2379,8 @@ function composeBody(items){
     shoot_type: state.omode === 'photo' ? ($('#shootType').value || '').trim() : '',
     instruction: (state.instrCustom || '').trim(),
     allow_blank: true,
-    items: items.map(it=>({title: it.title || '', body: it.body || '', scene: it.scene || ''}))
+    items: items.map(it=>({title: it.title || '', body: it.body || '', scene: it.scene || '',
+      visual: it.visual || ''}))
   };
 }
 
@@ -2286,6 +2453,7 @@ function renderItems(){
       + '</div>'
       + '<textarea class="it-body" rows="2" placeholder="这张图要说什么：画面里的人或物、动作、细节，以及图里要出现的那句话"></textarea>'
       + '<input class="it-scene" placeholder="中层小辅助图（可选，留空则按文案自动选一件实物道具，如存钱罐/书/行李箱）">'
+      + (it.visual ? '<textarea class="it-scene it-visual" rows="2" placeholder="画面表演要点（可改，只影响画面，不排进文字）"></textarea>' : '')
       + '<div class="it-pw' + (it.prompt ? '' : ' blank') + '">'
       + '<div class="it-ph"><span>' + (cover ? '主图 ' : '卡片 ') + tag + ' · '
       + (it.prompt ? '提示词（可手改，出图就用这一版）' : '提示词（留空自动拼，写了就用你这份）')
@@ -2303,6 +2471,11 @@ function renderItems(){
     tEl.oninput = ()=>{ state.items[i].title = tEl.value; noteContentChanged(); };
     bEl.oninput = ()=>{ state.items[i].body = bEl.value; fitBody(bEl); noteContentChanged(); };
     sEl.oninput = ()=>{ state.items[i].scene = sEl.value; noteContentChanged(); };
+    const vEl = el.querySelector('.it-visual');
+    if (vEl){
+      vEl.value = it.visual || '';
+      vEl.oninput = ()=>{ state.items[i].visual = vEl.value; noteContentChanged(); };
+    }
     pEl.oninput = ()=>{ state.items[i].prompt = pEl.value; autoGrow(pEl); noteContentChanged(); };
     el.querySelector('.it-del').onclick = ()=>{
       state.items.splice(i, 1);
@@ -2798,7 +2971,7 @@ function fillDemoSample(){
   // 封面 + 三条，和「拆成分镜」拆出来的形状一致
   state.items = [{title: idea.title, body: '', scene: '', prompt: '', cover: true}]
     .concat(idea.points.map((p, i)=>({
-      title: String(i + 1).padStart(2, '0') + ' ' + p.t,
+      title: (titleNumbered() ? String(i + 1).padStart(2, '0') + ' ' : '') + p.t,
       body: p.b, scene: '', prompt: ''
     })));
   state.group = idea.title;
@@ -3169,23 +3342,530 @@ function cfgFill(d){
   const m = (d.wx_push_mode === 'newspic') ? 'newspic' : 'news';
   window.WX_PUSH_MODE = m;
   document.querySelectorAll('input[name="wxPushMode"]').forEach(r => { r.checked = (r.value === m); });
+  const pd = $('#pPurgeDead');
+  if (pd) pd.checked = d.auto_purge_dead !== false;
 }
 function cfgPayload(){
+  /* 底部「保存全局设置」只提交与号池无关的全局项。
+     接口地址 / Key / 模型 / 出图行为都由第 2 项的档案接口保存；
+     这里再带一遍，会把隐藏的旧表单值写回当前配置（两处表单互相覆盖）。 */
   return {
-    app_name: $('#cfgAppName').value.trim(),
-    base_url: $('#cfgBase').value.trim(),
     output_dir: $('#cfgOutDir').value.trim(),
-    api_key: $('#cfgKey').value.trim(),
-    model_image: $('#cfgModelImage').value.trim(),
-    model_text: $('#cfgModelText').value.trim(),
-    supports_edits: $('#cfgEdits').checked,
-    edits_style: $('#cfgEditsStyle').value,
-    image_response_format: $('#cfgFormat').value,
     wx_gateway: $('#cfgWxGateway').value.trim(),
     wx_token: $('#cfgWxToken').value.trim(),
     wx_push_mode: (document.querySelector('input[name="wxPushMode"]:checked') || {}).value || 'news',
   };
 }
+/* ---------- 配置档案页：左右分栏 + 查看 / 编辑 / 新增 / 空态 ----------
+   老的历史下拉与 saveConfig 全部保留（收在折叠区里），这里只加一套新的管理界面。 */
+const PROF = {items:[], active:null, mode:'empty', sel:null, prev:null, dirty:false, detail:null, busy:false};
+const pEsc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function pChip(kind){
+  const m = {empty:['未选中',''], view:['查看态 · 只读','view'],
+             edit:['编辑态 · 可修改','edit'], create:['新增态 · 新档案','create']};
+  const t = m[kind] || m.empty;
+  return `<span class="prof-chip ${t[1]}">${t[0]}</span>`;
+}
+function pFind(id){ return PROF.items.find(x => x.id === id) || null; }
+function pNormBase(s){
+  let b = String(s || '').trim().replace(/\/+$/,'');
+  if (!b) return '';
+  if (!/^https?:\/\//i.test(b)) b = (/^(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/i.test(b) ? 'http://' : 'https://') + b;
+  if (!/\/v\d+$/.test(b)) b += '/v1';
+  return b;
+}
+function pGuard(next){
+  if (PROF.dirty && (PROF.mode === 'edit' || PROF.mode === 'create')){
+    if (!confirm('有未保存的修改，离开后会丢失。继续吗？')) return;
+    PROF.dirty = false;
+  }
+  next();
+}
+function pRenderList(){
+  const box = $('#profList'); if (!box) return;
+  let h = PROF.items.map(p => `
+    <button class="prof-item ${PROF.sel===p.id && PROF.mode!=='create'?'on':''}" data-pid="${pEsc(p.id)}" type="button">
+      <div class="n">${pEsc(p.name)} ${p.id===PROF.active?'<em>● 当前使用中</em>':''}</div>
+      <div class="u">${pEsc(p.base_url)}</div>
+      <div class="k">Key ${pEsc(p.api_key_masked||'未设置')}${p.last_used?' · '+pEsc(profWhen(p.last_used)):''}</div>
+    </button>`).join('');
+  h += `<button class="prof-add ${PROF.mode==='create'?'on':''}" data-padd="1" type="button">＋ 新增接口</button>`;
+  box.innerHTML = h;
+  box.querySelectorAll('[data-pid]').forEach(b => b.onclick = () => pGuard(()=>{
+    PROF.sel = b.dataset.pid; PROF.mode = 'view'; PROF.dirty = false; PROF.detail = null;
+    pRenderList(); pRenderDetail();
+  }));
+  const add = box.querySelector('[data-padd]');
+  if (add) add.onclick = () => pGuard(()=>{
+    PROF.prev = PROF.sel; PROF.mode = 'create'; PROF.dirty = false; PROF.detail = null;
+    pRenderList(); pRenderDetail();
+  });
+}
+async function loadProfileList(activeId){
+  try{
+    const d = await (await fetch('/api/config/profiles', {cache:'no-store'})).json();
+    PROF.items = d.items || [];
+    PROF.active = activeId || d.active_id || null;
+    $('#profCnt').textContent = '共 ' + PROF.items.length + ' 份';
+    if (PROF.mode === 'empty' && PROF.active && pFind(PROF.active)){
+      PROF.sel = PROF.active; PROF.mode = 'view';     // 首次打开默认选中当前在用的
+    }
+    if (PROF.sel && !pFind(PROF.sel) && PROF.mode !== 'create'){
+      PROF.sel = null; PROF.mode = 'empty';
+    }
+  }catch(e){ $('#profCnt').textContent = '读取失败'; }
+  pRenderList();
+  await pRenderDetail();
+}
+function pField(label, name, val, opt){
+  opt = opt || {};
+  return `<div class="prof-f ${opt.full?'full':''}">
+    <label>${label}${opt.req?'<i> *</i>':''}</label>
+    <input data-pf="${name}" value="${pEsc(val)}" ${opt.pw?'type="password" autocomplete="off"':''} placeholder="${pEsc(opt.ph||'')}">
+    <span class="hint" data-pe="${name}">${pEsc(opt.hint||'')}</span>
+  </div>`;
+}
+function pEmptyForm(){
+  return {name:'', base_url:'', api_key:'', model_image:'gpt-image-2', model_text:'auto', pool_dir:'',
+    supports_edits:true, edits_style:'auto', image_response_format:'auto'};
+}
+/* 模型下拉：候选取自「正在编辑的这份档案」对应接口的 /v1/models，不是全局在用接口。
+   接口不通就退回常用候选，末尾固定「手动输入…」，避免上游没列出某个模型时把用户锁死。 */
+const PM_CUSTOM = '__custom__';
+const PM_FALLBACK = {image:['gpt-image-2','gpt-image-1','dall-e-3'],
+                     text:['auto','gpt-4o','gpt-4o-mini']};
+let PM_OPTS = {image:[], text:[], imageExtra:[], source:'', message:''};
+let PM_TOKEN = 0;
+/* 号池 /v1/models 会按账号能力动态追加图像模型：只有普通账号时常常只列
+   gpt-image-2 一个。把常见图像模型作为「接口未列出」候选补进下拉，但必须分组
+   标注，不能让用户在不知情的情况下选了个上游根本不认的模型名。 */
+function pmGroups(kind, cur){
+  const main = (PM_OPTS[kind] && PM_OPTS[kind].length)
+      ? PM_OPTS[kind].slice() : PM_FALLBACK[kind].slice();
+  const extra = (kind === 'image' && PM_OPTS.source === 'live')
+      ? (PM_OPTS.imageExtra || []).filter(m => !main.includes(m)) : [];
+  if (cur && !main.includes(cur) && !extra.includes(cur)) extra.unshift(cur);  // 已存的值永远可选
+  return {main, extra};
+}
+function pmSelectHtml(name, cur, kind){
+  const g = pmGroups(kind, cur);
+  const opt = m => `<option value="${pEsc(m)}" ${m===cur?'selected':''}>${pEsc(m)}</option>`;
+  let html = '<option value="">选择模型…</option>';
+  if (PM_OPTS.source === 'live'){
+    if (g.main.length) html += `<optgroup label="接口提供 · 可直接用">${g.main.map(opt).join('')}</optgroup>`;
+    if (g.extra.length) html += `<optgroup label="常用候选 · 接口未列出，需上游支持">${g.extra.map(opt).join('')}</optgroup>`;
+  } else {
+    html += `<optgroup label="常用候选 · 需上游支持">${g.main.map(opt).join('')}</optgroup>`;
+  }
+  return html + `<option value="${PM_CUSTOM}">手动输入…</option>`;
+}
+function pModelField(label, name, val, kind, hint){
+  const cur = String(val || (kind === 'image' ? 'gpt-image-2' : 'auto'));
+  return `<div class="prof-f"><label>${label}</label>
+    <select data-pm="${name}">${pmSelectHtml(name, cur, kind)}</select>
+    <input data-pfi="${name}" value="${pEsc(cur)}" hidden placeholder="输入模型名">
+    <span class="hint" data-pe="${name}">${pEsc(hint)}</span></div>`;
+}
+function pBindModels(){
+  const box = $('#profDetail'); if (!box) return;
+  box.querySelectorAll('select[data-pm]').forEach(s => {
+    s.onchange = ()=>{
+      PROF.dirty = true;
+      const f = s.closest('.prof-f'), inp = f && f.querySelector('input[data-pfi]');
+      if (!inp) return;
+      const custom = s.value === PM_CUSTOM;
+      inp.hidden = !custom;
+      if (custom){ inp.value = ''; inp.focus(); }
+    };
+  });
+  box.querySelectorAll('input[data-pfi]').forEach(i => { i.oninput = ()=>{ PROF.dirty = true; }; });
+}
+function pApplyModelOptions(){
+  const box = $('#profDetail'); if (!box) return;
+  ['model_image','model_text'].forEach(n => {
+    const s = box.querySelector(`select[data-pm="${n}"]`); if (!s) return;
+    const kind = n === 'model_image' ? 'image' : 'text';
+    // 重拉候选会重建整个 select；正在「手动输入」的值和状态必须原样带回来，
+    // 否则用户填了一半模型名、改了下地址失焦，输入就没了。
+    const wasCustom = s.value === PM_CUSTOM;
+    const f = s.closest('.prof-f'), inp = f && f.querySelector('input[data-pfi]');
+    const typed = wasCustom && inp ? inp.value : '';
+    const cur = (!wasCustom && s.value) ? s.value : (kind === 'image' ? 'gpt-image-2' : 'auto');
+    const g = pmGroups(kind, cur);
+    s.innerHTML = pmSelectHtml(n, cur, kind);
+    s.value = wasCustom ? PM_CUSTOM : (g.main.concat(g.extra).includes(cur) ? cur : '');
+    if (wasCustom && inp){ inp.hidden = false; inp.value = typed; }
+  });
+  const ih = box.querySelector('[data-pe="model_image"]');
+  if (ih) ih.textContent = PM_OPTS.source === 'live'
+    ? `接口列出 ${PM_OPTS.image.length} 个出图模型 · 另附常用候选`
+    : '接口未返回模型 · 显示常用候选';
+  const note = box.querySelector('#pmNote');
+  if (note){
+    const src = PM_OPTS.source === 'live'
+      ? '模型取自接口 · ' + (PM_OPTS.message || '已读取')
+      : (PM_OPTS.message || '接口未返回模型，显示常用候选');
+    note.textContent = src + ' · ' + (PROF.mode === 'create' ? '保存后可在左侧选用' : '保存只更新这份档案');
+  }
+}
+async function pLoadModels(){
+  const token = ++PM_TOKEN;
+  const box = $('#profDetail'); if (!box || !box.querySelector('select[data-pm]')) return;
+  const note = box.querySelector('#pmNote');
+  if (note) note.textContent = '正在读取接口模型…';
+  try{
+    const resp = await fetch('/api/config/models', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({profile_id: PROF.mode === 'create' ? '' : (PROF.sel || ''),
+                           base_url: pVal('base_url'), api_key: pVal('api_key')})});
+    const d = await resp.json();
+    if (token !== PM_TOKEN) return;
+    PM_OPTS = {image:d.image || [], text:d.text || [], imageExtra:d.image_extra || [],
+               source:d.source || '', message:d.message || ''};
+  }catch(e){
+    if (token !== PM_TOKEN) return;
+    PM_OPTS = {image:[], text:[], imageExtra:[], source:'', message:'读取失败，显示常用候选'};
+  }
+  pApplyModelOptions();
+}
+/* 出图行为三项原来只藏在「其他设置」里，档案表单没有对应控件，
+   pBody() 曾硬编码 true/auto/auto —— 编辑一次档案就把用户设置重置了。
+   现在归到档案编辑态，和接口地址、模型一起由第 2 项唯一管理。 */
+function pSelect(label, name, val, opts, hint){
+  const o = opts.map(([v,t]) => `<option value="${v}" ${String(val)===v?'selected':''}>${t}</option>`).join('');
+  return `<div class="prof-f"><label>${label}</label>
+    <select data-pf="${name}">${o}</select>
+    <span class="hint" data-pe="${name}">${hint||''}</span></div>`;
+}
+function pForm(d, isCreate){
+  const se = (d.supports_edits === false || d.supports_edits === '0' || d.supports_edits === 'false') ? '0' : '1';
+  return `<div class="prof-grid">
+    ${pField('名称 / 标识','name',d.name,{req:true,hint:'1–40 字，不可重名'})}
+    ${pField('接口地址 Base URL','base_url',d.base_url,{req:true,ph:'http://127.0.0.1:38651/v1',hint:'漏写 /v1 会自动补全'})}
+    ${pField('API Key','api_key','',{req:true,pw:true,hint:isCreate?'新增必填':'留空沿用已保存密钥'})}
+    ${pModelField('出图模型','model_image',d.model_image||'gpt-image-2','image','正在读取接口模型…')}
+    ${pModelField('文案模型','model_text',d.model_text||'auto','text','auto = 由号池挑号')}
+    ${pField('号池数据目录（选填）','pool_dir',d.pool_dir||'',{hint:'需为已存在的目录'})}
+    ${pSelect('支持参考图','supports_edits',se,[['1','支持（/v1/images/edits）'],['0','不支持']],'关掉后只用文生图')}
+    ${pSelect('返回格式','image_response_format',d.image_response_format||'auto',
+      [['auto','自动'],['b64_json','b64_json'],['url','url']],'')}
+    ${pSelect('参考图方式','edits_style',d.edits_style||'auto',
+      [['auto','自动'],['json','JSON（号池）'],['multipart','multipart（标准）'],['off','关闭']],'号池用 JSON，标准接口用 multipart')}
+  </div>`;
+}
+function pVal(n){
+  const box = $('#profDetail'); if (!box) return '';
+  const s = box.querySelector(`select[data-pm="${n}"]`);
+  if (s){
+    if (s.value !== PM_CUSTOM) return String(s.value || '').trim();
+    const i = box.querySelector(`input[data-pfi="${n}"]`);
+    return i ? String(i.value).trim() : '';
+  }
+  const e = box.querySelector(`[data-pf="${n}"]`);
+  return e ? String(e.value).trim() : '';
+}
+function pErr(n, msg){
+  const e = $('#profDetail').querySelector(`[data-pe="${n}"]`);
+  if (e){ e.textContent = msg || ''; e.className = 'hint' + (msg ? ' bad' : ''); }
+}
+function pBindForm(){
+  $('#profDetail').querySelectorAll('[data-pf]').forEach(i => {
+    i.oninput = ()=>{ PROF.dirty = true; };
+    i.onchange = ()=>{ PROF.dirty = true; };   // select 也要算「改过」，否则未保存离开不拦截
+  });
+  pBindModels();
+}
+function pDense(on){
+  const s = document.querySelector('.prof-split');
+  if (s) s.classList.toggle('dense', !!on);
+}
+function pFoot(label){
+  return `<div class="prof-foot"><span class="note" id="pmNote">正在读取接口模型…</span>
+    <button class="pmodel-reload" id="pmReload" type="button">↻ 重新读取</button><span class="sp"></span>
+    <button class="btn ghost mini" id="pCancel" type="button">取消</button>
+    <button class="btn primary mini" id="pSave" type="button">${label}</button></div>`;
+}
+function pAfterForm(isCreate){
+  pBindForm();
+  $('#pCancel').onclick = pCancel;
+  $('#pSave').onclick = ()=>pSave(isCreate);
+  $('#pmReload').onclick = ()=>pLoadModels();
+  // 新增态常是「先粘地址再填 Key」，失焦就重拉一次，省得还要手动点重新读取
+  ['base_url','api_key'].forEach(n => {
+    const e = $('#profDetail').querySelector(`[data-pf="${n}"]`);
+    if (e) e.addEventListener('change', ()=>pLoadModels());
+  });
+  pLoadModels();
+}
+async function pRenderDetail(){
+  const box = $('#profDetail'); if (!box) return;
+  const dense = PROF.mode === 'create' || PROF.mode === 'edit';
+  pDense(dense);
+  PM_TOKEN++;                       // 切态时作废旧请求，别把上一份档案的模型塞进新表单
+  if (dense) PM_OPTS = {image:[], text:[], imageExtra:[], source:'', message:''};
+  if (PROF.mode === 'create'){
+    box.innerHTML = `<div class="prof-state"><h4>新增接口</h4>${pChip('create')}</div>`
+      + pForm(pEmptyForm(), true) + pFoot('保存新增');
+    pAfterForm(true);
+    return;
+  }
+  if (PROF.mode === 'edit'){
+    const d = PROF.detail || pEmptyForm();
+    box.innerHTML = `<div class="prof-state"><h4>${pEsc(d.name)}</h4>${pChip('edit')}</div>`
+      + pForm(d, false) + pFoot('保存');
+    pAfterForm(false);
+    return;
+  }
+  if (!PROF.sel){
+    box.innerHTML = `<div class="prof-state"><h4>号池详情</h4>${pChip('empty')}</div>
+      <div class="prof-empty"><h4>还没有选中号池</h4>
+      <p>从左侧挑一份用过的接口查看和编辑，或点列表末尾的「＋ 新增接口」录一份新的。未选中时不提供保存。</p>
+      <div style="display:flex;gap:7px"><button class="btn primary mini" id="pPick" type="button">选第一个号池</button>
+      <button class="btn ghost mini" id="pGoAdd" type="button">＋ 新增接口</button></div></div>`;
+    const pk = $('#pPick');
+    if (pk) pk.onclick = ()=>{ if (PROF.items.length){ PROF.sel = PROF.items[0].id; PROF.mode='view'; PROF.detail=null; pRenderList(); pRenderDetail(); } };
+    const ga = $('#pGoAdd');
+    if (ga) ga.onclick = ()=>{ PROF.prev=PROF.sel; PROF.mode='create'; PROF.dirty=false; pRenderList(); pRenderDetail(); };
+    return;
+  }
+  box.innerHTML = `<div class="prof-state"><h4>读取中…</h4>${pChip('view')}</div>`;
+  const wanted = PROF.sel;
+  try{
+    const resp = await fetch('/api/config/profiles/' + encodeURIComponent(wanted), {cache:'no-store'});
+    const d = await resp.json();
+    if (!resp.ok) throw new Error(d.detail || ('HTTP ' + resp.status));
+    if (PROF.sel !== wanted || PROF.mode !== 'view') return;   // 等待期间用户已经切走
+    PROF.detail = d;
+    const row = (k,v)=>`<div class="r"><b>${k}</b><span>${pEsc(v || '—')}</span></div>`;
+    box.innerHTML = `<div class="prof-state"><h4>${pEsc(d.name)}</h4>${pChip('view')}</div>
+      <div class="prof-ro">
+        ${row('接口地址', d.base_url)}
+        ${row('API Key', d.api_key_masked || '未设置')}
+        ${row('出图 / 文案模型', (d.model_image||'—') + ' / ' + (d.model_text||'—'))}
+        ${row('号池数据目录', d.pool_dir)}
+        ${row('参考图 / 返回格式', (d.supports_edits?'支持':'不支持') + ' / ' + (d.image_response_format||'auto'))}
+        ${row('参考图方式', d.edits_style||'auto')}
+        ${row('最近使用', d.last_used ? profWhen(d.last_used) : '—')}
+      </div>
+      <div class="prof-foot">
+        <button class="btn primary mini" id="pEdit" type="button">编辑</button>
+        <button class="btn ghost mini" id="pSwitch" type="button" ${d.active?'disabled':''}>${d.active?'当前使用中':'切换为当前'}</button>
+        <span class="sp"></span>
+        <button class="btn ghost mini" id="pDel" type="button" ${d.active?'disabled':''}>删除这份</button>
+      </div>`;
+    $('#pEdit').onclick = ()=>{ PROF.mode='edit'; PROF.dirty=false; pRenderDetail(); };
+    $('#pSwitch').onclick = pSwitch;
+    $('#pDel').onclick = pDel;
+  }catch(e){
+    box.innerHTML = `<div class="prof-state"><h4>读取失败</h4>${pChip('empty')}</div>
+      <div class="prof-empty"><p>${pEsc(e.message)}</p><button class="btn ghost mini" id="pRetry" type="button">重试</button></div>`;
+    const r = $('#pRetry'); if (r) r.onclick = ()=>pRenderDetail();
+  }
+}
+function pCancel(){
+  pGuard(()=>{
+    if (PROF.mode === 'create'){ PROF.sel = PROF.prev || null; PROF.mode = PROF.sel ? 'view' : 'empty'; }
+    else PROF.mode = 'view';
+    PROF.dirty = false; PROF.detail = null;
+    pRenderList(); pRenderDetail();
+  });
+}
+function pValidate(isCreate){
+  ['name','base_url','api_key'].forEach(n => pErr(n, ''));
+  let bad = 0;
+  const name = pVal('name'), b0 = pVal('base_url'), key = pVal('api_key');
+  if (!name){ pErr('name','请填名称（用于列表展示）'); bad++; }
+  else if (name.length > 40){ pErr('name','最多 40 字'); bad++; }
+  else if (PROF.items.some(p => p.name === name && (isCreate || p.id !== PROF.sel))){ pErr('name','已有同名号池'); bad++; }
+  if (!b0){ pErr('base_url','请填接口地址'); bad++; }
+  else if (!/^https?:\/\/\S+$/i.test(b0)){ pErr('base_url','需以 http:// 或 https:// 开头'); bad++; }
+  else {
+    const b = pNormBase(b0);
+    const dup = PROF.items.find(p => pNormBase(p.base_url) === b && (isCreate || p.id !== PROF.sel));
+    if (dup){ pErr('base_url','该地址已有档案：' + dup.name + '，请直接编辑它'); bad++; }
+  }
+  if (isCreate && !key){ pErr('api_key','新增接口必须填 API Key'); bad++; }
+  return bad;
+}
+function pBody(){
+  const se = pVal('supports_edits');
+  return {name:pVal('name'), base_url:pVal('base_url'), api_key:pVal('api_key'),
+    model_image:pVal('model_image')||'gpt-image-2', model_text:pVal('model_text')||'auto',
+    pool_dir:pVal('pool_dir'),
+    supports_edits: se !== '0',
+    edits_style: pVal('edits_style')||'auto',
+    image_response_format: pVal('image_response_format')||'auto'};
+}
+async function pSave(isCreate){
+  const n = pValidate(isCreate);
+  if (n){
+    toast('有 ' + n + ' 项需要修改', 'err');
+    const f = $('#profDetail').querySelector('.hint.bad');
+    if (f){ const i = f.parentElement.querySelector('input'); if (i) i.focus(); }
+    return;
+  }
+  if (PROF.busy) return;
+  PROF.busy = true;
+  const savedName = pVal('name');
+  const btn = $('#pSave'), old = btn ? btn.textContent : '';
+  if (btn){ btn.disabled = true; btn.textContent = '保存中…'; }
+  try{
+    const url = isCreate ? '/api/config/profiles' : '/api/config/profiles/' + encodeURIComponent(PROF.sel);
+    const resp = await fetch(url, {method:isCreate?'POST':'PATCH',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify(pBody())});
+    const d = await resp.json();
+    if (!resp.ok) throw new Error(d.detail || ('HTTP ' + resp.status));
+    PROF.dirty = false;
+    PROF.sel = isCreate ? d.created_id : d.id;
+    PROF.mode = 'view'; PROF.detail = null;
+    PROF.active = d.active_id || PROF.active;
+    PROF.items = d.items || PROF.items;
+    $('#profCnt').textContent = '共 ' + PROF.items.length + ' 份';
+    if (d.config) cfgFill(d.config);
+    pRenderList(); await pRenderDetail();
+    toast(isCreate ? ('已新增并可选用：' + savedName) : '已保存这份号池配置');
+  }catch(e){
+    toast('保存失败：' + e.message + '，改动仍留在表单里', 'err');
+    if (/已有档案/.test(e.message)) pErr('base_url', e.message);
+    else if (/同名/.test(e.message)) pErr('name', e.message);
+  }finally{
+    PROF.busy = false;
+    const b2 = $('#pSave'); if (b2){ b2.disabled = false; b2.textContent = old || '保存'; }
+  }
+}
+async function pSwitch(){
+  const id = PROF.sel; if (!id) return;
+  try{
+    const resp = await fetch('/api/config/profiles/switch', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({id})});
+    const d = await resp.json();
+    if (!resp.ok) throw new Error(d.detail || ('HTTP ' + resp.status));
+    cfgFill(d); PROF.active = d.active_profile_id;
+    await loadProfileList(d.active_profile_id);
+    await loadPoolPanel(true); refreshPool();
+    toast('已切到 ' + d.base_url);
+  }catch(e){ toast('切换失败：' + e.message, 'err'); }
+}
+async function pDel(){
+  const p = pFind(PROF.sel); if (!p) return;
+  if (p.id === PROF.active){ toast('正在用的这份不能删，先切到别的号池', 'err'); return; }
+  if (!confirm(`从历史里删除「${p.name}」（${p.base_url}）？\n\n只删这份记录，不动号池里的账号，也不停服务。`)) return;
+  try{
+    const resp = await fetch('/api/config/profiles/delete', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({id:p.id})});
+    const d = await resp.json();
+    if (!resp.ok) throw new Error(d.detail || ('HTTP ' + resp.status));
+    PROF.items = d.items || [];
+    if (PROF.sel === p.id){ PROF.sel = null; PROF.mode = 'empty'; PROF.detail = null; }
+    pRenderList(); await pRenderDetail();
+    toast('已删除这份接口记录');
+  }catch(e){ toast('删除失败：' + e.message, 'err'); }
+}
+$('#cfgRenameBtn').onclick = async ()=>{
+  const v = $('#cfgRenameInput').value.trim();
+  if (v.length > 40){ $('#cfgRenameHint').textContent = '最多 40 字'; toast('名称最多 40 字', 'err'); return; }
+  try{
+    const resp = await fetch('/api/config', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:JSON.stringify({app_name:v})});
+    const d = await resp.json();
+    if (!resp.ok) throw new Error(d.detail || ('HTTP ' + resp.status));
+    $('#cfgAppName').value = d.app_name || '';
+    $('#cfgRenameInput').value = d.app_name || '';
+    applyAppName(d.app_name);
+    $('#cfgRenameHint').textContent = v ? '已保存，页头标题与浏览器标签已同步。' : '已恢复默认名。';
+    toast(v ? '工作台名称已保存' : '已恢复默认工作台名称');
+  }catch(e){ toast('重命名失败：' + e.message, 'err'); }
+};
+
+/* ---------- 接口配置历史：用过的号池整套记下来，下拉一键切回来 ---------- */
+let profilesCache = [];
+function profWhen(ts){
+  if (!ts) return '';
+  try{
+    const d = new Date(ts * 1000);
+    const z = n => String(n).padStart(2, '0');
+    return `${z(d.getMonth()+1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`;
+  }catch(e){ return ''; }
+}
+async function loadProfiles(activeId){
+  const hint = $('#cfgProfHint'), sel = $('#cfgProfile'), del = $('#cfgProfDel');
+  try{
+    const d = await (await fetch('/api/config/profiles', {cache:'no-store'})).json();
+    profilesCache = d.items || [];
+    sel.textContent = '';
+    sel.disabled = !profilesCache.length;
+    if (!profilesCache.length){
+      const o = document.createElement('option');
+      o.value = ''; o.textContent = '还没有历史记录'; sel.appendChild(o);
+      hint.textContent = ''; del.disabled = true;
+      return;
+    }
+    profilesCache.forEach(p=>{
+      const o = document.createElement('option'); o.value = p.id;
+      const bits = [p.name, p.base_url];
+      if (p.api_key_masked) bits.push('Key ' + p.api_key_masked);
+      const w = profWhen(p.last_used); if (w) bits.push(w);
+      o.textContent = bits.join(' · ');
+      sel.appendChild(o);
+    });
+    const want = activeId || d.active_id || profilesCache[0].id;
+    sel.value = profilesCache.some(p => p.id === want) ? want : profilesCache[0].id;
+    const cur = profilesCache.find(p => p.id === sel.value);
+    hint.textContent = `共 ${profilesCache.length} 份`;
+    del.disabled = !cur || cur.id === d.active_id;
+  }catch(e){ hint.textContent = '读取历史失败：' + e.message; }
+}
+$('#cfgProfile').onchange = async ()=>{
+  const id = $('#cfgProfile').value;
+  if (!id) return;
+  const sel = $('#cfgProfile'), r = $('#cfgResult');
+  sel.disabled = true; r.style.color = 'var(--ink-3)'; r.textContent = '切换接口中…';
+  try{
+    const resp = await fetch('/api/config/profiles/switch', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({id})});
+    const d = await resp.json();
+    if (!resp.ok) throw new Error(d.detail || ('HTTP ' + resp.status));
+    cfgFill(d);
+    r.style.color = '#1f9d6b';
+    r.textContent = '已切换：' + d.base_url + '（' + (d.mode === 'pool' ? '号池模式' : '通用接口') + '）';
+    await loadProfiles(d.active_profile_id);
+    await loadProfileList(d.active_profile_id);
+    await loadPoolPanel(true);
+    refreshPool();
+    toast('已切到 ' + d.base_url);
+  }catch(e){
+    r.style.color = '#d4380d'; r.textContent = '切换失败：' + e.message;
+    toast('切换失败：' + e.message, 'err');
+  }finally{ sel.disabled = false; }
+};
+$('#cfgProfDel').onclick = async ()=>{
+  const id = $('#cfgProfile').value;
+  const cur = profilesCache.find(p => p.id === id);
+  if (!id || !cur) return;
+  if (!confirm(`从历史里删除「${cur.name}」（${cur.base_url}）？\n\n只删这份记录，不动号池里的账号，也不停服务。`)) return;
+  try{
+    const resp = await fetch('/api/config/profiles/delete', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({id})});
+    const d = await resp.json();
+    if (!resp.ok) throw new Error(d.detail || ('HTTP ' + resp.status));
+    await loadProfiles();
+    toast('已删除这份接口记录');
+  }catch(e){ toast('删除失败：' + e.message, 'err'); }
+};
+$('#pPurgeDead').onchange = async ()=>{
+  const on = $('#pPurgeDead').checked;
+  try{
+    const resp = await fetch('/api/config', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({auto_purge_dead: on})});
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    toast(on ? '已开启自动清理失效号' : '已关闭自动清理失效号');
+    await loadPoolPanel(true);
+  }catch(e){
+    $('#pPurgeDead').checked = !on;
+    toast('设置失败：' + e.message, 'err');
+  }
+};
+
 async function openConfig(){
   $('#configDlg').showModal();
   $('#cfgResult').textContent = '';
@@ -3193,13 +3873,17 @@ async function openConfig(){
   try{
     const d = await (await fetch('/api/config')).json();
     cfgFill(d);
+    $('#cfgRenameInput').value = d.app_name || '';
+    loadProfiles(d.active_profile_id);
+    loadProfileList(d.active_profile_id);
   }catch(e){ $('#cfgResult').textContent = '读取配置失败：' + e.message; }
   loadPoolPanel(true);          // 顺手把「本地号池」页签上的可用数填上，不用点进去等
 }
 async function testConn(){
-  const r = $('#cfgResult'); r.style.color = 'var(--ink-3)'; r.textContent = '测试中…';
+  const r = $('#cfgResult'); r.style.color = 'var(--ink-3)'; r.textContent = '正在测试当前接口…';
   try{
-    const d = await (await fetch('/api/config/test', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(cfgPayload())})).json();
+    // 空 body = 测当前生效的那份号池配置。接口参数已不在折叠区，不再依赖隐藏表单的值。
+    const d = await (await fetch('/api/config/test', {method:'POST', headers:{'Content-Type':'application/json'}, body: '{}'})).json();
     r.style.color = d.ok ? '#1f9d6b' : '#d4380d';
     r.textContent = (d.ok ? '✓ ' : '✗ ') + d.message
       + (d.models && d.models.length ? '（例：' + d.models.slice(0,3).join('、') + '…）' : '');
@@ -3207,9 +3891,7 @@ async function testConn(){
 }
 async function saveConfig(){
   const r = $('#cfgResult'); r.style.color = 'var(--ink-3)'; r.textContent = '保存中…';
-  // 名字先换上去：保存要顺带重探号池，慢的时候别让人对着旧标题等
-  const wantName = $('#cfgAppName').value.trim();
-  applyAppName(wantName);
+  // 工作台名称由第 1 项独立重命名，这里不碰标题，也不提交 app_name。
   try{
     const resp = await fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(cfgPayload())});
     const d = await resp.json();
@@ -3217,8 +3899,11 @@ async function saveConfig(){
     cfgFill(d);
     applyAppName(d.app_name);
     r.style.color = '#1f9d6b';
-    r.textContent = '已保存：' + d.app_name + ' · ' + (d.mode === 'pool' ? '号池模式' : '通用接口模式') + ' · ' + d.base_url;
-    toast('设置已保存');
+    r.textContent = '全局设置已保存' + (d.output_dir ? (' · 图片目录：' + d.output_dir) : ' · 图片目录：默认');
+    toast('全局设置已保存');
+    $('#cfgRenameInput').value = d.app_name || '';
+    loadProfiles(d.active_profile_id);   // 手填了新地址也要立刻出现在历史里
+    loadProfileList(d.active_profile_id);
     refreshPool();
   }catch(e){
     r.style.color = '#d4380d'; r.textContent = '保存失败：' + e.message;
@@ -3331,6 +4016,7 @@ function renderPool(d){
   $('#pImportBtn').disabled = !d.local || !d.online;
   $('#pKeyNew').disabled = !d.local || !d.online;
   $('#pApply').disabled = !d.api_key;
+  if (d.purged) toast(`已自动清理 ${d.purged} 个失效号`, 'ok');
 }
 
 async function loadPoolPanel(quiet){
@@ -3385,7 +4071,7 @@ $('#pReload').onclick = ()=> loadPoolPanel();
 
 $('#pUseBuiltin').onclick = async ()=>{
   const btn = $('#pUseBuiltin');
-  if (!confirm('把出图接口切回本机内置号池（38651）？\n\n会同时对好该号池的 Key 并启动它；当前外部号池（如 38650）的账号与进程不受影响。')) return;
+  if (!confirm('把当前接口切回本机内置号池（38651）？\n\n会同时对好该号池的 Key 并启动它；当前外部号池（如 38650）的账号与进程不受影响。')) return;
   const old = btn.textContent;
   btn.disabled = true; btn.textContent = '切换中…';
   try{
@@ -3691,6 +4377,8 @@ $('#pApply').onclick = async ()=>{
     cfgFill(d); applyAppName(d.app_name);
     hint.textContent = '已切到这个号池';
     toast('已切到本地号池出图', 'ok');
+    loadProfiles(d.active_profile_id);
+    loadProfileList(d.active_profile_id);
     refreshPool();
   }catch(e){ hint.textContent = ''; toast('切换失败：' + e.message, 'err'); }
   finally{ btn.disabled = false; }
@@ -3786,7 +4474,9 @@ document.addEventListener('dblclick', e=>{
   if (e.target.closest('#cover img')) openViewer();
 });
 $('#copyText').onclick = async ()=>{
-  const t = ($('#docTitle').value.trim() + '\n\n' + $('#docBody').value.trim()).trim();
+  const isNovel = typeof currentDocTab === 'function' && currentDocTab() === 'novel';
+  const t = ($('#docTitle').value.trim() + '\n\n'
+    + (isNovel ? $('#novelBody').value.trim() : $('#docBody').value.trim())).trim();
   if (!t){ toast('还没有可复制的内容'); return; }
   try { await navigator.clipboard.writeText(t); toast('已复制'); } catch { toast('复制失败，请手动选择'); }
 };
@@ -3927,6 +4617,11 @@ wirePickerWheel();
 
 
 /* ================= 左侧：标题 + 正文 → 分镜清单 ================= */
+/* 分镜标题编号开关：默认勾选；节点缺失时也按勾选处理，保证异常时行为不倒退 */
+function titleNumbered(){
+  const el = $('#titleNumbered');
+  return el ? !!el.checked : true;
+}
 function esc(v){
   return String(v == null ? '' : v).replace(/[&<>"']/g, c =>
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -3976,8 +4671,10 @@ function splitNumberedBlocks(body){
   return out.filter(x => x.title || x.body);
 }
 
-/* 正文 → 卡片：优先按编号块断，其次按空行断，最后兜底整段一张 */
-function splitDoc(title, body){
+/* 正文 → 卡片：优先按编号块断，其次按空行断，最后兜底整段一张。
+   withNo=false 时标题不带 01 02 前缀（编号改由卡片左侧的 .it-no 徽章显示），
+   这样编号也不会被写进画面上的主标题文字。默认 true 保持原有行为。 */
+function splitDoc(title, body, withNo = true){
   const firstLine = (String(body || '').split('\n').find(l => l.trim()) || '').trim();
   const hasNum = /^[*＊【\[(（]*\s*\d{1,2}\s*[｜|、,，.．:：)）]/.test(firstLine);
   let items = [];
@@ -3999,7 +4696,7 @@ function splitDoc(title, body){
     .map(x => ({title: bareTitle(x.title), body: (x.body || '').trim()}))
     .filter(x => x.title || x.body)
     .map((x, i) => ({
-      title: String(i + 1).padStart(2, '0') + ' ' + (x.title || autoTitle(x.body)),
+      title: (withNo ? String(i + 1).padStart(2, '0') + ' ' : '') + (x.title || autoTitle(x.body)),
       body: x.body, scene: '', prompt: ''
     }));
 }
@@ -4021,7 +4718,7 @@ async function splitToItems(){
     toast('已按出图指令生成提示词');
     return;
   }
-  const items = splitDoc(title, body);
+  const items = splitDoc(title, body, titleNumbered());
   if (!items.length){ toast('没拆出内容'); return; }
   // 封面也拆进清单：标题做主视觉大图，编号固定 00 排最前（标记在 cover 上，标题不带 00），不要时可以点 × 删掉
   items.unshift({title: bareTitle(title) || autoTitle(body), body: '', scene: '', prompt: '', cover: true});
@@ -4828,20 +5525,145 @@ function closeMonitor(){
   $('#monitorDlg').close();
 }
 
-$('#splitToItems').onclick = splitToItems;
+/* ---------- 文案 / 小说 页签：小说走独立拆分链路，老 splitToItems 一个字不动 ---------- */
+const DOC_TAB_KEY = 'wb_doc_tab';
+function currentDocTab(){
+  const on = document.querySelector('.doc-tabs button.on');
+  return on ? on.dataset.tab : 'doc';
+}
+function updateNovelCount(){
+  const el = $('#novelBody'), cnt = $('#novelCount'), foot = $('#novelFoot');
+  if (!el || !cnt) return {n:0, ok:false};
+  const n = el.value.trim().length;
+  const ok = n >= 4 && n <= 8000;
+  cnt.textContent = n + ' 字 / 4-8000 字'
+    + (n > 8000 ? '（超出 ' + (n - 8000) + ' 字）' : (n && n < 4 ? '（至少 4 字）' : ''));
+  if (foot) foot.classList.toggle('bad', n > 8000);
+  return {n, ok};
+}
+function setDocTab(tab, silent){
+  const isNovel = tab === 'novel';
+  document.querySelectorAll('.doc-tabs button').forEach(b=>{
+    const on = b.dataset.tab === tab;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  $('#docPane').hidden = isNovel;
+  $('#novelPane').hidden = !isNovel;
+  $('#docPaneLabel').textContent = isNovel ? '小说原文' : '正文';
+  const polish = $('#polishText');
+  if (polish){
+    polish.disabled = isNovel;
+    polish.title = isNovel ? '小说不润色，直接点「拆成分镜」按原文拆' : '';
+  }
+  try { localStorage.setItem(DOC_TAB_KEY, tab); } catch(e){}
+  updateNovelCount();
+  if (!silent){
+    const st = $('#splitStatus');
+    if (st && state.items && state.items.length){
+      st.className = 'status';
+      st.textContent = isNovel ? '小说模式：点「拆成分镜」会通读全文后按原文拆成最小单元' : '文案模式：沿用原有拆分方式';
+    }
+    // 切页签只是换视图，不算改内容：只把页签与小说原文写进本地会话，
+    // 不排自动暂存，免得点一下小说就把文案正文往草稿箱存一次。
+    saveSession();
+  }
+}
+document.querySelectorAll('.doc-tabs button').forEach(b=>{
+  b.addEventListener('click', ()=> setDocTab(b.dataset.tab));
+});
+$('#novelBody').addEventListener('input', updateNovelCount);
+try { if (localStorage.getItem(DOC_TAB_KEY) === 'novel') setDocTab('novel', true); } catch(e){}
+updateNovelCount();
+
+/* 小说 → 分镜：正文由后端按句编号从原文逐字截取，前端只管编号、封面与提示词拼装 */
+async function splitNovelToItems(){
+  const text = $('#novelBody').value.trim();
+  const {n, ok} = updateNovelCount();
+  if (!ok){
+    toast(n < 4 ? '小说太短，至少 4 个字' : '小说超过 8000 字，请先删减');
+    $('#novelBody').focus();
+    return;
+  }
+  const btn = $('#splitToItems'), st = $('#splitStatus');
+  if (btn.disabled) return;
+  const title = $('#docTitle').value.trim();
+  btn.disabled = true;
+  st.className = 'status run';
+  const wait = n > 4000 ? '长文，可能需要 1 到 2 分钟，别关页面' : (n > 1000 ? '大约需要 1 分钟' : '可能需要十几秒');
+  st.textContent = '正在通读全文并拆分镜（' + n + ' 字，' + wait + '）…';
+  try{
+    const r = await fetch('/api/novel/split', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({text, title})});
+    let d = null;
+    try { d = await r.json(); } catch(_){}
+    if (!r.ok || !d || !d.ok) throw new Error((d && d.error) || ('HTTP ' + r.status));
+    const pages = d.pages || [];
+    if (!pages.length) throw new Error('没有拆出分镜');
+    const numbered = titleNumbered();
+    const items = pages.map((p, i)=>({
+      title: (numbered ? String(i + 1).padStart(2, '0') + ' ' : '') + String(p.title || '').trim(),
+      body: String(p.body || ''), scene: '', prompt: '', visual: String(p.visual || '')
+    }));
+    items.unshift({title: bareTitle(title) || autoTitle(text), body: '', scene: '', prompt: '', cover: true});
+    const dirty = state.items.some(x=> (x.title || '').trim() || (x.body || '').trim());
+    if (dirty && !confirm('小说会重新拆成 ' + items.length + ' 张卡片，当前清单（含已改过的提示词）会被替换，继续？')) return;
+    state.items = items;
+    state.group = title;
+    $('#groupTag').textContent = title ? '整组主题：' + title : '';
+    renderItems();
+    st.textContent = '已按原文拆 ' + items.length + ' 张，正在拼提示词…';
+    await composeAll();
+    st.className = 'status ok';
+    st.textContent = '已按原文拆 ' + items.length + ' 张'
+      + (d.degraded ? '（AI 拆分未成功，已按原文段落保守拆分）' : '') + ' · 提示词已生成';
+    if (d.degraded){
+      toast('AI 拆分未成功：' + (d.error || '未知原因') + '。已按原文保守拆分，可重试',
+            {type:'err', title:'保守拆分', ms:6500});
+    } else {
+      toast('已按原文拆成 ' + items.length + ' 张卡片', {type:'ok', title:'拆分完成'});
+    }
+  }catch(e){
+    st.className = 'status err';
+    st.textContent = '拆分失败：' + e.message;
+    toast('拆分失败：' + e.message, {type:'err', title:'拆分失败'});
+  }finally{
+    btn.disabled = false;
+  }
+}
+$('#splitToItems').onclick = ()=> currentDocTab() === 'novel' ? splitNovelToItems() : splitToItems();
+/* 标题编号开关：记住偏好；切换时只给提示，不自动重拆，避免覆盖已手改的提示词 */
+(function initTitleNumbered(){
+  const el = $('#titleNumbered');
+  if (!el) return;
+  try {
+    const saved = localStorage.getItem('wb_title_numbered');
+    if (saved === '0' || saved === '1') el.checked = saved === '1';
+  } catch(e){}
+  el.addEventListener('change', ()=>{
+    try { localStorage.setItem('wb_title_numbered', el.checked ? '1' : '0'); } catch(e){}
+    const st = $('#splitStatus');
+    if (st && state.items && state.items.length){
+      st.className = 'status';
+      st.textContent = (el.checked ? '已开启' : '已关闭') + '标题编号，下次点「拆成分镜」生效';
+    }
+  });
+})();
 /* ---------- 一键清空：回到刚打开页面时的状态 ---------- */
 async function resetAll(){
   const touched = state.items.some(x=> (x.title || '').trim() || (x.body || '').trim())
-    || ['#topic', '#docTitle', '#docBody', '#note'].some(id=> ($(id).value || '').trim())
+    || ['#topic', '#docTitle', '#docBody', '#novelBody', '#note'].some(id=> ($(id).value || '').trim())
     || !!state.sel.style || !!state.sel.layout || !!state.sel.color
     || !!state.ref;
-  if (touched && !confirm('清空当前所有内容？\n\n选题、标题、正文、分镜清单、补充要求、参考图都会清掉，'
+  if (touched && !confirm('清空当前所有内容？\n\n选题、标题、正文、小说原文、分镜清单、补充要求、参考图都会清掉，'
     + '图型 / 风格 / 主题色变成「不限」。\n画幅、情绪、留白、出图模式这些设置保留不动。')) return;
 
   state.items = [];
+  state.hotStory = null;          // 一键清空连热点资料一起断掉
   renderItems();
   state.group = ''; $('#groupTag').textContent = '';
-  ['#topic', '#docTitle', '#docBody', '#note'].forEach(id=>{ $(id).value = ''; });
+  ['#topic', '#docTitle', '#docBody', '#novelBody', '#note'].forEach(id=>{ $(id).value = ''; });
+  setDocTab('doc', true);
   $('#docRaw').textContent = '';
   syncPreview();
 
@@ -4924,6 +5746,7 @@ let _draftT = null;
 function draftSnapshot(){
   return {
     topic: $('#topic').value, title: $('#docTitle').value, body: $('#docBody').value,
+    novel: $('#novelBody').value, doc_tab: currentDocTab(),
     group: state.group || '', note: $('#note').value, mood: $('#mood').value,
     ws: state.ws, ratio: $('#ratio').value, mode: state.mode || 'image',
     image_mode: state.omode || 'graphic-text', shoot_type: $('#shootType').value || '',
@@ -4932,7 +5755,7 @@ function draftSnapshot(){
           color: (state.sel.color && state.sel.color.id) || ''},
     ref: state.ref ? {id: state.ref.id, url: state.ref.url, w: state.ref.w, h: state.ref.h} : null,
     items: state.items.map(it=>({title: it.title || '', body: it.body || '',
-      scene: it.scene || '', prompt: it.prompt || ''})),
+      scene: it.scene || '', visual: it.visual || '', prompt: it.prompt || ''})),
   };
 }
 
@@ -4940,9 +5763,14 @@ function draftSnapshot(){
 function applySnapshot(d){
   hideDemoNote();          // 换了一份内容，「随机示例」的说明就不再成立
   state.demoPending = false;
+  const hs = d.hot_story;
+  // 草稿箱里没有这个字段：载入草稿＝换了一篇，旧热点资料不该跟着串过来
+  state.hotStory = (hs && hs.id) ? {id: String(hs.id), title: String(hs.title || '')} : null;
   $('#topic').value = d.topic || '';
   $('#docTitle').value = d.title || '';
   $('#docBody').value = d.body || '';
+  $('#novelBody').value = d.novel || '';
+  try { setDocTab(d.doc_tab === 'novel' ? 'novel' : 'doc', true); } catch(e){}
   $('#note').value = d.note || '';
   $('#mood').value = d.mood || '';
   const rsel = $('#ratio');
@@ -4954,7 +5782,7 @@ function applySnapshot(d){
   state.omode = d.image_mode === 'photo' ? 'photo' : 'graphic-text';
   $('#shootType').value = d.shoot_type || '';
   state.items = (d.items || []).map(it=>({title: it.title || '', body: it.body || '',
-    scene: it.scene || '', prompt: it.prompt || ''}));
+    scene: it.scene || '', visual: it.visual || '', prompt: it.prompt || ''}));
   const sel = d.sel || {};
   // 存的是空串＝当时就是「不限」，得真的清回 null，否则会沿用页面上的默认组合
   const pick1 = (kind, id) => {
@@ -4989,8 +5817,11 @@ function saveSession(){
   try{
     const snap = draftSnapshot();
     // 空工作区不回写，避免刚打开页面就把上次的内容擦掉
-    if (!snap.topic.trim() && !snap.title.trim() && !snap.body.trim() && !snap.items.length) return;
+    if (!snap.topic.trim() && !snap.title.trim() && !snap.body.trim()
+        && !snap.novel.trim() && !snap.items.length) return;
     snap.t = Date.now();
+    // 热点事件只进本地会话，不进草稿箱、也不算「内容改动」的指纹
+    snap.hot_story = state.hotStory || null;
     // 预览条也一起存：刷新后右侧不该只剩文字，图得原地回来
     snap.results = state.results.map(r=>({url: r.url, preview: r.preview,
       topic: r.topic, seq: r.seq, id: r.id, account: r.account || ''}));
@@ -5024,7 +5855,8 @@ function draftKeyOf(o){
    只有选题、还没写正文时，不算一篇能存的东西，自动暂存应当跳过。 */
 function hasArticleContent(o){
   o = o || {};
-  if ((o.title || '').trim() || (o.body || '').trim()) return true;
+  // 小说原文也算一篇内容：只贴了小说、没写标题正文时，手动「暂存」应当能存
+  if ((o.title || '').trim() || (o.body || '').trim() || (o.novel || '').trim()) return true;
   return (o.items || []).some(it => (it.title || it.body || it.scene || it.prompt || '').trim());
 }
 
@@ -5046,8 +5878,17 @@ let _autoT = null;        // 自动暂存的 debounce 定时器
 let _autoJson = '';       // 上一次成功落盘的内容指纹，用来判断还值不值得再发一次
 let _saveLock = Promise.resolve();
 
+/* 草稿箱的内容指纹：只认文案侧的真内容。
+   doc_tab 是视图状态，novel 是小说原文（只走本地会话，刷新不丢即可），
+   两者都不该让自动暂存以为「文案被改了」。草稿本身仍会带上 novel 字段，
+   所以真到该存的时候（比如拆出了分镜）小说原文不会丢。 */
 function contentJson(){
-  try{ return JSON.stringify(draftSnapshot()); }catch(e){ return ''; }
+  try{
+    const d = draftSnapshot();
+    delete d.doc_tab;
+    delete d.novel;
+    return JSON.stringify(d);
+  }catch(e){ return ''; }
 }
 
 function hhmm(){
@@ -5365,7 +6206,12 @@ loadCatalog().catch(e=>toast('目录加载失败：' + e.message))
     resumeBatch();
     markContentClean();      // 开场内容算干净，别把恢复出来的东西又存一遍
   });
-document.addEventListener('input', saveSessionSoon);
+document.addEventListener('input', e=>{
+  // 小说原文只写本地会话：不排草稿箱的自动暂存，也不刷「已存」时间戳。
+  // 等点「拆成分镜」产出清单、或用户自己点「暂存」，才落草稿箱。
+  if (e && e.target && e.target.id === 'novelBody'){ saveSession(); return; }
+  saveSessionSoon();
+});
 /* 一旦真的动手改字，随机示例就变成用户自己的内容，恢复自动暂存 */
 document.addEventListener('input', ()=>{ state.demoPending = false; }, true);
 /* 切走 / 关标签 / 切到后台，先把没落盘的内容补存一次，别指望那 1.5 秒 */
@@ -5831,20 +6677,27 @@ setInterval(refreshPool, 10000);
     if(sc) sc.focus();          // 焦点进框：滚轮直接滚列表，不会带着背景页跑
   }
 
-  function useAsTopic(title){
+  function useAsTopic(it){
     const t = document.getElementById('topic');
     if(!t) return;
-    t.value = String(title || '').trim();
+    const title = String((it && it.title) || '').trim();
+    const sid = String((it && it.storyId) || '');
+    t.value = title;
+    // 记住事件 id：生成文章时后端取这条热点的综述当事实依据。
+    // 用户一旦改了选题文字，payload 里标题对不上就自动不带，不会张冠李戴。
+    state.hotStory = sid ? {id: sid, title: title} : null;
     // 选题 ≠ 成文：先断开上一份草稿的绑定，并清掉待存的指纹，
     // 这样只填选题【不会】立刻存出一版草稿；等「AI 生成文章」产出标题正文，才会记一条新草稿。
     bindDraft(null, '');
     markContentClean();
     // 仍派发 input：右侧预览 / 会话快照照常刷新，只是因为指纹已对齐，不会触发草稿暂存
     t.dispatchEvent(new Event('input', {bubbles: true}));
+    saveSession();          // 同步落本地会话，立刻刷新也不会把事件 id 丢了
     if(dlg.open) dlg.close();
     t.focus();
     try{ t.setSelectionRange(t.value.length, t.value.length); }catch(e){}
-    toast('已填进选题，接着点「AI 生成文章」');
+    toast(sid ? '已填进选题，生成时会带上这条热点的事件综述'
+              : '已填进选题，接着点「AI 生成文章」');
   }
 
   listEl.addEventListener('click', function(e){
@@ -5863,7 +6716,7 @@ setInterval(refreshPool, 10000);
     const id = card.dataset.id;
     if(e.target.closest('.ai-use')){
       const hit = items.filter(function(x){ return (x.storyId || '') === id; })[0];
-      if(hit) useAsTopic(hit.title);
+      if(hit) useAsTopic(hit);
       return;
     }
     if(e.target.closest('.ai-ch')) toggle(id);

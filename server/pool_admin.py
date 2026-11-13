@@ -493,6 +493,14 @@ async def panel(cfg: dict | None = None) -> dict:
             })
         # quota=0 却挂「正常」的号不算可用：显示与页头统计一起纠正
         normalize_zero_quota(rows, out)
+        # 硬失效号自动踢出号池：只认明确的令牌失效，代理/上游故障一律不动
+        purged = await _auto_purge_dead(rows, tgt, cfg)
+        if purged:
+            rows = [r for r in rows if r.get("id") not in purged]
+            out["total"] = max(0, int(out.get("total") or 0) - len(purged))
+            out["message"] = (f'{out["total"]} 个账号 · 可用 {int(out.get("active") or 0)}'
+                              f' · 配额 {int(out.get("quota") or 0)}')
+            out["purged"] = len(purged)
         rows.sort(key=lambda x: (x["cls"] != "ok", -x["quota"], x["email"]))
         out["accounts"] = rows
         out["disabled"] = disabled
@@ -591,6 +599,88 @@ def filter_blacklisted(tokens: list[str], items: list[dict], blacklist: set[str]
     kept_i = [d for d in items
               if blacklist_id(d.get("access_token") or "") not in blacklist]
     return kept_t, kept_i, (len(tokens) - len(kept_t)) + (len(items) - len(kept_i))
+
+
+# ---------- 自动清理硬失效号 ----------
+# 只删「基本不可能自己恢复」的号：三项同时命中
+#   1) 号池状态是「异常」（限流会恢复、禁用是人工决定，都不碰）
+#   2) 额度为 0
+#   3) 刷新错误里是明确的令牌失效措辞，且不含代理 / 网络 / 超时等临时故障词
+# 号池连 OpenAI 必须走代理，代理一断所有号会一起报 401 + 额度 0，
+# 这种全局故障一律跳过，绝不能把整池号一次删光。
+DEAD_ERR_RE = re.compile(
+    r"token\s*invalidated|invalidated|invalid[_ -]?token|"
+    r"refresh[_ -]?token.{0,24}(invalid|expired|revoked|fail)|"
+    r"token\s*(expired|revoked)|access[_ -]?token.{0,24}(invalid|expired|revoked)|"
+    r"invalid_grant|unauthorized|\b401\b|"
+    r"account\s*(deleted|disabled|deactivated|not\s*found)|session\s*(expired|invalidated)",
+    re.I)
+TEMP_ERR_RE = re.compile(
+    r"proxy|connect|timeout|timed\s*out|network|ssl|dns|econn|socket|"
+    r"代理|网络|超时|连接|重试|temporar|try\s*again|rate\s*limit|429",
+    re.I)
+_PURGE_BUSY = False
+_PURGE_AT = 0.0
+_PURGE_INTERVAL = 600.0
+
+
+def purge_enabled(cfg: dict | None = None) -> bool:
+    v = (cfg or pool_mod.load_config()).get("auto_purge_dead", True)
+    return v is not False and str(v).lower() not in ("0", "false", "no", "off")
+
+
+def is_hard_dead(row: dict) -> bool:
+    if str(row.get("status") or "").strip() != "异常":
+        return False
+    try:
+        if int(row.get("quota") or 0) != 0:
+            return False
+    except (TypeError, ValueError):
+        return False
+    err = str(row.get("error") or "")
+    if not err or TEMP_ERR_RE.search(err):
+        return False
+    return bool(DEAD_ERR_RE.search(err))
+
+
+async def _auto_purge_dead(rows: list[dict], tgt: dict, cfg: dict | None) -> set[str]:
+    """删掉本轮确认的硬失效号，返回被删的 id 集合；任何异常都只记日志不影响面板。"""
+    global _PURGE_BUSY, _PURGE_AT
+    if _PURGE_BUSY or not purge_enabled(cfg):
+        return set()
+    if time.time() - _PURGE_AT < _PURGE_INTERVAL:
+        return set()
+    dead = [r for r in rows if is_hard_dead(r)]
+    if not dead:
+        return set()
+    # 整池同时失效更像代理/上游整体故障，宁可不删，交给人判断。
+    # 门槛从 2 起：池里只剩两三个号时同样会遇上全局故障，不能因为数量少就放开。
+    if len(rows) >= 2 and len(dead) >= len(rows):
+        _PURGE_AT = time.time()
+        pool_mod.log("自动清理跳过：全部账号同时报失效，疑似代理或上游故障，不自动删号")
+        return set()
+    _PURGE_BUSY = True
+    _PURGE_AT = time.time()
+    try:
+        ids = [str(r.get("id") or "") for r in dead]
+        tokens = [_TOKENS[i] for i in ids if i in _TOKENS]
+        if not tokens:
+            return set()
+        r = await _req("DELETE", tgt, "api/accounts", {"tokens": tokens}, timeout=30)
+        if r.status_code >= 400:
+            pool_mod.log(f"自动清理失效号失败：号池返回 HTTP {r.status_code}")
+            return set()
+        bl = blacklist_add(tgt["home"], tokens)
+        for i in ids:
+            _TOKENS.pop(i, None)
+        pool_mod.log(f"自动清理失效号 {len(tokens)} 个"
+                     f"（状态异常+额度0+令牌失效），剔除名单 +{bl}")
+        return set(ids)
+    except Exception as e:
+        pool_mod.log(f"自动清理失效号失败：{pool_mod.mask(e)[:120]}")
+        return set()
+    finally:
+        _PURGE_BUSY = False
 
 
 def normalize_zero_quota(rows: list[dict], out: dict) -> int:

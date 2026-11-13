@@ -456,7 +456,7 @@ def _ids_to_names(instr: str, sel: dict) -> str:
 def build_prompt(item: dict, sel: dict, ratio: str, moods: list[str],
                  fusion: bool, whitespace: str, note: str = "", ref: bool = False,
                  image_mode: str = "graphic-text", shoot: str = "", instr: str = "",
-                 ref_mode: str = "style") -> str:
+                 ref_mode: str = "style", visual: str = "") -> str:
     """单条完整提示词。item = {title, body}"""
     style = sel.get("style")
     layout = sel.get("layout")
@@ -517,6 +517,12 @@ def build_prompt(item: dict, sel: dict, ratio: str, moods: list[str],
                 "没有文案：画面主体与画风都取自参考图，重新组织构图、环境与动作，"
                 "画一张完整的插画，画面里不排文字。"
             )
+
+    # 小说拆分给出的画面表演要点：只描述画面，不进文字槽位。
+    # 老链路不带 visual，这一块不会出现，提示词逐字保持原样。
+    v = str(visual or "").strip()
+    if v:
+        blocks.append("画面表演（只描述画面，不要排成文字）：" + v.rstrip("。！？.!?") + "。")
 
     tail = []
     if moods:
@@ -580,9 +586,10 @@ async def compose(payload: dict, styles: list[dict], layouts: list[dict], colors
         title = (raw.get("title") or "").strip()
         body = (raw.get("body") or "").strip()
         scene = (raw.get("scene") or "").strip()
+        visual = (raw.get("visual") or "").strip()
         if not title and not body and not allow_blank:
             continue
-        items.append({"title": title, "body": body, "scene": scene})
+        items.append({"title": title, "body": body, "scene": scene, "visual": visual})
 
     if not items:
         topic = (payload.get("topic") or "").strip()
@@ -604,9 +611,11 @@ async def compose(payload: dict, styles: list[dict], layouts: list[dict], colors
             "title": item["title"],
             "body": item["body"],
             "scene": scene,
+            "visual": item["visual"],
             "instruction": instruction,
             "prompt": build_prompt(item, sel, ratio, moods, fusion, whitespace, note, ref,
-                                   image_mode, shoot, instr=custom_instr, ref_mode=ref_mode),
+                                   image_mode, shoot, instr=custom_instr, ref_mode=ref_mode,
+                                   visual=item["visual"]),
         })
     return {
         "instruction": instruction,

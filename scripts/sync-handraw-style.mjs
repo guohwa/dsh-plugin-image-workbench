@@ -7,7 +7,11 @@
  *
  * 用法：node scripts/sync-handraw-style.mjs
  * 输出：单行 JSON，{ok, updated, diff, images, reload} 或 {ok:false, error}
- * 环境变量：PYTHON 指定解释器、WB_PORT 指定后端端口（默认 8092）
+ * 环境变量：
+ *   PYTHON        指定解释器
+ *   WB_PORT       后端端口（默认 8092）
+ *   WB_SERVER_DIR 运行时 server 目录。宿主调度器必传：插件装在 node_modules 时，
+ *                 代码会被复制到 ~/.dsh/image-workbench/server，不传就会写进只读副本。
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -20,7 +24,9 @@ import { fetchStyleImages } from './fetch-style-images.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
-const SERVER = path.join(ROOT, 'server');
+const SERVER = process.env.WB_SERVER_DIR
+  ? path.resolve(process.env.WB_SERVER_DIR)
+  : path.join(ROOT, 'server');
 const CATALOG_FILE = path.join(SERVER, 'catalog.json');
 const PORT = Number(process.env.WB_PORT || 8092);
 

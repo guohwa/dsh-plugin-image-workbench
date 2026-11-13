@@ -178,6 +178,59 @@ ok('文本提示词要求简体中文、禁止乱码/英文碎片/字母数字�
    '全程使用流畅的简体中文写作' in _src_app
    and '字母数字组合' in _src_app,
    '漏了反乱码约束，模型偶发会吐 turn/5u8495ea07e7 这类碎片')
+
+# ---- 热点事件综述进文本提示词：别让模型只凭一句标题脑补日期和名单 ----
+ok('GenRequest 收 story_id 且默认不带',
+   app.GenRequest(mode='text', topic='t').story_id is None)
+_req_hot = app.GenRequest(mode='text', topic='黄仁勋辞任英伟达CEO并退出董事会', num_items=7)
+_story_mock = {'title': '黄仁勋辞任英伟达CEO并退出董事会',
+               'digest': '11月12日董事会宣布人事变动，董事会启动继任者遴选。',
+               'latest': '', 'sourceCount': 17,
+               'firstReportAt': '2026-10-29T13:42:38', 'latestAt': '2026-11-12T18:39:23'}
+_p_old = app.build_text_prompt(_req_hot)
+_p_new = app.build_text_prompt(_req_hot, _story_mock)
+ok('无热点资料时提示词不含事实红线', '事实红线' not in _p_old)
+ok('带热点资料时插入综述与事实红线',
+   '综述：11月12日董事会宣布人事变动' in _p_new and '事实红线' in _p_new)
+ok('资料块不改原有模板一个字', _p_new.endswith(_p_old))
+ok('资料块带信源数与时间，减少模型编日期',
+   '17 个信源' in _p_new and '首次报道 2026-10-29' in _p_new)
+ok('空综述不插入资料块',
+   app.build_text_prompt(_req_hot, {'title': 'x', 'digest': ''}) == _p_old)
+ok('preview 与 generate 都接了资料取值', _src_app.count('await _text_story(req)') == 2)
+
+
+async def _probe_text_story():
+    async def _fake(_sid):
+        return _story_mock
+    orig = app._aihot_story_data
+    app._aihot_story_data = _fake
+    try:
+        return (
+            await app._text_story(app.GenRequest(
+                mode='text', topic=_story_mock['title'], story_id='x')),
+            await app._text_story(app.GenRequest(
+                mode='text', topic='完全不相关的选题', story_id='x')),
+            await app._text_story(app.GenRequest(
+                mode='text', topic=_story_mock['title'])),
+            await app._text_story(app.GenRequest(
+                mode='image', topic=_story_mock['title'], story_id='x')),
+        )
+    finally:
+        app._aihot_story_data = orig
+
+
+_a, _b, _c, _d = asyncio.run(_probe_text_story())
+ok('选题匹配热点才带资料', _a is _story_mock)
+ok('选题与热点不一致不带资料', _b is None)
+ok('没有 story_id 不取资料', _c is None)
+ok('出图模式不取热点资料', _d is None)
+ok('前端记住热点 storyId 并随生成请求传',
+   all(x in _src_html for x in ('hotStory:null', 'story_id: story_id || undefined',
+                                'useAsTopic(hit)')),
+   '漏了就退回只给模型一句标题')
+ok('选题文字改动即失效、会话快照带上 hot_story',
+   'text === hs.title' in _src_html and 'snap.hot_story = state.hotStory' in _src_html)
 ok('后端 sanitizer 清掉 word/hex 垃圾串、保留中文与 http 链接',
    '_sanitize_text' in _src_pool
    and '_GARBAGE_RE' in _src_pool
@@ -366,8 +419,15 @@ try:
     ok('panel 带内置号池服务快照',
        isinstance(sv.get('manageable'), bool) and isinstance(sv.get('runtime_ready'), bool)
        and 'auto_start' in sv, f"port={sv.get('port')} runtime={sv.get('runtime_ready')}")
-    ok('内置号池端口可管理（不是写作台 38650）', sv.get('manageable') is True,
-       sv.get('message'))
+    # 用户可能临时把接口切到 38650 写作池，那时 manageable=False 是正确行为，
+    # 不能拿「当下选了哪个池」当回归标准；只校验常量与端口-自洽关系。
+    ok('内置号池默认端口仍是 38651（不是写作台 38650）',
+       pool_service.DEFAULT_PORT == 38651 and 38650 in pool_service.FOREIGN_PORTS,
+       f'DEFAULT_PORT={pool_service.DEFAULT_PORT}')
+    ok('manageable 与当前端口自洽',
+       (sv.get('manageable') is True) ==
+       (bool(sv.get('local')) and int(sv.get('port') or 0) not in pool_service.FOREIGN_PORTS),
+       f'port={sv.get("port")} local={sv.get("local")} manageable={sv.get("manageable")}')
     ok('号池运行时就绪（uv + source + venv）', sv.get('runtime_ready') is True,
        sv.get('runtime_reason'))
     if pn.get('local') and pn.get('online'):
@@ -512,16 +572,19 @@ except Exception as e:
     ok('面板额度口径可用', False, str(e)[:120])
 
 # 成品图路由：不裁切的比例直连原图，裁切的给裁好的 PNG
+# 历史里混着「只生成文案」的 done 记录（image=None），拿它验图片路由必然 404，
+# 所以先挑一条真正带图的记录，别被最新一条文案误报成回归。
 try:
     _items = (client.get('/api/history').json() or {}).get('items') or []
-    if _items:
-        _jid = _items[0]['id']
+    _with_img = [x for x in _items if x.get('image') or x.get('image_url')]
+    if _with_img:
+        _jid = _with_img[0]['id']
         r = client.get(f'/api/history/{_jid}/final')
         ok('GET /api/history/{id}/final', r.status_code == 200 and
            r.headers.get('content-type', '').startswith('image/'),
-           f'HTTP {r.status_code} / {len(r.content)}B')
+           f'HTTP {r.status_code} / {len(r.content)}B / 跳过 {len(_items)-len(_with_img)} 条无图记录')
     else:
-        ok('历史里有可用记录', False, 'items 为空，跳过 final 路由')
+        ok('历史里有可用记录', False, '没有带图记录，跳过 final 路由')
 except Exception as e:
     ok('GET /api/history/{id}/final', False, str(e)[:120])
 
@@ -599,6 +662,189 @@ if not QUICK:
                                     client.get('/api/history').json().get('items', [])))
         else:
             print('      错误信息:', str(job.get('error') or '')[:250])
+
+# ---------- 接口配置历史 + 失效号自动清理 ----------
+_src_admin = (ROOT / 'pool_admin.py').read_text(encoding='utf-8')
+ok('后端有档案存取 helper', all(x in _src_app for x in (
+    'def _upsert_profile', 'def _seed_profiles', 'PROFILE_KEYS', 'provider_profiles')))
+ok('档案存地址 / Key / 号池目录三件套',
+   '"pool_dir", "api_key"' in _src_app and '"api_base_url"' in _src_app)
+ok('档案视图只回脱敏 Key', 'api_key_masked' in _src_app and 'api_key_set' in _src_app)
+ok('档案三个接口齐全', all(x in _src_app for x in (
+    '@app.get("/api/config/profiles")',
+    '@app.post("/api/config/profiles/switch")',
+    '@app.post("/api/config/profiles/delete")')))
+ok('切换整套恢复并重探号池', 'await POOL.refresh_env_ids()' in _src_app
+   and 'cfg["provider_profiles"] = _upsert_profile(cfg)' in _src_app)
+ok('删当前在用的档案有保护', '正在用的这份不能删' in _src_app)
+ok('保存前后各存一次档案（换池不丢旧 Key）',
+   _src_app.count('cfg["provider_profiles"] = _upsert_profile(cfg)') >= 3)
+ok('首次启用补种本机两个号池', 'LOCAL_POOL_PORTS.items()' in _src_app
+   and '_read_pool_user_key(seed)' in _src_app)
+ok('档案按端口校正 pool_dir', 'LOCAL_POOL_PORTS.get(port)' in _src_app)
+ok('前端有历史下拉、删除入口与清理开关', all(x in _src_html for x in (
+    'id="cfgProfile"', 'id="cfgProfDel"', 'id="pPurgeDead"', 'loadProfiles(')))
+ok('切换请求带档案 id', '/api/config/profiles/switch' in _src_html
+   and 'JSON.stringify({id})' in _src_html)
+
+ok('失效号判定三项同时命中', 'def is_hard_dead' in _src_admin
+   and '!= "异常"' in _src_admin and '!= 0' in _src_admin)
+ok('临时故障词被排除（代理/超时/限流）',
+   'TEMP_ERR_RE' in _src_admin and 'proxy|connect|timeout' in _src_admin)
+ok('限流号不会被删', pool_admin.is_hard_dead(
+   {'status': '限流', 'quota': 0, 'error': 'token invalidated'}) is False)
+ok('代理故障不会被删', pool_admin.is_hard_dead(
+   {'status': '异常', 'quota': 0, 'error': 'proxy connect timeout'}) is False)
+ok('人工停用不会被删', pool_admin.is_hard_dead(
+   {'status': '禁用', 'quota': 0, 'error': 'token expired'}) is False)
+ok('硬失效号命中', pool_admin.is_hard_dead(
+   {'status': '异常', 'quota': 0, 'error': 'token invalidated (/backend-api/me)'}) is True)
+ok('全池同时失效有跳过保护', 'len(dead) >= len(rows)' in _src_admin)
+ok('清理有节流与防重入', '_PURGE_BUSY' in _src_admin and '_PURGE_INTERVAL' in _src_admin)
+ok('清理可关且默认开', 'def purge_enabled' in _src_admin
+   and 'auto_purge_dead' in _src_app)
+ok('删除会进剔除名单', 'blacklist_add(tgt["home"], tokens)' in _src_admin)
+ok('面板里接了自动清理', 'await _auto_purge_dead(rows, tgt, cfg)' in _src_admin)
+
+# ---- 配置档案页：左右分栏 + 四态 + 三个新接口 ----
+ok('第一项是独立的工作台重命名（全局项）',
+   'id="cfgRenameInput"' in _src_html and 'JSON.stringify({app_name:v})' in _src_html)
+ok('第二项左右分栏且列表末尾固定新增项',
+   'class="prof-split"' in _src_html and 'data-padd="1"' in _src_html
+   and '＋ 新增接口' in _src_html)
+ok('详情区分查看 / 编辑 / 新增 / 空四态',
+   all(x in _src_html for x in ("pChip('view')", "pChip('edit')",
+                                "pChip('create')", "pChip('empty')")))
+ok('未选中时是空态且不提供保存',
+   '还没有选中号池' in _src_html and '未选中时不提供保存' in _src_html)
+ok('新增必填三项、地址格式与唯一性校验齐全',
+   all(x in _src_html for x in ('请填名称（用于列表展示）',
+       '需以 http:// 或 https:// 开头', '新增接口必须填 API Key', '该地址已有档案')))
+ok('保存失败保留表单与已填内容', '改动仍留在表单里' in _src_html)
+ok('档案保存走新增 / 编辑独立接口', "'POST':'PATCH'" in _src_html)
+ok('老全局控件收进折叠区且没被删',
+   all(x in _src_html for x in ('id="cfgBase"', 'id="cfgWxGateway"',
+       'id="cfgSave"', '<details class="cfg-more">')))
+ok('折叠区默认收起', '<details class="cfg-more" open' not in _src_html)
+ok('后端补齐单档案详情 / 新增 / 编辑三接口',
+   all(x in _src_app for x in ('@app.get("/api/config/profiles/{pid}")',
+       '@app.post("/api/config/profiles")', '@app.patch("/api/config/profiles/{pid}")')))
+ok('详情接口只回脱敏 Key', 'def _profile_detail' in _src_app
+   and 'masked = (key[:6]' in _src_app and 'api_key_masked' in _src_app)
+ok('新增档案不等于启用（不重探、不冒充最近使用）',
+   'x["last_used"] = 0' in _src_app and 'api_config_profile_create' in _src_app)
+ok('编辑激活项才同步顶层配置并重探号池',
+   'was_active = pid == _active_profile_id(cfg)' in _src_app
+   and 'if was_active:' in _src_app and 'await POOL.refresh_env_ids()' in _src_app)
+ok('编辑时留空 API Key 沿用、不清空',
+   'if b.get("api_key"):' in _src_app and '留空 = 沿用' in _src_app)
+ok('重复地址 / 重名返回 409 且激活档案禁删',
+   'raise HTTPException(409' in _src_app and '正在用的这份不能删' in _src_app)
+
+# 状态栏「生成中 · X」不能再把账号占位写成接口类型（用户曾因此以为写文章走了生图接口）
+ok('任务状态占位按模式区分且中性',
+   'label = "出图任务" if job["mode"] == "image" else "文案任务"' in _src_pool
+   and 'id": 0, "masked": "当前接口"' in _src_pool)
+ok('endpoint / pool_stat / provider_cfg 默认名都不再叫生图接口',
+   _src_pool.count('"生图接口"') == 0
+   and '"当前接口"' in _src_pool)
+ok('号池 chat 日志无 account_email 的已知限制已写明',
+   '没有 account_email' in _src_pool and '无法归因到具体账号' in _src_pool)
+ok('号池未就绪报错不再写「生图号池 / 再出图」',
+   '尚未配置生图号池' not in _src_app and '后再出图' not in _src_app
+   and '尚未配置接口' in _src_app)
+ok('档案名兼容新旧两版默认名',
+   'n not in ("生图接口", "当前接口")' in _src_app)
+ok('配置页签改为「接口配置」且不再出现「出图接口」',
+   'data-tab="iface" role="tab">接口配置<' in _src_html
+   and '>出图接口<' not in _src_html)
+ok('完成态只跟真实脱敏账号，占位不当账号显示',
+   "const who = /@/.test(d.account || '') ? d.account : ''" in _src_html
+   and "statusEl.textContent = '完成' + (who ? ' · ' + who : '')" in _src_html)
+
+# ---------- 配置页去重：折叠区只留全局项，接口参数归第 2 项档案区 ----------
+import re as _re
+_m = _re.search(r'function cfgPayload\(\)\{(.*?)\n\}', _src_html, _re.S)
+_cfg_body = _m.group(1) if _m else ''
+ok('旧接口表单保留 DOM 与全部 id 但整体隐藏',
+   '<div id="cfgLegacyIface" style="display:none"' in _src_html
+   and all(f'id="{x}"' in _src_html for x in
+           ('cfgBase', 'cfgKey', 'cfgAppName', 'cfgModelImage', 'cfgEdits', 'cfgFormat', 'cfgEditsStyle')))
+ok('「其他设置」标题不再写「当前接口参数」',
+   '<summary>其他设置：图片保存目录 / 公众号推送</summary>' in _src_html
+   and '其他设置：当前接口参数' not in _src_html)
+ok('折叠区说明接口参数已上移到档案区', '这里不再重复放一套' in _src_html)
+ok('图片目录与公众号推送仍在隐藏容器之外（全局项可见）',
+   _re.search(r'</div>\s*<div class="span2"[^>]*>\s*<div[^>]*>生成图片保存目录', _src_html) is not None
+   and 'id="cfgWxGateway"' in _src_html)
+ok('底部保存只提交全局项，不再回写接口配置',
+   bool(_cfg_body)
+   and all(k in _cfg_body for k in ('output_dir', 'wx_gateway', 'wx_token', 'wx_push_mode'))
+   and not any(k in _cfg_body for k in
+               ('base_url', 'api_key', 'app_name', 'model_image', 'supports_edits',
+                'edits_style', 'image_response_format')))
+ok('试连改测当前生效配置（空 body），不依赖隐藏表单',
+   "body: '{}'" in _src_html and '正在测试当前接口' in _src_html)
+ok('底部按钮语义改为「保存全局设置 / 测试当前接口」',
+   '>保存全局设置</button>' in _src_html and '>测试当前接口</button>' in _src_html)
+ok('出图行为三项搬进档案编辑/新增表单',
+   all(s in _src_html for s in (
+       "pSelect('支持参考图','supports_edits'",
+       "pSelect('返回格式','image_response_format'",
+       "pSelect('参考图方式','edits_style'",
+       'data-pf="${name}"'))
+   and 'function pSelect(' in _src_html and 'pForm(pEmptyForm(), true)' in _src_html)
+_b = _re.search(r'function pBody\(\)\{(.*?)\n\}', _src_html, _re.S)
+_pbody = _b.group(1) if _b else ''
+ok('pBody 不再硬编码 true/auto/auto 覆盖用户设置',
+   bool(_pbody) and 'supports_edits: se !==' in _pbody
+   and 'supports_edits:true' not in _pbody
+   and "edits_style: pVal('edits_style')" in _pbody
+   and "image_response_format: pVal('image_response_format')" in _pbody)
+ok('select 改动也标脏，未保存离开会拦截',
+   'i.onchange = ()=>{ PROF.dirty = true; }' in _src_html)
+ok('查看态补上「参考图方式」只读行', "row('参考图方式'" in _src_html)
+
+# ---------- 编辑态紧凑 + 出图/文案模型下拉 ----------
+ok('紧凑只作用在编辑/新增态，且清掉全局 label 的 10px 顶部空白',
+   all(s in _src_html for s in (
+       'function pDense(on)', 'pDense(dense)', '.prof-split.dense{min-height:0}',
+       '.prof-split.dense .prof-f label{margin:0 0 2px',
+       '.prof-f label{display:block;font-size:11px;color:var(--ink-3);margin:0 0 3px}',
+       "PROF.mode === 'create' || PROF.mode === 'edit'")))
+ok('两个模型字段由手填改为下拉，仍保留手动输入兜底',
+   all(s in _src_html for s in ("pModelField('出图模型'", "pModelField('文案模型'",
+       'select data-pm="${name}"', '手动输入…', "const PM_CUSTOM = '__custom__'"))
+   and "pField('出图模型'" not in _src_html and "pField('文案模型'" not in _src_html)
+ok('下拉候选走后端模型接口，切态作废旧请求',
+   all(s in _src_html for s in ("fetch('/api/config/models'", 'PM_TOKEN++',
+       'if (token !== PM_TOKEN) return;', 'id="pmReload"'))
+   and all(s in _src_app for s in ('@app.post("/api/config/models")',
+       'await test_connection(ov)', '_is_image_model', '先填接口地址再读取模型')))
+_model_fn = _re.search(r'async def api_config_models\(body: dict\):(.*?)\n@app\.post', _src_app, _re.S)
+_model_body = _model_fn.group(1) if _model_fn else ''
+ok('模型候选接口只在后端补 Key，不回明文',
+   bool(_model_body) and 'str(v.get("api_key")' in _model_body
+   and '"api_key":' not in _model_body and 'api_key_masked' not in _model_body)
+ok('pVal 同时读下拉与手动输入，pBody 无需改动',
+   'select[data-pm="${n}"]' in _src_html and 'input[data-pfi="${n}"]' in _src_html
+   and "model_image:pVal('model_image')" in _src_html)
+_r = client.post('/api/config/models', json={'base_url': ''})
+_d = _r.json() if _r.status_code == 200 else {}
+ok('没填地址时不去探当前在用的接口',
+   _r.status_code == 200 and _d.get('source') == 'fallback'
+   and '先填接口地址' in str(_d.get('message') or ''))
+_rm = client.post('/api/config/models', json={})
+_dm = _rm.json() if _rm.status_code == 200 else {}
+ok('模型接口恒有 image_extra 字段', 'image_extra' in _dm, sorted(_dm.keys()))
+ok('只列一个出图模型时补常用候选，前端分组标注来源',
+   all(s in _src_app for s in ('"image_extra": image_extra', '"image_extra": []'))
+   and all(s in _src_html for s in ('function pmGroups(', '接口提供 · 可直接用',
+                                    '常用候选 · 接口未列出，需上游支持',
+                                    '接口列出 ${PM_OPTS.image.length} 个出图模型')))
+ok('重拉候选保留手动输入值与 custom 状态',
+   'const wasCustom = s.value === PM_CUSTOM' in _src_html
+   and 'inp.value = typed' in _src_html)
 
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')

@@ -421,7 +421,7 @@ def provider_cfg(cfg: dict | None = None) -> dict:
     is_pool = (netloc.startswith("127.0.0.1:") or netloc.startswith("localhost:")
                or str(cfg.get("monitor_mode") or "") == "pool")
     return {
-        "name": str(cfg.get("provider_name") or "生图接口"),
+        "name": str(cfg.get("provider_name") or "当前接口"),
         "base_url": base,
         # 版本段之前的根（http://host:port 或带前置路径的那种），号池管理端点用
         "api_root": _VER_TAIL.sub("", base.rstrip("/")) or base,
@@ -635,7 +635,8 @@ class PoolManager:
         self.accounts: list[dict] = []
         # 工作台侧 Job 记账用的端点占位（不进监控列表，仅用于 running/历史归属）
         self.endpoint: dict = {
-            "id": 0, "masked": "生图接口", "env_name": "api",
+            # 这只是本地状态槽位的显示名，不是接口类型：出图和文案共用同一套配置
+            "id": 0, "masked": "当前接口", "env_name": "api",
             "env_id": 0, "status": "ready", "last_used": 0.0, "last_ok": 0.0,
             "last_error_at": 0.0, "uses": 0, "fails": 0, "error": "",
             "busy_since": 0.0, "cooldown": 0, "check_ok": None, "check_msg": "", "check_at": 0.0,
@@ -669,7 +670,7 @@ class PoolManager:
                                   "started": 0, "finished": 0, "items": {}}
         self.pool_stat: dict = {"online": False, "total": 0, "active": 0,
                                 "limited": 0, "quota_total": 0, "message": "尚未探测",
-                                "mode": "single", "name": "生图接口"}
+                                "mode": "single", "name": "当前接口"}
         self.on_finish = None
 
     # ---------- lifecycle ----------
@@ -1046,7 +1047,10 @@ class PoolManager:
             # 没有指纹就无从对号：宁可显示「未知账号」，也不能随便认一个坑
             return ""
         floor, ceil = since - 5, time.time() + 120
-        # 出图看 /v1/images，文案 / 润色看 /v1/chat，别把另一条链路的日志混进来
+        # 出图看 /v1/images，文案 / 润色看 /v1/chat，别把另一条链路的日志混进来。
+        # 已知限制：号池的 /v1/chat/completions 日志只有 key_name / model，
+        # 没有 account_email（实测 39 条全空），而 /v1/images/* 日志才有。
+        # 因此文本任务无法归因到具体账号，界面保持「文案任务」占位，不编造邮箱。
         want = "/v1/images" if str(job.get("mode") or "image") == "image" else "/v1/chat"
         best_at, best_email = 0.0, ""
         for it in logs:
@@ -1334,9 +1338,14 @@ class PoolManager:
 
     async def _run_job(self, job: dict, acc: dict, wid: int) -> None:
         job_id = job["id"]
-        self.running[job_id] = {"account": acc["masked"], "env_id": acc["env_id"],
+        # 状态栏里的「生成中 · X」先给按任务类型区分的占位，别用接口名冒充账号。
+        # 出图任务成功后会由 _attribute_call 回查号池日志、替换成真实邮箱；
+        # 文案任务走 chat/completions，号池这类日志不带 account_email，
+        # 所以会一直停在「文案任务」，这是如实显示，不是走了出图接口。
+        label = "出图任务" if job["mode"] == "image" else "文案任务"
+        self.running[job_id] = {"account": label, "env_id": acc["env_id"],
                                 "started": int(time.time())}
-        job.update({"status": "running", "account": acc["masked"], "env_id": acc["env_id"],
+        job.update({"status": "running", "account": label, "env_id": acc["env_id"],
                     "last_env": acc["env_id"], "started": int(time.time()), "worker": wid})
         log(f"job {job_id}: start mode={job['mode']} worker={wid} "
             f"prompt_chars={len(job.get('prompt') or '')}")
