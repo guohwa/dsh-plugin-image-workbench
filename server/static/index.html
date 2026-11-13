@@ -317,17 +317,14 @@
   .rec-no{flex:0 0 auto;width:15px;height:15px;border-radius:4px;background:#fff1de;color:#b76a00;
     font-size:9.5px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px;
     font-variant-numeric:tabular-nums}
-  .rec-tx{flex:1;min-width:0;font-size:11px;line-height:1.35;color:var(--ink);overflow:hidden;
+  .rec-tx{flex:1;min-width:0;font-size:11px;line-height:1.5;color:var(--ink);overflow:hidden;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
   .rec-tag{flex:0 0 auto;font-size:9px;color:#b76a00;background:#fff6ea;border-radius:4px;
     padding:0 4px;line-height:14px;margin-top:1px;white-space:nowrap}
   .rectop-load{font-size:11px;color:var(--ink-3);padding:5px 3px;line-height:1.5}
-  .rectop-foot{display:flex;gap:6px;align-items:center;justify-content:space-between;
+  .rectop-foot{display:flex;gap:6px;align-items:center;justify-content:flex-end;
     font-size:9px;color:var(--ink-3);margin-top:0;padding:0 3px}
   .rectop-foot span:last-child{white-space:nowrap;font-variant-numeric:tabular-nums}
-  /* 选中后的提示会变长，不能让底栏折成两行把卡片撑高 */
-  .rectop-foot span:first-child{flex:1;min-width:0;white-space:nowrap;
-    overflow:hidden;text-overflow:ellipsis}
   .rectop-open{border:1px solid #f2d6ad;background:#fff1de;color:#b76a00;font:inherit;
     font-size:9.5px;font-weight:600;border-radius:5px;padding:0 6px;cursor:pointer;
     white-space:nowrap;line-height:14px}
@@ -1055,7 +1052,6 @@
         <div class="rectop-load">正在挑几条能吵得起来的选题…</div>
       </div>
       <div class="rectop-foot">
-        <span id="recHint" title="点一条填进选题框">点一条填进选题框</span>
         <button class="rectop-open" id="recOpen" type="button" title="打开多平台热点榜：知乎 / 小红书 / 抖音 / 今日头条 / 快手 / 微博 / B 站">全平台热点 ↗</button>
         <span class="rectop-page" id="recPage" title="点这里也能打开多平台热点榜"></span>
       </div>
@@ -6639,7 +6635,6 @@ setInterval(refreshPool, 10000);
   const listEl = document.getElementById('recList');
   const nextBtn = document.getElementById('recNext');
   const srcEl = document.getElementById('recSource');
-  const hintEl = document.getElementById('recHint');
   const pageEl = document.getElementById('recPage');
   if(!listEl || !nextBtn || !srcEl) return;
 
@@ -6685,7 +6680,6 @@ setInterval(refreshPool, 10000);
       '</button>';
     }).join('');
     if(pageEl) pageEl.textContent = '第 ' + batch + ' 批 · 共 ' + pool.length + ' 条';
-    if(hintEl){ hintEl.textContent = '点一条填进选题框'; hintEl.title = hintEl.textContent; }
     Array.prototype.forEach.call(listEl.querySelectorAll('.rec-row'), function(btn){
       btn.onclick = function(){ pick(take[Number(btn.dataset.k)]); };
     });
@@ -6703,7 +6697,6 @@ setInterval(refreshPool, 10000);
     saveSession();
     t.focus();
     try{ t.setSelectionRange(t.value.length, t.value.length); }catch(e){}
-    if(hintEl){ hintEl.textContent = '已填进选题，接着点「AI 生成文章」'; hintEl.title = hintEl.textContent; }
     toast('已填进选题，接着点「AI 生成文章」');
   }
   async function load(fresh){
