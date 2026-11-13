@@ -999,7 +999,9 @@ async def api_aihot_story(id: str = ""):
 # 切口」，不替用户写结论，也不给热点补编事实。
 _REC_TTL = 1800
 _REC_CACHE: dict = {"at": 0.0, "items": [], "source": "", "live": False}
-_REC_UA = "BluxeImageWorkbench (local workbench)"
+# 公开聚合站对非浏览器 UA 直接 403（实测 403 / 200 只差这一行），
+# 这里只用于匿名只读热榜，不携带任何本机信息。
+_REC_UA = "Mozilla/5.0"
 
 # 空词和大词：命中就不加工，避免把热榜标题熬成毒鸡汤
 _TOPIC_BAD = re.compile(
@@ -1163,16 +1165,17 @@ async def _fetch_zhihu_titles() -> list:
         "https://api.vvhan.com/api/hotlist/zhihuHot",
     ]
     has_proxy = bool(os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY"))
-    modes = (True, False) if has_proxy else (False,)
+    # 直连优先。实测本机代理转发要多花 4 秒，先走代理会把整段超时吃光。
+    modes = (False, True) if has_proxy else (False,)
 
     async def probe():
-        for url in urls:
-            if not url.startswith(("http://", "https://")):
-                continue
-            for trust_env in modes:
+        for trust_env in modes:
+            for url in urls:
+                if not url.startswith(("http://", "https://")):
+                    continue
                 try:
                     async with httpx.AsyncClient(
-                        trust_env=trust_env, timeout=2, follow_redirects=True,
+                        trust_env=trust_env, timeout=2.6, follow_redirects=True,
                         headers={"User-Agent": _REC_UA, "Accept": "application/json"},
                     ) as c:
                         r = await c.get(url)
@@ -1186,7 +1189,7 @@ async def _fetch_zhihu_titles() -> list:
         return []
 
     try:
-        return await asyncio.wait_for(probe(), timeout=4.5)
+        return await asyncio.wait_for(probe(), timeout=5)
     except Exception:
         return []
 
@@ -1226,6 +1229,251 @@ async def api_topics_recommend(fresh: int = 0):
     _REC_CACHE.update({"at": now, "items": items, "source": source, "live": bool(g_live)})
     return JSONResponse({"ok": True, "stale": False, "at": now, "items": items,
                          "source": source, "live": bool(g_live)})
+
+
+# ---------------- 多平台热点榜（1.1.37）----------------
+# 弹窗只读展示各平台热榜标题，每条再挂一个能直接写进选题框的讨论切口。
+# 公开聚合站会限流，抓不到的平台不空白也不造假：明确标成「平台向 · 加工题」。
+_HB_TTL = 600
+_HB_CACHE: dict = {"at": 0.0, "data": None}
+_HB_PLATFORMS = (
+    ("zhihu",    "知乎",     ("https://newsnow.busiyi.world/api/s?id=zhihu",)),
+    ("xhs",      "小红书",   ()),
+    ("douyin",   "抖音",     ("https://newsnow.busiyi.world/api/s?id=douyin",
+                              "https://60s.viki.moe/v2/douyin")),
+    ("toutiao",  "今日头条", ("https://newsnow.busiyi.world/api/s?id=toutiao",)),
+    ("kuaishou", "快手",     ()),
+    ("weibo",    "微博",     ("https://newsnow.busiyi.world/api/s?id=weibo",
+                              "https://60s.viki.moe/v2/weibo")),
+    ("bilibili", "B 站",     ("https://newsnow.busiyi.world/api/s?id=bilibili",)),
+)
+_HB_NOTE = ("实时榜来自公开聚合站，缓存 10 分钟。带黄点的平台没有稳定公开热榜源，"
+            "显示按该平台调性加工的常青讨论题，不冒充实时；"
+            "可用 TOPIC_HOT_API_<平台 KEY> 环境变量接自己的源。")
+
+# 弹窗里的热榜什么题材都有：油价、球赛、辟谣、社会新闻。
+# _HOT_ANGLES 是给 AI 办公类热点写的，套到「油价下调」上会变成
+# 「团队里哪件重复劳动可以删掉」这种不通顺的句子。这里只用对任何题材都成立的
+# 事实核查 / 信息组织角度，依旧带数字、带可动手验证的动作。
+_HB_ANGLES = (
+    ("{t}：这条里哪 2 个数字最该先核实？先把能查到的来源列出来再下结论", "逼出具体数字和可查来源"),
+    ("围绕「{t}」，把已确认的事实和还没证实的说法分成两栏，哪一栏更容易漏", "两栏对照能当场做"),
+    ("{t}：只给 30 秒讲清这件事，你会保留哪个数字、砍掉哪句背景", "有限时间逼出取舍"),
+    ("同一条「{t}」，写给客户看和发给同行看，哪 2 处信息顺序必须换", "同一事实两种写法"),
+    ("拿「{t}」练一次提示词：怎么让 AI 只复述可核实的事实，不自己补细节", "有可复制的提示词做法"),
+    ("{t}：先别急着转发，把信息源、时间线、原始出处这 3 类公开数据查一遍", "3 类公开数据可复核"),
+)
+
+
+def _hb_angle(title: str):
+    """给一条任意题材的热榜标题挑通用讨论角度；标题带情绪词就只展示原题。"""
+    # 太短的榜单词（例如「白小纯成绩」）本身没给足事实，只展示原题
+    if len(title) < 8 or _TOPIC_BAD.search(title):
+        return None
+    key = hashlib.md5(title.encode("utf-8", "replace")).digest()[0]
+    tpl, why = _HB_ANGLES[key % len(_HB_ANGLES)]
+    text = tpl.format(t=_topic_clean(title))
+    if not _topic_ok(text):
+        return None
+    return text, why
+
+# 缺源平台的内置讨论题。依旧守干货闸门：具体数字 / 可复现动作 + 一个能站队的两难，
+# 不写「真正厉害的人」「你怎么看」这类空句。
+_HB_CURATED = {
+    "xhs": (
+        ("把一篇 1200 字长文拆成 9 张贴图，先写小标题和先配图各做一版，哪版返工少", "两版流程能照着复跑"),
+        ("同一套封面换 3 种标题字号，收藏率差多少？我记了 10 篇笔记的数字", "有样本量有可查的数字"),
+        ("笔记发布 2 小时后改标题，和一开始多花 20 分钟想标题，哪种更划算", "时间成本能当场算清"),
+        ("用 AI 生成 20 个标题，最后能直接发的只有 3 个，剩下 17 个卡在同一类问题上", "把转化率摆到台面上"),
+        ("口播稿压到每句 18 字以内，念着顺了但少了几条信息，这个取舍怎么算", "给了具体数字也留了争议"),
+        ("笔记放 3 张步骤截图和放 1 张长图，评论区问的问题差在哪？我翻了 60 条评论", "有可复核的评论区样本"),
+    ),
+    "kuaishou": (
+        ("同一条 45 秒口播，开头先报结论还是先摆现场，完播率差多少？两版各发 3 天", "两版对照能复跑"),
+        ("把 3 分钟长视频剪成 6 条切片，哪条留住了来问做法的人？我按评论数排了一遍", "给出可数的判断口径"),
+        ("字幕每行 12 字和 20 字，念起来都顺，评论区问的细节却不一样，差在哪", "把体感问题拆成变量"),
+        ("拍同一套操作，固定机位一遍过和分 5 个镜头剪，返工时间我记了两天", "工时账能自己核对"),
+        ("视频里报一个能查到的数字，比说效果好带来多少认真提问？我数了 4 条视频", "把虚的形容词换成计数"),
+        ("把评论区问得最多的 3 个问题做成下一条，和不看评论直接拍，数据差在哪", "正反两种做法都有话说"),
+    ),
+}
+
+
+def _hb_hot(v) -> str:
+    """热度值统一成人能读的短串；上游没给就留空，不编数字。"""
+    s = str(v or "").strip()
+    if not s:
+        return ""
+    try:
+        n = float(s)
+        if n >= 100000000:
+            return "%.1f 亿" % (n / 100000000)
+        if n >= 10000:
+            return "%.1f 万" % (n / 10000)
+        return str(int(n))
+    except Exception:
+        return s[:12]
+
+
+def _hot_board_rows(data) -> list:
+    """兼容 NewsNow(items) / 60s(data) / vvhan(data) 三种壳，留标题、热度、链接。"""
+    rows = data
+    if isinstance(data, dict):
+        rows = data.get("items") or data.get("data") or data.get("list") or []
+        if isinstance(rows, dict):
+            rows = rows.get("items") or rows.get("data") or rows.get("list") or []
+    if not isinstance(rows, list):
+        return []
+    out = []
+    for x in rows:
+        if isinstance(x, str):
+            t, hot, url = x, "", ""
+        elif isinstance(x, dict):
+            t = str(x.get("title") or x.get("name") or x.get("word")
+                    or x.get("query") or x.get("desc") or "")
+            hot = _hb_hot(x.get("hot_value") or x.get("hot") or x.get("hotValue")
+                          or x.get("heat") or "")
+            url = str(x.get("url") or x.get("link") or x.get("mobileUrl") or "")
+        else:
+            continue
+        t = re.sub(r"\s+", " ", t).strip()[:80]
+        if t:
+            out.append({"title": t, "hot": hot, "url": url[:300]})
+    return out[:30]
+
+
+def _hot_board_items(rows: list, name: str, status: str) -> list:
+    """实时标题原样展示；能过闸门才套讨论角度，套不上就只给原题。"""
+    out = []
+    for i, r in enumerate(rows[:12], 1):
+        title = str(r.get("title") or "")
+        made = _hb_angle(title) if status == "live" else None
+        if made:
+            text, why, angle = made[0], made[1], True
+        else:
+            text, why, angle = title, "原始热榜标题，未套讨论角度", False
+        out.append({"rank": i, "title": title, "hot": str(r.get("hot") or ""),
+                    "url": str(r.get("url") or ""), "text": text, "why": why,
+                    "angle": angle, "status": status})
+    return out
+
+
+def _hb_curated(key: str, name: str) -> list:
+    """缺源 / 断线时的平台向常青题，status 一律 curated，界面不冒充实时。"""
+    pool = list(_HB_CURATED.get(key) or ())
+    if not pool:
+        ev = _evergreen_topics()
+        want = "小红书向" if key == "xhs" else "知乎向"
+        ev = [x for x in ev if x["tag"] == want] + [x for x in ev if x["tag"] != want]
+        pool = [(x["text"], x["why"]) for x in ev[:8]]
+    return [{"rank": i + 1, "title": t, "text": t, "why": w, "angle": True,
+             "status": "curated", "hot": "", "url": ""}
+            for i, (t, w) in enumerate(pool)]
+
+
+async def _hb_fetch_all(specs: list) -> list:
+    """多平台共用一个连接池并发抓。
+
+    实测：七个平台各建一个 AsyncClient 会互相拖到 10 秒以上、全部超时；
+    共用一个 client 时同域名 5 个平台 3.4 秒全回来。所以这里按「轮」抓，
+    直连一轮，失败的才用代理补一轮，任何一轮超时都只丢弃没回来的那几个。
+    """
+    import httpx
+
+    has_proxy = bool(os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY"))
+    headers = {"User-Agent": _REC_UA, "Accept": "application/json"}
+    limits = httpx.Limits(max_connections=8, max_keepalive_connections=8)
+    result = [[] for _ in specs]
+
+    async def one_round(trust_env: bool, idxs: list, budget: float):
+        if not idxs:
+            return
+        async with httpx.AsyncClient(
+            trust_env=trust_env, timeout=3.0, follow_redirects=True,
+            headers=headers, limits=limits,
+        ) as c:
+            async def one(i: int):
+                for url in specs[i]:
+                    if not str(url).startswith(("http://", "https://")):
+                        continue
+                    try:
+                        r = await c.get(str(url))
+                        if r.status_code == 200:
+                            rows = _hot_board_rows(r.json())
+                            if rows:
+                                return i, rows
+                    except Exception:
+                        continue
+                return i, []
+
+            tasks = [asyncio.create_task(one(i)) for i in idxs]
+            try:
+                done, pending = await asyncio.wait(tasks, timeout=budget)
+                for t in pending:
+                    t.cancel()
+                if pending:
+                    await asyncio.gather(*pending, return_exceptions=True)
+                for t in done:
+                    try:
+                        i, rows = t.result()
+                    except Exception:
+                        continue
+                    if rows:
+                        result[i] = rows
+            except Exception:
+                for t in tasks:
+                    t.cancel()
+
+    await one_round(False, list(range(len(specs))), 4.2)
+    if has_proxy:
+        # 没有配置源的平台（小红书 / 快手）不用再开一轮空请求
+        await one_round(True, [i for i, r in enumerate(result) if not r and specs[i]], 4.0)
+    return result
+
+
+@app.get("/api/topics/platforms")
+async def api_topics_platforms(fresh: int = 0):
+    """多平台热点榜：并发抓各平台，缓存十分钟；切页签在前端本地做。"""
+    now = time.time()
+    ttl = _HB_CACHE.get("ttl", _HB_TTL)
+    if (not fresh and _HB_CACHE["data"]
+            and now - _HB_CACHE["at"] < ttl):
+        return JSONResponse({"ok": True, "stale": False, "at": _HB_CACHE["at"],
+                             "note": _HB_NOTE, "platforms": _HB_CACHE["data"]})
+
+    specs = []
+    for key, _name, urls in _HB_PLATFORMS:
+        custom = str(os.environ.get("TOPIC_HOT_API_" + key.upper()) or "").strip()
+        specs.append(((custom,) if custom else ()) + tuple(urls))
+    try:
+        got = await _hb_fetch_all(specs)
+    except Exception:
+        got = [[] for _ in _HB_PLATFORMS]
+
+    prev = {p["key"]: p for p in (_HB_CACHE["data"] or [])}
+    platforms = []
+    for (key, name, _urls), rows in zip(_HB_PLATFORMS, got):
+        if rows:
+            items, status, updated = _hot_board_items(rows, name, "live"), "live", now
+        elif prev.get(key, {}).get("status") == "live":
+            # 单次限流别让页签突然从「实时」掉成「加工题」，沿用上一次真数据
+            old = prev[key]
+            items, status, updated = old["items"], "live", old.get("updated") or now
+        else:
+            items, status, updated = _hb_curated(key, name), "curated", 0
+        platforms.append({"key": key, "name": name, "status": status,
+                          "updated": updated, "count": len(items),
+                          "items": items})
+    if platforms:
+        live_n = sum(1 for p in platforms if p["status"] == "live")
+        # 几乎全没抓到时别缓存十分钟，给下次打开留一次快速重试
+        _HB_CACHE.update({"at": now, "data": platforms,
+                          "ttl": _HB_TTL if live_n >= 3 else 90})
+    elif _HB_CACHE["data"]:
+        return JSONResponse({"ok": True, "stale": True, "at": _HB_CACHE["at"],
+                             "note": _HB_NOTE, "platforms": _HB_CACHE["data"]})
+    return JSONResponse({"ok": True, "stale": False, "at": now,
+                         "note": _HB_NOTE, "platforms": platforms})
 
 
 _SAMPLES_CACHE = {"at": 0.0, "data": None}

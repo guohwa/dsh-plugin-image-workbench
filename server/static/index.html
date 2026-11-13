@@ -323,8 +323,57 @@
     padding:0 4px;line-height:14px;margin-top:1px;white-space:nowrap}
   .rectop-load{font-size:11px;color:var(--ink-3);padding:5px 3px;line-height:1.5}
   .rectop-foot{display:flex;gap:6px;align-items:center;justify-content:space-between;
-    font-size:9px;color:var(--ink-3);margin-top:2px;padding:0 3px}
+    font-size:9px;color:var(--ink-3);margin-top:0;padding:0 3px}
   .rectop-foot span:last-child{white-space:nowrap;font-variant-numeric:tabular-nums}
+  /* 选中后的提示会变长，不能让底栏折成两行把卡片撑高 */
+  .rectop-foot span:first-child{flex:1;min-width:0;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .rectop-open{border:1px solid #f2d6ad;background:#fff1de;color:#b76a00;font:inherit;
+    font-size:9.5px;font-weight:600;border-radius:5px;padding:0 6px;cursor:pointer;
+    white-space:nowrap;line-height:14px}
+  .rectop-open:hover{background:#ffe6c4;border-color:#e8bf8c}
+  .rectop-page{cursor:pointer;border-bottom:1px dashed transparent}
+  .rectop-page:hover{color:#b76a00;border-bottom-color:#e8bf8c}
+  /* 多平台热点弹窗：页签切平台，卡片两列；正文只在卡内滚，窗口高度固定 */
+  dialog.hb-dlg{width:min(960px,96vw);height:min(86vh,860px);padding:0}
+  dialog.hb-dlg[open]{display:flex;flex-direction:column}
+  dialog.hb-dlg .inner{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;padding:14px 16px}
+  dialog.hb-dlg .scroller{flex:1 1 auto;min-height:0;max-height:none;overflow:auto;padding-right:4px;outline:none}
+  .hb-tabs{display:flex;gap:5px;flex:none;overflow-x:auto;padding-bottom:6px;margin-bottom:6px}
+  .hb-tab{border:1px solid var(--line);background:#fff;color:var(--ink-2);border-radius:7px;
+    font:inherit;font-size:11px;padding:4px 9px;cursor:pointer;white-space:nowrap;
+    display:flex;gap:5px;align-items:center}
+  .hb-tab:hover{border-color:#d5c9fb;color:var(--primary)}
+  .hb-tab.on{background:#f1eefe;border-color:#cfc2f8;color:var(--primary);font-weight:600}
+  .hb-dot{width:6px;height:6px;border-radius:50%;background:#1f9d6b;flex:0 0 auto}
+  .hb-dot.off{background:#e0a33a}
+  .hb-note{flex:none;font-size:10.5px;color:var(--ink-3);line-height:1.5;margin:0 0 9px}
+  .hb-note b{color:var(--warn);font-weight:600}
+  .hb-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  @media (max-width:760px){.hb-grid{grid-template-columns:1fr}}
+  .hb-card{border:1px solid var(--line);border-radius:10px;background:#fff;padding:9px 10px;
+    display:flex;flex-direction:column;gap:5px;min-width:0}
+  .hb-card:hover{border-color:#d5c9fb;background:#fcfbff}
+  .hb-top{display:flex;gap:6px;align-items:flex-start;min-width:0}
+  .hb-rank{flex:0 0 auto;width:19px;height:19px;border-radius:5px;background:#f1eefe;color:var(--primary);
+    font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;
+    font-variant-numeric:tabular-nums}
+  .hb-title{flex:1;min-width:0;font-size:12.5px;font-weight:600;line-height:1.45;word-break:break-word}
+  .hb-hot{flex:0 0 auto;font-size:9.5px;color:var(--ink-3);white-space:nowrap;margin-top:3px}
+  .hb-meta{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+  .hb-plat{font-size:9.5px;color:#b76a00;background:#fff1de;border-radius:4px;padding:0 5px;line-height:15px}
+  .hb-kind{font-size:9.5px;color:var(--ink-3)}
+  .hb-angle{font-size:10.5px;color:var(--ink-2);line-height:1.5;background:#faf8ff;border-radius:6px;
+    padding:5px 7px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+    overflow:hidden;word-break:break-word}
+  .hb-acts{display:flex;gap:5px;align-items:center;margin-top:auto}
+  .hb-btn{border:1px solid #e6dcfb;background:#f7f4ff;color:var(--primary);font:inherit;font-size:10px;
+    border-radius:6px;padding:3px 8px;cursor:pointer;white-space:nowrap}
+  .hb-btn:hover{background:#eee8ff}
+  .hb-btn.ghost{background:#fff;border-color:var(--line);color:var(--ink-2)}
+  .hb-why{font-size:9.5px;color:var(--ink-3);flex:1;min-width:0;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .hb-empty{grid-column:1/-1;font-size:12px;color:var(--ink-3);padding:22px;text-align:center}
   /* 放大弹窗：高度定死，综述在卡内滚动；展开不同长度的条目时窗口不跟着抽 */
   dialog.aihot-dlg{width:min(780px,96vw);height:min(84vh,800px);padding:0}
   dialog.aihot-dlg[open]{display:flex;flex-direction:column}
@@ -1006,7 +1055,9 @@
         <div class="rectop-load">正在挑几条能吵得起来的选题…</div>
       </div>
       <div class="rectop-foot">
-        <span id="recHint">点一条填进选题框</span><span id="recPage"></span>
+        <span id="recHint" title="点一条填进选题框">点一条填进选题框</span>
+        <button class="rectop-open" id="recOpen" type="button" title="打开多平台热点榜：知乎 / 小红书 / 抖音 / 今日头条 / 快手 / 微博 / B 站">全平台热点 ↗</button>
+        <span class="rectop-page" id="recPage" title="点这里也能打开多平台热点榜"></span>
       </div>
     </div>
 
@@ -1358,6 +1409,22 @@
     </div>
     <div class="aihot-note" id="aihotNote">过去 48 小时里被多个独立信源同时讨论的 AI 事件，越靠前讨论的人越多。点标题展开综述。</div>
     <div class="scroller" tabindex="-1"><div class="aihot-dlist" id="aihotDList"></div></div>
+  </div>
+</dialog>
+
+<!-- 多平台热点榜：由推荐话题卡片底部「全平台热点 ↗」打开。
+     切页签全在本地渲染，只有首次打开和手动刷新才打接口；点条目直接填进选题框。 -->
+<dialog id="hotBoardDlg" class="hb-dlg">
+  <div class="inner">
+    <div class="dlg-head">
+      <h3>多平台热点榜 <span>点一条填进选题框</span></h3>
+      <span class="spacer"></span>
+      <button class="btn ghost mini" id="hbRefresh" type="button">刷新 ↻</button>
+      <button class="btn ghost mini" id="hbClose" type="button">关闭</button>
+    </div>
+    <div class="hb-tabs" id="hbTabs"></div>
+    <div class="hb-note" id="hbNote"></div>
+    <div class="scroller" tabindex="-1"><div class="hb-grid" id="hbList"></div></div>
   </div>
 </dialog>
 
@@ -6588,8 +6655,10 @@ setInterval(refreshPool, 10000);
     return a;
   }
   function sourceLabel(d){
-    if(d.live) return '知乎热榜 · 实时';
-    if(String(d.source || '').indexOf('AIHOT') >= 0) return '热点 + 常青';
+    const s = String(d.source || '');
+    // 池子里仍掺着常青题，别因为有实时层就把整批说成实时
+    if(s.indexOf('知乎热榜') >= 0) return '知乎热榜 + 常青';
+    if(s.indexOf('AIHOT') >= 0) return '热点 + 常青';
     return '常青选题库';
   }
   function render(){
@@ -6616,7 +6685,7 @@ setInterval(refreshPool, 10000);
       '</button>';
     }).join('');
     if(pageEl) pageEl.textContent = '第 ' + batch + ' 批 · 共 ' + pool.length + ' 条';
-    if(hintEl) hintEl.textContent = '点一条填进选题框';
+    if(hintEl){ hintEl.textContent = '点一条填进选题框'; hintEl.title = hintEl.textContent; }
     Array.prototype.forEach.call(listEl.querySelectorAll('.rec-row'), function(btn){
       btn.onclick = function(){ pick(take[Number(btn.dataset.k)]); };
     });
@@ -6634,7 +6703,7 @@ setInterval(refreshPool, 10000);
     saveSession();
     t.focus();
     try{ t.setSelectionRange(t.value.length, t.value.length); }catch(e){}
-    if(hintEl) hintEl.textContent = '已填进选题，接着点「AI 生成文章」';
+    if(hintEl){ hintEl.textContent = '已填进选题，接着点「AI 生成文章」'; hintEl.title = hintEl.textContent; }
     toast('已填进选题，接着点「AI 生成文章」');
   }
   async function load(fresh){
@@ -6660,6 +6729,112 @@ setInterval(refreshPool, 10000);
   }
   nextBtn.onclick = function(){ if(pool.length) render(); else load(1); };
   load(0);
+
+  /* 多平台热点弹窗：卡片底部按钮 / 来源徽标 / 批次文字都能打开。
+     切页签只在本地渲染，首次打开和手动刷新才打接口。 */
+  const hbDlg = document.getElementById('hotBoardDlg');
+  const hbTabsEl = document.getElementById('hbTabs');
+  const hbListEl = document.getElementById('hbList');
+  const hbNoteEl = document.getElementById('hbNote');
+  const hbRefresh = document.getElementById('hbRefresh');
+  const hbClose = document.getElementById('hbClose');
+  let hbData = null, hbTab = 'all', hbBusy = false, hbShown = [];
+
+  function hbOpen(){
+    if(!hbDlg) return;
+    if(!hbDlg.open) hbDlg.showModal();
+    if(!hbData) hbLoad(0);
+  }
+  async function hbLoad(fresh){
+    if(hbBusy || !hbListEl) return;
+    hbBusy = true;
+    if(hbRefresh) hbRefresh.disabled = true;
+    hbListEl.innerHTML = '<div class="hb-empty">正在读取各平台热榜…</div>';
+    try{
+      const r = await fetch('/api/topics/platforms' + (fresh ? '?fresh=1' : ''));
+      const d = await r.json();
+      hbData = d;
+      if(hbTab !== 'all' && !(d.platforms || []).some(function(p){ return p.key === hbTab; })) hbTab = 'all';
+      hbRenderTabs(); hbRender(d);
+    }catch(e){
+      hbListEl.innerHTML = '<div class="hb-empty">没读到热榜，点「刷新 ↻」重试</div>';
+      if(hbNoteEl) hbNoteEl.textContent = '接口暂时没响应，稍后再试。';
+    }finally{
+      hbBusy = false;
+      if(hbRefresh) hbRefresh.disabled = false;
+    }
+  }
+  function hbRenderTabs(){
+    if(!hbTabsEl || !hbData) return;
+    const ps = hbData.platforms || [];
+    const rows = [['all', '全部']].concat(ps.map(function(p){ return [p.key, p.name]; }));
+    hbTabsEl.innerHTML = rows.map(function(x){
+      const p = ps.find(function(q){ return q.key === x[0]; });
+      const dot = p ? '<i class="hb-dot' + (p.status === 'live' ? '' : ' off') + '"></i>' : '';
+      const num = p ? ' <span style="opacity:.6">' + p.count + '</span>' : '';
+      return '<button class="hb-tab' + (hbTab === x[0] ? ' on' : '') + '" type="button" data-k="' +
+        esc(x[0]) + '">' + dot + esc(x[1]) + num + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(hbTabsEl.querySelectorAll('.hb-tab'), function(b){
+      b.onclick = function(){ hbTab = b.dataset.k; hbRenderTabs(); hbRender(hbData); };
+    });
+  }
+  function hbRender(d){
+    if(!hbListEl || !d) return;
+    const ps = d.platforms || [];
+    const live = ps.filter(function(p){ return p.status === 'live'; }).length;
+    if(hbNoteEl){
+      hbNoteEl.innerHTML = '<b>实时 ' + live + ' / ' + ps.length + ' 个平台</b>　' +
+        esc(String(d.note || '')) + (d.stale ? '　接口超时，显示上一次缓存。' : '') +
+        '　点「用作选题」填加工后的讨论切口，点「原题」填热榜原标题。';
+    }
+    hbShown = [];
+    ps.forEach(function(p){
+      if(hbTab !== 'all' && p.key !== hbTab) return;
+      const lim = hbTab === 'all' ? 4 : p.items.length;
+      (p.items || []).slice(0, lim).forEach(function(it){ hbShown.push({it: it, p: p}); });
+    });
+    if(!hbShown.length){
+      hbListEl.innerHTML = '<div class="hb-empty">这个平台暂时没有条目</div>';
+      return;
+    }
+    hbListEl.innerHTML = hbShown.map(function(row, i){
+      const it = row.it, p = row.p;
+      const title = String(it.title || ''), text = String(it.text || title);
+      const why = String(it.why || '');
+      const kind = p.status === 'live' ? '实时热榜' : '平台向 · 加工题';
+      const angle = it.angle ? '<div class="hb-angle" title="' + esc(why) + '">' + esc(text) + '</div>' : '';
+      return '<div class="hb-card">' +
+        '<div class="hb-top"><span class="hb-rank">' + (it.rank || i + 1) + '</span>' +
+          '<span class="hb-title" title="' + esc(title) + '">' + esc(title) + '</span>' +
+          (it.hot ? '<span class="hb-hot">' + esc(it.hot) + '</span>' : '') + '</div>' +
+        '<div class="hb-meta"><span class="hb-plat">' + esc(p.name) + '</span>' +
+          '<span class="hb-kind">' + esc(kind) + '</span></div>' + angle +
+        '<div class="hb-acts">' +
+          '<button class="hb-btn" type="button" data-act="use" data-i="' + i + '">用作选题</button>' +
+          '<button class="hb-btn ghost" type="button" data-act="raw" data-i="' + i + '">原题</button>' +
+          '<span class="hb-why" title="' + esc(why) + '">' + esc(why) + '</span>' +
+        '</div></div>';
+    }).join('');
+    Array.prototype.forEach.call(hbListEl.querySelectorAll('.hb-btn'), function(b){
+      b.onclick = function(){
+        const row = hbShown[Number(b.dataset.i)];
+        if(!row) return;
+        const val = b.dataset.act === 'raw'
+          ? String(row.it.title || '') : String(row.it.text || row.it.title || '');
+        if(!val) return;
+        pick({text: val});
+        if(hbDlg && hbDlg.open) hbDlg.close();
+      };
+    });
+  }
+  const recOpen = document.getElementById('recOpen');
+  if(recOpen) recOpen.onclick = hbOpen;
+  if(pageEl) pageEl.onclick = hbOpen;
+  srcEl.style.cursor = 'pointer';
+  srcEl.onclick = hbOpen;
+  if(hbRefresh) hbRefresh.onclick = function(){ hbLoad(1); };
+  if(hbClose && hbDlg) hbClose.onclick = function(){ hbDlg.close(); };
 })();
 
 /* AI 热点选题：左栏小卡片 + 放大弹窗。

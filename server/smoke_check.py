@@ -897,8 +897,64 @@ ok('点选推荐话题填进选题框并断开旧热点综述',
                                 'state.hotStory = null', "bindDraft(null, '')",
                                 'saveSession()')))
 ok('来源标记不把兜底说成实时热榜',
-   "if(d.live) return '知乎热榜 · 实时'" in _src_html
-   and "return '常青选题库'" in _src_html)
+   "return '知乎热榜 + 常青'" in _src_html
+   and "return '热点 + 常青'" in _src_html
+   and "return '常青选题库'" in _src_html
+   and '池子里仍掺着常青题' in _src_html)
+
+# ---- 多平台热点榜弹窗（1.1.37）----
+ok('GET /api/topics/platforms 已注册',
+   any(getattr(r, 'path', '') == '/api/topics/platforms' for r in app.app.routes))
+_cp = client.get('/api/topics/platforms')
+_cd = _cp.json() if _cp.status_code == 200 else {}
+_cps = _cd.get('platforms') or []
+ok('覆盖七个平台且每个页签都不空',
+   _cp.status_code == 200 and len(_cps) == len(app._HB_PLATFORMS)
+   and all(p.get('key') and p.get('name')
+           and p.get('status') in ('live', 'curated')
+           and p.get('items') and p.get('count') == len(p['items']) for p in _cps),
+   '%d 个平台' % len(_cps))
+ok('热点条目保留原标题并带可填进选题框的文本',
+   all(x.get('title') and x.get('text') and x.get('why')
+       for p in _cps for x in p['items']))
+ok('加工题不编造热度和链接',
+   all(not x.get('hot') and not x.get('url')
+       for p in _cps for x in p['items'] if x['status'] == 'curated'))
+ok('热榜返回壳兼容 NewsNow / 60s / 纯数组',
+   app._hot_board_rows({'items': [{'title': '甲', 'url': 'u'}]})[0]['title'] == '甲'
+   and app._hot_board_rows({'data': [{'title': '乙', 'hot_value': 11126038, 'link': 'l'}]})[0]['hot'] == '1112.6 万'
+   and app._hot_board_rows(['丙'])[0]['title'] == '丙')
+ok('热度值换算成万 / 亿',
+   app._hb_hot(11126038) == '1112.6 万' and app._hb_hot('') == ''
+   and app._hb_hot('12 万') == '12 万')
+ok('缺源平台的加工题同样过干货闸门',
+   all(app._topic_ok(x['text'])
+       for k in ('xhs', 'kuaishou') for x in app._hb_curated(k, ''))
+   and all(not app._TOPIC_BAD.search(x['text'])
+           for k in ('xhs', 'kuaishou') for x in app._hb_curated(k, '')))
+ok('弹窗角度通用，不把球赛油价套进 AI 办公话术',
+   all(x not in ''.join(a[0] for a in app._HB_ANGLES)
+       for x in ('团队', 'SOP', '重复劳动', '周报'))
+   and '油价下调' in app._hb_angle('油价下调 加满一箱油少花约26元')[0]
+   and app._topic_ok(app._hb_angle('油价下调 加满一箱油少花约26元')[0]))
+ok('情绪化热榜标题只展示原题不加工',
+   app._hb_angle('震惊！一定要看完的 3 个秘密') is None)
+ok('可接自定义热榜源',
+   'TOPIC_HOT_API_' in _src_app and 'custom' in _src_app)
+ok('卡片底部三个入口都能打开弹窗',
+   all(x in _src_html for x in ('id="recOpen"', 'class="rectop-page" id="recPage"',
+                                'srcEl.onclick = hbOpen', 'pageEl.onclick = hbOpen')))
+ok('弹窗含平台页签、状态说明与两列卡片',
+   all(x in _src_html for x in ('id="hotBoardDlg"', 'id="hbTabs"', 'id="hbNote"',
+                                'id="hbList"', 'hb-grid', '.hb-dot.off')))
+ok('切页签本地渲染，只有打开和刷新才打接口',
+   all(x in _src_html for x in ("fetch('/api/topics/platforms'", 'hbLoad(0)',
+                                'hbLoad(1)', 'if(!hbData) hbLoad(0)')))
+ok('点条目填进选题并复用原有 pick 逻辑',
+   'pick({text: val})' in _src_html
+   and 'if(hbDlg && hbDlg.open) hbDlg.close()' in _src_html)
+ok('界面把加工题和实时榜区分开',
+   '平台向 · 加工题' in _src_html and '不冒充实时' in _src_app)
 
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')
