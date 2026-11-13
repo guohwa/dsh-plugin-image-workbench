@@ -989,6 +989,245 @@ async def api_aihot_story(id: str = ""):
     return JSONResponse(data)
 
 
+# ---------------- 推荐话题 ----------------
+# 目标：给「选题」框喂能引起讨论、带判断依据的题，不要空问「你怎么看」，也不要鸡汤。
+# 数据分三层，任一层拿不到都不会让这块变空白：
+#   1. 实时知乎热榜（公开聚合接口，匿名只读；可用 TOPIC_HOT_API 换成自己的源）
+#   2. 本进程缓存的 AIHOT 热点（真事件，不额外发请求）
+#   3. 内置常青讨论题库（逐条挑过：具体数字 / 工具 / 动作 + 一个能站队的两难点）
+# 界面会标明这批来自哪一层，兜底不冒充实时热榜。加工只做「把事件变成可讨论的
+# 切口」，不替用户写结论，也不给热点补编事实。
+_REC_TTL = 1800
+_REC_CACHE: dict = {"at": 0.0, "items": [], "source": "", "live": False}
+_REC_UA = "BluxeImageWorkbench (local workbench)"
+
+# 空词和大词：命中就不加工，避免把热榜标题熬成毒鸡汤
+_TOPIC_BAD = re.compile(
+    r"震惊|泪目|破防|一定要|人生赢家|格局|认知差|真正厉害|成年人的世界|"
+    r"逆袭|揭秘|看完沉默|建议收藏|他说了一句话|扎心|治愈|自律|坚持|努力")
+# 干货的最低门槛：得有数字，或者有一个能动手验证的动作
+_TOPIC_SOLID = re.compile(r"\d|[0-9一二三四五六七八九十]|[先查算改拆记核实标列数试对比留换删]")
+
+# 把一条热点标题变成可讨论的选题切口。每条都要求读者给出依据或做法，
+# 而不是表态。选哪个角度由标题决定，同一条热点每次都稳定落在同一个角度。
+_HOT_ANGLES = (
+    ("{t}：先别急着转发，把信息源、时间线、原始出处这 3 类公开数据查一遍再下结论", "事实核查 · 3 类公开数据可复核"),
+    ("{t}：如果要把这条写进团队周报，哪 2 个数字必须先核实？", "逼出具体数字，不靠印象站队"),
+    ("同一个「{t}」，写给老板看和写给同行看，信息顺序该怎么换？", "同一事实两种写法，同行能直接晒自己的顺序"),
+    ("{t}之后，团队里哪一件重复劳动可以真的删掉？给一个能算清工时的判断法", "落到工时，能算出结论就吵不起来"),
+    ("拿「{t}」练一次提示词：怎么让 AI 只复述可核实的事实，不自己补细节", "有可复制的提示词做法"),
+    ("{t}：这类变化要不要直接写进团队 SOP？先摆清 3 个前提再站队", "明确两难，正反两边都有话说"),
+)
+
+# 常青题库：按知乎 / 小红书上长期有人讨论的方向写，全部带可验证的细节。
+# 这些不是「今日热榜」，source 会如实标成「常青选题库」。
+_EVERGREEN_TOPICS = (
+    ("用 AI 写了 3 周会议纪要，我把出错分成 4 类：最麻烦的不是错别字，是把待办派给了没参会的人", "知乎向", "有出错分类，同行能补自己的第 5 类"),
+    ("同一份 200 页 PDF，先标页码再问 AI 和整本直接丢进去，答案能不能翻回原文核对，差在哪", "知乎向", "两步做法可照着复现"),
+    ("让 AI 总结 90 分钟会议，提示词里加「只写有原话支撑的结论」之后，我删掉了几段很顺但没人说过的话", "知乎向", "一句约束能直接试"),
+    ("团队要不要把 AI 生成的内容直接进 SOP？先算清返工工时、责任人、留痕这 3 笔账", "知乎向", "三笔账给出判断框架"),
+    ("用 AI 做竞品调研，最该防的不是它编造，而是它把 3 个来源的时间线揉成一条", "知乎向", "指出一个常被漏掉的具体错误"),
+    ("「会用 AI」要不要算进招聘要求？拿一份可复核的交付物来判，比问会不会写提示词靠谱", "知乎向", "两边都有明确立场"),
+    ("把一个重复了半年的表格流程交给 AI 之前，我先记了 5 天工时，才敢说到底省了多少", "知乎向", "先有基线再谈收益"),
+    ("AI 改写的文案读起来更顺，却把具体数字和责任主体改没了，这种损失该怎么量化", "知乎向", "把「变味」变成可算的项"),
+    ("本地小模型和云端大模型做同一件整理工作，我按准确率、等待时间、单次成本记了 3 列", "小红书向", "三列对照表能直接抄"),
+    ("让 AI 读合同，我要求每条结论后面附原文行号，这条约束挡掉过哪些看起来很确定的错", "知乎向", "可验证的行号约束"),
+    ("为什么同一条提示词换一批资料就从好用变瞎编？我拆了输入长度和字段顺序两个变量", "知乎向", "把玄学问题拆成变量"),
+    ("知识库接了 AI 问答之后，最先暴露的不是模型不行，是文档从来没人写清适用范围", "知乎向", "反直觉但有现场细节"),
+    ("用 AI 生成周报，要不要保留「本周没做成的事」？删掉之后我少拿到了哪些反馈", "知乎向", "一个小改动引出管理话题"),
+    ("把客户邮件交给 AI 起草，哪 3 类句子必须人工改，不然语气容易越界", "小红书向", "给出可执行的检查清单"),
+    ("AI 给的方案看着完整，怎么在 10 分钟内判断哪一步没法落地？先查有没有写责任人和截止日", "知乎向", "10 分钟判断法"),
+    ("我把 7 个 AI 写作工具用同一篇稿子跑了一遍，只留下能一次改好标题和小标题的那个", "小红书向", "同一篇稿子做对照"),
+    ("提示词里写「给 3 个版本并说明取舍」，比写「写得更好」多花的 20 秒值不值", "小红书向", "差异能当场计时"),
+    ("手机备忘录加 AI 整理能不能替代专门笔记软件？我按找得到、改得动、带得走三项试了两周", "小红书向", "三项标准可直接套用"),
+    ("做图文封面，AI 出图和模板改图各花多久？我按 10 张图记了时间", "小红书向", "有样本量有时间账"),
+    ("把长文拆成 9 张贴图，先写小标题还是先配图？两种顺序我各做了一次", "小红书向", "同题两种流程对比"),
+    ("用 AI 起标题，一次给 20 个和分 4 轮各给 5 个，哪种更容易挑出能用的", "小红书向", "两种做法能复跑验证"),
+    ("AI 写的口播稿念出来总别扭，我把句子压到 18 字以内才顺，这个长度对所有题材都成立吗", "小红书向", "给了具体数字也留了争议"),
+    ("同一份素材发公众号和小红书，标题、开头、结尾各要换什么？我列了 6 处", "小红书向", "六处改动能逐条对照"),
+    ("把 AI 当校对用，让它只挑错不改文，比让它润色少踩了哪些坑", "小红书向", "两种用法对比"),
+    ("用 AI 做选题库，30 条里最后真能写的只有 5 条，卡住的是哪一类", "知乎向", "把转化率摆到台面上"),
+    ("拍照笔记转文字再让 AI 整理，识别错的字会把结论带偏多少？我故意留了 5 处错试了下", "小红书向", "故意注入错误做实验"),
+    ("给 AI 的参考样例放 1 个还是 3 个？我用同一段文案对比了输出稳定性", "小红书向", "变量单一，结论可复现"),
+    ("把 AI 生成的内容打回重写，写「哪里不对」和写「改成什么样」，返工次数差多少", "小红书向", "两种反馈写法可计数"),
+    ("一份提示词用到第 3 周开始失灵，是模型变了还是输入变了？我留了版本记录才分清", "知乎向", "引出版本管理习惯"),
+    ("先让 AI 列大纲再写，和直接写再让它补结构，哪版更少改？我拿 8 篇稿子数了改动行数", "小红书向", "用改动行数代替感觉"),
+)
+
+
+def _topic_clean(text: str) -> str:
+    """压掉空白和控制字符，截断到能塞进选题框的长度。"""
+    s = re.sub(r"\s+", " ", str(text or "")).strip()
+    if len(s) > 64:
+        s = s[:63].rstrip("，,、：: ") + "…"
+    return s
+
+
+def _topic_ok(text: str) -> bool:
+    """干货闸门：长度够、不含鸡汤空词、有数字或可动手验证的动作。"""
+    s = str(text or "")
+    # 上限放到 130：热点标题本身可能就 60 多字，套上讨论角度会到 100 出头，
+    # 截断到 100 会把句子切坏；选题框能放两行，长一点不影响阅读。
+    return (12 <= len(s) <= 130 and not _TOPIC_BAD.search(s)
+            and bool(_TOPIC_SOLID.search(s)))
+
+
+def _topic_angle(title: str) -> tuple[str, str]:
+    """同一条热点稳定挑一个讨论角度，不在「你怎么看」里打转。"""
+    key = hashlib.md5(title.encode("utf-8", "replace")).digest()[0]
+    tpl, why = _HOT_ANGLES[key % len(_HOT_ANGLES)]
+    return tpl.format(t=title), why
+
+
+def _topics_from_titles(titles: list, tag: str) -> list:
+    out, seen, used_angle = [], set(), set()
+    for raw in titles:
+        t = _topic_clean(raw)
+        if len(t) < 6 or _TOPIC_BAD.search(t) or t in seen:
+            continue
+        seen.add(t)
+        # 同一批里角度尽量摊开，别连着三条都是「先别急着转发」
+        idx = hashlib.md5(t.encode("utf-8", "replace")).digest()[0] % len(_HOT_ANGLES)
+        if idx in used_angle:
+            idx = next((j for j in range(len(_HOT_ANGLES)) if j not in used_angle), idx)
+        used_angle.add(idx)
+        tpl, why = _HOT_ANGLES[idx]
+        text = tpl.format(t=t)
+        if not _topic_ok(text):
+            continue
+        out.append({"id": "h" + hashlib.md5((tag + t).encode("utf-8", "replace")).hexdigest()[:10],
+                    "text": text, "tag": tag, "why": why})
+    return out
+
+
+def _evergreen_topics() -> list:
+    out = []
+    for i, (text, tag, why) in enumerate(_EVERGREEN_TOPICS):
+        if not _topic_ok(text):
+            continue
+        out.append({"id": "e%02d" % i, "text": text, "tag": tag, "why": why})
+    return out
+
+
+def _rec_interleave(groups: list) -> list:
+    """按层轮流取，保证前几批就掺着实时热点和常青题，不会连着 10 条都是一类。"""
+    out, seen = [], set()
+    for i in range(max((len(g) for g in groups), default=0)):
+        for g in groups:
+            if i >= len(g):
+                continue
+            it = g[i]
+            if it["text"] in seen:
+                continue
+            seen.add(it["text"])
+            out.append(it)
+    return out
+
+
+def _hot_titles_from_json(data) -> list:
+    """兼容几种公开热榜的返回壳：直接数组 / items / data / data.items。"""
+    rows = data
+    if isinstance(data, dict):
+        rows = data.get("items") or data.get("data") or data.get("list") or []
+        if isinstance(rows, dict):
+            rows = rows.get("items") or rows.get("list") or []
+    if not isinstance(rows, list):
+        return []
+    out = []
+    for x in rows:
+        if isinstance(x, str):
+            t = x
+        elif isinstance(x, dict):
+            t = (x.get("title") or x.get("name") or x.get("query")
+                 or x.get("word") or x.get("desc") or "")
+        else:
+            t = ""
+        t = str(t).strip()
+        if t:
+            out.append(t)
+    return out
+
+
+async def _fetch_zhihu_titles() -> list:
+    """尽力抓一次真实知乎热榜；拿不到就返回空，交给下面两层兜底。
+
+    公共聚合站会限流，所以每跳只给 2 秒、整体最多 4.5 秒；请求失败不算错误，
+    更不能让首屏或「换一批」卡在转圈上。要走代理的机器先试代理再试直连。
+    """
+    import httpx
+
+    custom = str(os.environ.get("TOPIC_HOT_API") or "").strip()
+    urls = ([custom] if custom else []) + [
+        "https://newsnow.busiyi.world/api/s?id=zhihu",
+        "https://api-hot.imsyy.top/zhihu",
+        "https://api.vvhan.com/api/hotlist/zhihuHot",
+    ]
+    has_proxy = bool(os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY"))
+    modes = (True, False) if has_proxy else (False,)
+
+    async def probe():
+        for url in urls:
+            if not url.startswith(("http://", "https://")):
+                continue
+            for trust_env in modes:
+                try:
+                    async with httpx.AsyncClient(
+                        trust_env=trust_env, timeout=2, follow_redirects=True,
+                        headers={"User-Agent": _REC_UA, "Accept": "application/json"},
+                    ) as c:
+                        r = await c.get(url)
+                    if r.status_code != 200:
+                        continue
+                    titles = _hot_titles_from_json(r.json())
+                    if titles:
+                        return titles
+                except Exception:
+                    continue
+        return []
+
+    try:
+        return await asyncio.wait_for(probe(), timeout=4.5)
+    except Exception:
+        return []
+
+
+async def _ensure_aihot_hot():
+    """推荐话题可能比左栏热点卡片先到，这里自己补一次，别让第 2 层永远落空。"""
+    if _AIHOT_HOT.get("items"):
+        return
+    try:
+        items = _aihot_slim(await _aihot_json("/hot-topics"))
+        if items:
+            _AIHOT_HOT.update({"at": time.time(), "items": items, "err": ""})
+    except Exception:
+        pass
+
+
+@app.get("/api/topics/recommend")
+async def api_topics_recommend(fresh: int = 0):
+    """一批可点选的推荐话题。前端每次露 3 条，点「下一批」在本地翻池子。"""
+    now = time.time()
+    if (not fresh and _REC_CACHE["items"]
+            and now - _REC_CACHE["at"] < _REC_TTL):
+        return JSONResponse({"ok": True, "stale": False, **{
+            k: _REC_CACHE[k] for k in ("at", "items", "source", "live")}})
+
+    # 两路并行：外部热榜最多 9 秒，自家热点通常 1 秒内回来，不互相拖
+    live, _ = await asyncio.gather(_fetch_zhihu_titles(), _ensure_aihot_hot())
+    aihot = [str(x.get("title") or "") for x in (_AIHOT_HOT.get("items") or [])[:8]]
+    g_live = _topics_from_titles(live, "知乎热榜")[:9]
+    g_ai = _topics_from_titles(aihot, "AIHOT")[:6]
+    items = _rec_interleave([g_live, g_ai, _evergreen_topics()])
+    if not items:
+        items = _evergreen_topics()
+    # 池子里掺了常青题就照实说，别让徽标看起来像整批都是实时热点
+    source = ("知乎热榜 + 常青题库" if g_live
+              else ("AIHOT 热点 + 常青题库" if g_ai else "常青选题库"))
+    _REC_CACHE.update({"at": now, "items": items, "source": source, "live": bool(g_live)})
+    return JSONResponse({"ok": True, "stale": False, "at": now, "items": items,
+                         "source": source, "live": bool(g_live)})
+
+
 _SAMPLES_CACHE = {"at": 0.0, "data": None}
 
 

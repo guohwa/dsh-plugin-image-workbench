@@ -297,6 +297,34 @@
   .ai-n{flex:0 0 auto;font-size:9.5px;color:var(--ink-3);margin-top:2px;white-space:nowrap;
     font-variant-numeric:tabular-nums}
   .aihot-load{font-size:11px;color:var(--ink-3);padding:5px 3px;line-height:1.5}
+  /* 推荐话题：夹在 AI 热点榜和选题框之间。和上面的只读资讯分开，
+     用暖色边框提示「这几条是可以点进去直接写的」，避免两块糊成一张卡 */
+  .rectop{border:1px solid #f6dfc2;border-radius:12px;margin-top:7px;
+    background:linear-gradient(180deg,#fffaf3,#fff);padding:5px 8px 4px}
+  .rectop-h{display:flex;align-items:center;gap:6px}
+  .rectop-t{font-size:11.5px;font-weight:700;color:#b76a00;letter-spacing:.2px}
+  .rectop-badge{font-size:9.5px;font-weight:600;color:#b76a00;background:#fff1de;
+    border:1px solid #f6dfc2;border-radius:5px;padding:0 4px;line-height:14px;cursor:help;
+    max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rectop-a{border:0;background:transparent;color:var(--ink-2);font:inherit;font-size:10.5px;
+    cursor:pointer;padding:1px 4px;border-radius:5px;white-space:nowrap}
+  .rectop-a:hover{color:#b76a00;background:#fff1de}
+  .rectop-a:disabled{opacity:.45;cursor:default}
+  .rectop-list{display:flex;flex-direction:column;margin-top:2px}
+  .rec-row{display:flex;gap:6px;align-items:flex-start;padding:2px 4px;border-radius:7px;
+    cursor:pointer;text-align:left;background:none;border:0;font:inherit;width:100%;transition:background .12s}
+  .rec-row:hover{background:#fff1de}
+  .rec-no{flex:0 0 auto;width:15px;height:15px;border-radius:4px;background:#fff1de;color:#b76a00;
+    font-size:9.5px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px;
+    font-variant-numeric:tabular-nums}
+  .rec-tx{flex:1;min-width:0;font-size:11px;line-height:1.35;color:var(--ink);overflow:hidden;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
+  .rec-tag{flex:0 0 auto;font-size:9px;color:#b76a00;background:#fff6ea;border-radius:4px;
+    padding:0 4px;line-height:14px;margin-top:1px;white-space:nowrap}
+  .rectop-load{font-size:11px;color:var(--ink-3);padding:5px 3px;line-height:1.5}
+  .rectop-foot{display:flex;gap:6px;align-items:center;justify-content:space-between;
+    font-size:9px;color:var(--ink-3);margin-top:2px;padding:0 3px}
+  .rectop-foot span:last-child{white-space:nowrap;font-variant-numeric:tabular-nums}
   /* 放大弹窗：高度定死，综述在卡内滚动；展开不同长度的条目时窗口不跟着抽 */
   dialog.aihot-dlg{width:min(780px,96vw);height:min(84vh,800px);padding:0}
   dialog.aihot-dlg[open]{display:flex;flex-direction:column}
@@ -961,6 +989,24 @@
       </div>
       <div class="aihot-list" id="aihotList">
         <div class="aihot-load">正在拉今天的 AI 热点…</div>
+      </div>
+    </div>
+
+    <!-- 推荐话题：三条一批，点一条直接填进下面的选题框，再点「AI 生成文章」。
+         池子由 /api/topics/recommend 给：实时知乎热榜 → 当前 AIHOT 热点加工 → 常青题库兜底；
+         卡片上标清这一批的来源，兜底不冒充实时热榜。翻批全在本地做，点多少下都不会打接口。 -->
+    <div class="rectop" id="recTopics">
+      <div class="rectop-h">
+        <span class="rectop-t">推荐话题</span>
+        <span class="rectop-badge" id="recSource" title="优先取实时知乎热榜并加工成讨论型选题；抓不到时用当前 AIHOT 真热点加工，再兜底常青选题库。这里标的是本批实际来源，不把兜底说成实时">读取中</span>
+        <span class="spacer"></span>
+        <button class="rectop-a" id="recNext" type="button" title="换三条；一轮翻完会重新洗牌，不会连着出现重复">下一批 ↻</button>
+      </div>
+      <div class="rectop-list" id="recList">
+        <div class="rectop-load">正在挑几条能吵得起来的选题…</div>
+      </div>
+      <div class="rectop-foot">
+        <span id="recHint">点一条填进选题框</span><span id="recPage"></span>
       </div>
     </div>
 
@@ -6520,6 +6566,102 @@ setInterval(refreshPool, 10000);
 </script>
 
 <script>
+/* 推荐话题：三条一批，翻批只在本地洗牌，不重复打接口。
+   点一条只填选题框，不自动触发生成（免得白耗号池额度），接着点「AI 生成文章」即可。 */
+(function(){
+  const listEl = document.getElementById('recList');
+  const nextBtn = document.getElementById('recNext');
+  const srcEl = document.getElementById('recSource');
+  const hintEl = document.getElementById('recHint');
+  const pageEl = document.getElementById('recPage');
+  if(!listEl || !nextBtn || !srcEl) return;
+
+  const PAGE = 3;
+  let pool = [], order = [], cursor = 0, batch = 0, busy = false;
+
+  function shuffle(arr){
+    const a = arr.slice();
+    for(let i = a.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+  function sourceLabel(d){
+    if(d.live) return '知乎热榜 · 实时';
+    if(String(d.source || '').indexOf('AIHOT') >= 0) return '热点 + 常青';
+    return '常青选题库';
+  }
+  function render(){
+    if(!pool.length){
+      listEl.innerHTML = '<div class="rectop-load">暂时没挑到话题，点「下一批 ↻」重试</div>';
+      if(pageEl) pageEl.textContent = '';
+      return;
+    }
+    const take = [];
+    for(let n = 0; n < PAGE; n++){
+      if(cursor >= order.length){ order = shuffle(order); cursor = 0; }
+      take.push(pool[order[cursor++]]);
+    }
+    batch++;
+    listEl.innerHTML = take.map(function(it, i){
+      const why = String(it.why || '有具体做法或数字，能直接验证');
+      // 话题长会被夹成两行，悬停得能看见全文，不然点之前不知道自己选了什么
+      const tip = String(it.text || '') + ' ｜ ' + why + ' ｜ 点一下填进选题框';
+      return '<button class="rec-row" type="button" data-k="' + i + '" title="' +
+        esc(tip) + '">' +
+        '<span class="rec-no">' + (i + 1) + '</span>' +
+        '<span class="rec-tx">' + esc(it.text) + '</span>' +
+        '<span class="rec-tag">' + esc(it.tag || '选题') + '</span>' +
+      '</button>';
+    }).join('');
+    if(pageEl) pageEl.textContent = '第 ' + batch + ' 批 · 共 ' + pool.length + ' 条';
+    if(hintEl) hintEl.textContent = '点一条填进选题框';
+    Array.prototype.forEach.call(listEl.querySelectorAll('.rec-row'), function(btn){
+      btn.onclick = function(){ pick(take[Number(btn.dataset.k)]); };
+    });
+  }
+  function pick(it){
+    const t = document.getElementById('topic');
+    if(!t || !it) return;
+    t.value = String(it.text || '');
+    // 推荐话题不是 AIHOT 事件，断掉上一条热点的综述绑定，避免生成时张冠李戴
+    if(typeof state !== 'undefined') state.hotStory = null;
+    // 与「用作选题」一致：只填选题不立刻存草稿，等生成出标题正文才记一条
+    bindDraft(null, '');
+    markContentClean();
+    t.dispatchEvent(new Event('input', {bubbles:true}));
+    saveSession();
+    t.focus();
+    try{ t.setSelectionRange(t.value.length, t.value.length); }catch(e){}
+    if(hintEl) hintEl.textContent = '已填进选题，接着点「AI 生成文章」';
+    toast('已填进选题，接着点「AI 生成文章」');
+  }
+  async function load(fresh){
+    if(busy) return;
+    busy = true; nextBtn.disabled = true;
+    listEl.innerHTML = '<div class="rectop-load">正在挑几条能吵得起来的选题…</div>';
+    try{
+      const r = await fetch('/api/topics/recommend' + (fresh ? '?fresh=1' : ''));
+      const d = await r.json();
+      pool = (d.items || []).filter(function(x){ return x && x.text; });
+      srcEl.textContent = sourceLabel(d);
+      srcEl.title = '本批来源：' + String(d.source || '常青选题库') +
+        '。优先实时知乎热榜，抓不到用 AIHOT 真热点加工，再兜底常青题库；不把兜底说成实时。';
+      order = shuffle(pool.map(function(_, i){ return i; }));
+      cursor = 0; batch = 0;
+      render();
+    }catch(e){
+      listEl.innerHTML = '<div class="rectop-load">没读到话题，点「下一批 ↻」重试</div>';
+      srcEl.textContent = '读取失败';
+    }finally{
+      busy = false; nextBtn.disabled = false;
+    }
+  }
+  nextBtn.onclick = function(){ if(pool.length) render(); else load(1); };
+  load(0);
+})();
+
 /* AI 热点选题：左栏小卡片 + 放大弹窗。
    列表走后端 /api/aihot/topics（代取 + 缓存十分钟），事件综述按需再取——
    十条全预加载没必要，点开哪条拉哪条。 */

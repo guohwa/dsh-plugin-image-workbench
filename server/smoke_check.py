@@ -846,6 +846,60 @@ ok('重拉候选保留手动输入值与 custom 状态',
    'const wasCustom = s.value === PM_CUSTOM' in _src_html
    and 'inp.value = typed' in _src_html)
 
+# ---- 推荐话题：知乎 / 小红书讨论方向加工（1.1.36）----
+ok('GET /api/topics/recommend 已注册',
+   any(getattr(r, 'path', '') == '/api/topics/recommend' for r in app.app.routes))
+_rt = client.get('/api/topics/recommend')
+_rd = _rt.json() if _rt.status_code == 200 else {}
+_ritems = _rd.get('items') or []
+ok('推荐话题接口返回成批可用选题',
+   _rt.status_code == 200 and len(_ritems) >= 24
+   and all(x.get('text') and x.get('tag') and x.get('why') for x in _ritems),
+   '共 %d 条，来源 %s' % (len(_ritems), _rd.get('source')))
+ok('话题池每条都过干货闸门', all(app._topic_ok(x['text']) for x in _ritems))
+ok('话题池不含毒鸡汤空词',
+   not any(app._TOPIC_BAD.search(x['text']) for x in _ritems))
+ok('话题池不出现「你怎么看」式空问句',
+   not any('你怎么看' in x['text'] for x in _ritems))
+ok('鸡汤句被闸门拒绝', not app._topic_ok('只要努力坚持，人生一定会变好'))
+ok('具体可验证的选题被接受',
+   app._topic_ok('把 200 页 PDF 先标页码再问 AI，答案能翻回原文核对吗'))
+ok('同一热点稳定落在同一个讨论角度',
+   app._topic_angle('AI 工具进入团队周报之后怎么核数字')
+   == app._topic_angle('AI 工具进入团队周报之后怎么核数字'))
+_g = app._topics_from_titles(
+    ['AI 工具进入团队周报之后怎么核数字',
+     'AI 工具进入团队周报之后怎么核数字',
+     '震惊！一定要看完的 3 个秘密'], '知乎热榜')
+ok('热榜加工去重并跳过情绪标题',
+   len(_g) == 1 and _g[0]['tag'] == '知乎热榜' and bool(_g[0]['why']), len(_g))
+ok('热榜返回壳兼容 items / data / 数组',
+   app._hot_titles_from_json({'items': [{'title': '甲'}]}) == ['甲']
+   and app._hot_titles_from_json({'data': [{'title': '乙'}]}) == ['乙']
+   and app._hot_titles_from_json(['丙']) == ['丙'])
+_mix = app._rec_interleave([
+    [{'text': 'a1'}, {'text': 'a2'}], [{'text': 'b1'}],
+    [{'text': 'c1'}, {'text': 'c2'}]])
+ok('三层话题交错，前三条来自不同层',
+   [x['text'] for x in _mix[:3]] == ['a1', 'b1', 'c1'])
+ok('常青题库够翻十批以上', len(app._evergreen_topics()) >= 24,
+   len(app._evergreen_topics()))
+ok('推荐话题卡片插在热点榜与选题框之间',
+   all(x in _src_html for x in ('id="recTopics"', 'id="recList"', 'id="recNext"',
+                                'id="recSource"', 'id="recPage"'))
+   and 0 < _src_html.find('id="aihotList"') < _src_html.find('id="recTopics"')
+        < _src_html.find('label for="topic"'))
+ok('每批固定三条、翻批只走本地洗牌',
+   'const PAGE = 3' in _src_html and 'function shuffle(' in _src_html
+   and 'if(pool.length) render(); else load(1)' in _src_html)
+ok('点选推荐话题填进选题框并断开旧热点综述',
+   all(x in _src_html for x in ('function pick(it)', "t.value = String(it.text || '')",
+                                'state.hotStory = null', "bindDraft(null, '')",
+                                'saveSession()')))
+ok('来源标记不把兜底说成实时热榜',
+   "if(d.live) return '知乎热榜 · 实时'" in _src_html
+   and "return '常青选题库'" in _src_html)
+
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')
 sys.exit(0 if failed == 0 else 1)
