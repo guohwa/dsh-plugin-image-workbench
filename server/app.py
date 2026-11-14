@@ -834,6 +834,10 @@ _AIHOT_HOT: dict = {"at": 0.0, "items": [], "err": ""}
 _AIHOT_STORY: dict = {}
 # 各事件的热度基线，用来算真实涨跌%：storyId -> {"basis": int, "at": float}
 _AIHOT_HISTORY: dict = {}
+# 真实「热度指数 / 涨跌% / 发酵中」只能从 aihot.news/hot 的 SSR HTML 里抠（公开 JSON 接口
+# 没有热度值，无头浏览器又被 Cloudflare 拦，但普通 HTTP 请求能拿到完整 SSR）；按 storyId 缓存。
+_AIHOT_SCRAPE: dict = {"at": 0.0, "data": None, "err": ""}
+_AIHOT_PREV_IDS: set = set()
 
 
 async def _aihot_json(path: str) -> dict:
@@ -932,6 +936,96 @@ def _aihot_enrich_trends(items: list):
             _AIHOT_HISTORY[sid] = {"basis": basis, "at": now}
 
 
+def _aihot_scrape_real() -> dict | None:
+    """抓 aihot.news/hot 的 SSR HTML，按卡片解析出真实 热度/涨跌%/发酵中，用 storyId 归位。
+
+    aihot.news 的「热度指数」是服务端专有计算值，公开 JSON 接口（/hot-topics）只给
+    signalCount/participantCount/sourceCount，没有任何 heat 字段；无头浏览器抓又被 Cloudflare
+    的 JS 校验拦（code 567）。但普通 HTTP 请求能拿到完整服务端渲染 HTML，热度数字、涨跌%
+    （带「较 X 小时前」）、发酵中徽章（title="讨论仍在增加"）全在里面——普通 GET 反而放行。
+    失败（被拦 / 解析不出卡）返回 None，由上层回退到派生逻辑。
+    """
+    import httpx as _hx
+    import re as _re
+    try:
+        with _hx.Client(trust_env=False, timeout=15, follow_redirects=True,
+                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                 "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+                                 "Accept-Language": "zh-CN,zh;q=0.9"}) as c:
+            r = c.get("https://aihot.news/hot")
+        if r.status_code != 200 or "热度" not in r.text:
+            return None
+        html = r.text
+    except Exception:
+        return None
+    uuid_re = _re.compile(
+        r'href="/story/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"')
+    # 热度数字：mono + font-semibold + leading-none（排名数字用 leading-[24px]，会被排除）
+    heat_re = _re.compile(
+        r'class="mono text-\[\d+px\] font-semibold[^>]*leading-none[^>]*>(\d+)</(?:span|div)>')
+    change_re = _re.compile(
+        r'title="较 ([^"]*)"[^>]*>(↑|↓)<!-- -->\s*<!-- -->(\d+)<!-- -->%')
+    # hero 卡用 <article>，列表卡用 aria-label="热度排名第 N 位" 作容器起点，合并排序即 10 段
+    markers = [m.start() for m in _re.finditer(r'<article|aria-label="热度排名第', html)]
+    markers.sort()
+    out = {}
+    for i, m in enumerate(markers):
+        seg = html[m: (markers[i + 1] if i + 1 < len(markers) else len(html))]
+        um = uuid_re.search(seg)
+        if not um:
+            continue
+        sid = um.group(1)
+        hm = heat_re.search(seg)
+        heat = int(hm.group(1)) if hm else None
+        cm = change_re.search(seg)
+        d = (int(cm.group(3)) if cm.group(2) == "↑" else -int(cm.group(3))) if cm else None
+        ferment = "讨论仍在增加" in seg
+        if heat is None:
+            continue
+        out[sid] = {"heat": heat, "deltaPct": d, "isFermenting": ferment}
+    return out if out else None
+
+
+async def _aihot_real_trends():
+    """带 5 分钟缓存地取真实热度（和 AIHOT 的「较 6 小时前」节奏匹配，也不至于刷太勤）。"""
+    now = time.time()
+    if _AIHOT_SCRAPE["data"] is not None and now - _AIHOT_SCRAPE["at"] < 300:
+        return _AIHOT_SCRAPE["data"]
+    data = await asyncio.to_thread(_aihot_scrape_real)
+    if data:
+        _AIHOT_SCRAPE.update({"at": now, "data": data, "err": ""})
+        return data
+    if _AIHOT_SCRAPE["data"] is not None:
+        return _AIHOT_SCRAPE["data"]   # 抓不到就保留上次成功结果
+    return None
+
+
+async def _aihot_apply_trends(items: list):
+    """能抓到真实热度就贴真实值；抓不到回退到 signalCount+participantCount 派生。"""
+    real = await _aihot_real_trends()
+    if not real:
+        _aihot_enrich_trends(items)      # 回退派生（含 isNew / 历史涨跌）
+        return
+    cur = set()
+    for it in (items or []):
+        sid = it.get("storyId")
+        info = real.get(sid) if sid else None
+        if info:
+            it["heat"] = info["heat"]
+            it["deltaPct"] = info["deltaPct"]
+            it["isFermenting"] = info["isFermenting"]
+            it["isNew"] = sid not in _AIHOT_PREV_IDS
+            cur.add(sid)
+        else:
+            basis = int(it.get("signalCount") or 0) + int(it.get("participantCount") or 0)
+            it["heat"] = basis
+            it["deltaPct"] = None
+            it["isFermenting"] = False
+            it["isNew"] = sid not in _AIHOT_PREV_IDS
+    _AIHOT_PREV_IDS.clear()
+    _AIHOT_PREV_IDS.update(cur)
+
+
 @app.get("/api/aihot/topics")
 async def api_aihot_topics(fresh: int = 0):
     """当前 AI 热点榜（事件级），给左栏选题卡片和放大弹窗用。
@@ -948,7 +1042,7 @@ async def api_aihot_topics(fresh: int = 0):
         if not items:
             raise RuntimeError("接口没返回内容")
         await _aihot_attach_digests(items)
-        _aihot_enrich_trends(items)
+        await _aihot_apply_trends(items)
         _AIHOT_HOT.update({"at": now, "items": items, "err": ""})
         return JSONResponse({"ok": True, "stale": False, "at": now, "items": items})
     except Exception as e:
@@ -1251,7 +1345,7 @@ async def _ensure_aihot_hot():
     try:
         items = _aihot_slim(await _aihot_json("/hot-topics"))
         if items:
-            _aihot_enrich_trends(items)
+            await _aihot_apply_trends(items)
             _AIHOT_HOT.update({"at": time.time(), "items": items, "err": ""})
     except Exception:
         pass

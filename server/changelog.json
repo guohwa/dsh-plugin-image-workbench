@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.1.49",
+    "date": "2026-11-14",
+    "items": [
+      "AIHOT 热点卡片的热度指数/涨跌%/发酵中徽章改为抓取 aihot.news/hot 服务端渲染真实数据，和网站完全一致（公开 JSON 接口没有热度值，无头浏览器又被 Cloudflare 拦，最终用普通 HTTP 抓 SSR HTML 解析）。抓不到时回退到原来的 signalCount+participantCount 派生；涨跌% 现在带「较 X 小时前」真实口径"
+    ]
+  },
+  {
     "version": "1.1.48",
     "date": "2026-11-14",
     "items": [

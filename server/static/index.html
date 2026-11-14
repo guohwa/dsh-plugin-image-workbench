@@ -6898,10 +6898,13 @@ setInterval(refreshPool, 10000);
     return s;
   }
 
-  // 「发酵中」徽章：aihot 的语义是「讨论仍在增加」，正好复用 v1.1.47 算好的涨跌值——
-  // deltaPct 为正（热度在涨、且已有历史可比对）就亮起，悬停说明「讨论仍在增加」。
+  // 「发酵中」徽章：优先用 aihot 真实标记（后端从 /hot 页面抠的 title="讨论仍在增加"）；
+  // 旧缓存缺该字段时回退到涨跌>0。
   function fermentTag(it){
-    if(typeof it.deltaPct === 'number' && it.deltaPct > 0){
+    if(it.isFermenting === true){
+      return ' <span class="ferment-tag" title="讨论仍在增加">发酵中</span>';
+    }
+    if(it.isFermenting == null && typeof it.deltaPct === 'number' && it.deltaPct > 0){
       return ' <span class="ferment-tag" title="讨论仍在增加">发酵中</span>';
     }
     return '';
