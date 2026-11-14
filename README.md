@@ -2,6 +2,8 @@
 
 [English](./README.en.md) · 简体中文 · [MIT License](./LICENSE)
 
+![Bluxe 手绘工坊 · 生图工作台界面预览](./docs/preview.png)
+
 面向 DeepSeek Harness（DSH）桌面端的图像生成工作台插件。插件以单一分发包提供 Web 工作台、FastAPI 后端服务与账号池运行时，在 DSH 侧栏中承载图文与摄影两类提示词生成流程。图像接口默认指向插件内置的本地账号池，亦可配置为任意 OpenAI 兼容服务。
 
 后端服务可脱离 DSH 独立运行，默认通过浏览器访问 `http://127.0.0.1:8092/`。

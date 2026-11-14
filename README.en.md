@@ -2,6 +2,8 @@
 
 [简体中文](./README.md) · English · [MIT License](./LICENSE)
 
+![Bluxe Image Workbench · UI Preview](./docs/preview.png)
+
 An image generation workbench plugin for the DeepSeek Harness (DSH) desktop application. A single distributable package provides the web workbench, a FastAPI backend, and an account-pool runtime, exposing illustration and photography prompt pipelines in the DSH sidebar. The generation endpoint points to the bundled local account pool by default and can be reconfigured to any OpenAI-compatible service.
 
 The backend also operates without DSH. By default, open `http://127.0.0.1:8092/` in a browser.
