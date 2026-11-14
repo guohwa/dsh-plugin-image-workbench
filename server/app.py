@@ -3235,7 +3235,7 @@ def _wx_news_section(title: str, caption: str, url: str, tail_html: str = "") ->
     parts: list[str] = ['<section style="margin:0 0 22px;">']
     if esc_title:
         parts.append(
-            '<h2 style="font-size:18px;font-weight:700;color:#1f9d6b;margin:0 0 10px;'
+            '<h2 style="font-size:18px;font-weight:700;color:#1f9d6b;margin:18px 0 10px;'
             'padding:4px 0 4px 12px;line-height:1.45;'
             'border-left:4px solid #1f9d6b;'
             'background:linear-gradient(90deg,rgba(31,157,107,.10),rgba(31,157,107,0));">'
@@ -3254,7 +3254,7 @@ def _wx_news_section(title: str, caption: str, url: str, tail_html: str = "") ->
 
 def _wx_lead_block(points: list[str]) -> str:
     """首图下方的「内容要点」区块：同款 h2 + 每条一个段落，紧扣事实、不抒情。"""
-    h2 = ('<h2 style="font-size:18px;font-weight:700;color:#1f9d6b;margin:6px 0 10px;'
+    h2 = ('<h2 style="font-size:18px;font-weight:700;color:#1f9d6b;margin:16px 0 10px;'
           'padding:4px 0 4px 12px;line-height:1.45;'
           'border-left:4px solid #1f9d6b;'
           'background:linear-gradient(90deg,rgba(31,157,107,.10),rgba(31,157,107,0));">'
