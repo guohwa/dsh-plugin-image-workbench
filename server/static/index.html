@@ -410,6 +410,10 @@
   .hot-tag.up{color:#1f9d6b}
   .hot-tag.down{color:#e0392b}
   .hot-tag.new{color:#c08a00}
+  /* 「发酵中」徽章：琥珀色圆角标，语义「讨论仍在增加」，对应 aihot 同款样式 */
+  .ferment-tag{flex:0 0 auto;align-self:flex-start;display:inline-block;margin-top:2px;
+    font-size:9.5px;font-weight:600;line-height:1.4;padding:1px 6px;border-radius:999px;
+    background:#fff1de;color:#b76a00;border:1px solid #f6dfc2;white-space:nowrap}
   /* 综述整段交给外层 .scroller 滚：这里再套一层 overflow 会出现双滚动条，
      滚到一半卡在综述里出不去，很难受 */
   .ai-cb{margin:9px 0 0 28px;font-size:12px;line-height:1.78;color:var(--ink-2);
@@ -6894,6 +6898,15 @@ setInterval(refreshPool, 10000);
     return s;
   }
 
+  // 「发酵中」徽章：aihot 的语义是「讨论仍在增加」，正好复用 v1.1.47 算好的涨跌值——
+  // deltaPct 为正（热度在涨、且已有历史可比对）就亮起，悬停说明「讨论仍在增加」。
+  function fermentTag(it){
+    if(typeof it.deltaPct === 'number' && it.deltaPct > 0){
+      return ' <span class="ferment-tag" title="讨论仍在增加">发酵中</span>';
+    }
+    return '';
+  }
+
   /* 左栏卡片：只露三条。这块是引子，读完得点开弹窗 */
   function renderChip(){
     if(!items.length){
@@ -6909,6 +6922,7 @@ setInterval(refreshPool, 10000);
       return '<button class="ai-row" type="button" data-i="' + i + '" title="' + esc(tip) + '">' +
         '<span class="ai-no">' + esc(it.rank || i + 1) + '</span>' +
         '<span class="ai-tx">' + esc(it.title) + '</span>' +
+        fermentTag(it) +
         '<span class="ai-n">' + hotLabel(it) + '</span>' +
       '</button>';
     }).join('');
@@ -6953,6 +6967,7 @@ setInterval(refreshPool, 10000);
         '<div class="ai-ch">' +
           '<span class="ai-cn">' + esc(it.rank || '') + '</span>' +
           '<div class="ai-ct">' + esc(it.title) + '</div>' +
+          fermentTag(it) +
           '<span class="ai-cm">' + hotLabel(it) + '</span>' +
         '</div>' +
         digHtml + actsBlock(it) +
