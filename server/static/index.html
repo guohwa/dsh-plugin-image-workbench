@@ -237,6 +237,13 @@
   .mini{border:1px solid var(--line);background:#fff;color:var(--ink-2);border-radius:7px;
     font:inherit;font-size:11px;padding:2px 8px;cursor:pointer}
   .mini:hover{color:var(--primary);border-color:#cfc6f7}
+  /* 推送/出图等异步动作进行中：按钮置灰并显示进度文字，避免重复点击，也给出明确反馈 */
+  .mini:disabled{opacity:.65;cursor:not-allowed;color:var(--primary);
+    border-color:#cfc6f7;background:#f6f2ff}
+  .mini.loading::after{content:'';display:inline-block;width:8px;height:8px;
+    margin-left:5px;border:1.5px solid var(--primary);border-top-color:transparent;
+    border-radius:50%;vertical-align:-1px;animation:miniSpin .7s linear infinite}
+  @keyframes miniSpin{to{transform:rotate(360deg)}}
   /* 出图按钮用主题色描边，和复制/重拼区分：这是真会烧额度的动作 */
   .it-gen{color:var(--primary);border-color:#cfc6f7;font-weight:600;flex:0 0 auto}
   .it-gen:hover{background:#f6f2ff}
@@ -4991,6 +4998,11 @@ async function pushHistoryTask(task, row){
   if (items.length > 20){ toast('一次最多推送 20 张，该任务有 ' + items.length + ' 张，请分批或精简后再推', {type:'err', title:'数量超限'}); return; }
   const label = mode === 'newspic' ? '贴图' : '图文消息';
   const title = (task.title || (mode === 'newspic' ? 'AI 生成贴图' : 'AI 生成图文')).slice(0, 32);
+  // 推送是异步的、可能耗时（多图），先把按钮置为「推送中…」并禁用，避免重复点击，也给出明确进行中提示
+  const btn = row && row.querySelector('[data-act="push"]');
+  const pushSel = sel;
+  if (btn){ btn.disabled = true; btn.classList.add('loading'); btn.dataset.old = btn.textContent; btn.textContent = '推送中…'; }
+  if (pushSel) pushSel.disabled = true;
   toast('正在推送' + label + '到公众号草稿箱…', {type:'info', title:'推送中'});
   try {
     const r = await fetch('/api/push_wechat_draft', {
@@ -5001,6 +5013,10 @@ async function pushHistoryTask(task, row){
     if (d.ok) toast(`已推送 ${d.screens || d.pushed} 屏${label}到公众号草稿箱`, {type:'ok', title:label + '已推送'});
     else toast(label + '推送失败：' + (d.error || ''), {type:'err', title:'推送失败'});
   } catch(e){ toast(label + '推送异常：' + e.message, {type:'err', title:'推送异常'}); }
+  finally {
+    if (btn){ btn.disabled = false; btn.classList.remove('loading'); btn.textContent = btn.dataset.old || '推送'; delete btn.dataset.old; }
+    if (pushSel) pushSel.disabled = false;
+  }
 }
 
 function fillTaskGrid(body, items, task){
