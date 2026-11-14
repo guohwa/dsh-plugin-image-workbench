@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.1.50",
+    "date": "2026-11-14",
+    "items": [
+      "上架 DSH 市场（awesome-dsh-plugin 目录）准备：package.json 补 icon/author/license/engines.dsh(>=0.2.1-rc.3)，新增 dsh-market/market.json 与 icon.svg 图标"
+    ]
+  },
+  {
     "version": "1.1.49",
     "date": "2026-11-14",
     "items": [

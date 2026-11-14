@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "displayName": {
+    "zh": "Bluxe手绘工坊·生图工作台",
+    "en": "Bluxe Image Workbench"
+  },
+  "developer": {
+    "name": "Bluxe",
+    "url": "https://github.com/guohwa"
+  },
+  "summary": {
+    "zh": "DSH 侧栏 AI 生图工作台：图文与摄影两类流程，内置本地账号池，亦支持任意 OpenAI 兼容接口。",
+    "en": "A sidebar image-generation workbench for DSH: illustration and photography pipelines, with a built-in account pool and any OpenAI-compatible endpoint."
+  },
+  "description": {
+    "zh": "面向 DeepSeek Harness（DSH）桌面端的图像生成工作台插件。左侧图文工坊可抓 AI 热点、生成公众号文章并一键配图；配图工坊提供图型/风格/主色调/出图指令/分镜五段式流程，直接产出可发布成图。图像接口默认指向插件内置的本地账号池，亦可配置为任意 OpenAI 兼容服务（Base URL / API Key / 模型）。支持自定义工作台名称与图片存储目录。",
+    "en": "An image-generation workbench plugin for the DeepSeek Harness (DSH) desktop app. The content workshop grabs AI hot topics, drafts WeChat-ready articles and pairs them with illustrations; the image workshop runs a five-step pipeline (type / style / palette / prompt / storyboard) to produce publishable images. The generation endpoint defaults to the bundled local account pool and can be reconfigured to any OpenAI-compatible service."
+  },
+  "homepage": "https://github.com/guohwa/dsh-plugin-image-workbench#readme",
+  "license": "MIT",
+  "logo": "icon.svg",
+  "screenshots": [
+    {
+      "url": "docs/preview.png",
+      "caption": {
+        "zh": "工作台主界面：内容工坊 + 配图工坊 + 排版预览",
+        "en": "Main workbench: content studio + image studio + layout preview"
+      }
+    }
+  ]
+}

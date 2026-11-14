@@ -1,8 +1,11 @@
 {
   "name": "dsh-plugin-image-workbench",
-  "version": "1.1.49",
+  "version": "1.1.50",
   "type": "module",
   "description": "Bluxe手绘工坊 · 生图工作台（图文 / 摄影）：DSH 侧栏图像生成工作台，默认使用内置本地账号池，亦支持任意 OpenAI 兼容接口（Base URL / API Key / 模型）；可自定义工作台名称与图片存储目录。",
+  "icon": "./icon.svg",
+  "author": "Bluxe",
+  "license": "MIT",
   "main": "./host.js",
   "exports": {
     ".": "./host.js",
@@ -23,6 +26,7 @@
   },
   "files": [
     "host.js",
+    "icon.svg",
     "client.js",
     "cordis.patch.yml",
     "install.mjs",
@@ -38,7 +42,8 @@
     "scripts/style-sync-scheduler.mjs"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=20",
+    "dsh": ">=0.2.1-rc.3"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
