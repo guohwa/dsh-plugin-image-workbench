@@ -52,4 +52,6 @@ jobs:
             echo "::notice::$NAME@$PKG 已发布，跳过"
             exit 0
           fi
-          npm publish --access public
+          # 关键：npm publish 失败必须让这一步（进而整个发布）失败，
+          # 否则会出现「CI 全绿但版本没上 npm」的静默丢失（已踩过 1.1.44 的坑）
+          npm publish --access public || { ec=$?; echo "::error::npm publish 失败，退出码 $ec"; exit 1; }
