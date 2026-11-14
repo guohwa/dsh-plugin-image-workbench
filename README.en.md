@@ -4,11 +4,13 @@
 
 ![Bluxe Image Workbench · UI Preview](./docs/preview.png)
 
-An image generation workbench plugin for the DeepSeek Harness (DSH) desktop application. A single distributable package provides the web workbench, a FastAPI backend, and an account-pool runtime, exposing illustration and photography prompt pipelines in the DSH sidebar. The generation endpoint points to the bundled local account pool by default and can be reconfigured to any OpenAI-compatible service.
+Bluxe Image Workbench is an **AI image-generation workbench** that lives in the sidebar of the DSH desktop app.
 
-The backend also operates without DSH. By default, open `http://127.0.0.1:8092/` in a browser.
+Pick a format, style and palette, type a sentence about what you want (or let the built-in AI draft the prompt), and generate a set of images in one click — great for WeChat articles, photography mockups, posters and more.
 
-> This repository contains source code and the built-in format, style, layout and palette catalogs only. Generated images, history, drafts, account credentials, API keys and proxy settings are excluded from version control.
+The part that saves you the most hassle: it ships with a built-in account pool, so it works right after install without you hunting for an API key. Prefer your own image model? Switch to any OpenAI-compatible endpoint in a click.
+
+Open `http://127.0.0.1:8092/` in a browser to use the workbench; the backend also runs standalone without DSH.
 
 ## Contents
 
