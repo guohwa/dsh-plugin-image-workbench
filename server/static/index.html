@@ -405,6 +405,11 @@
   .ai-ct{flex:1;min-width:0;font-size:13.5px;font-weight:600;line-height:1.5;word-break:break-word}
   .ai-cm{flex:0 0 auto;font-size:10.5px;color:var(--ink-3);margin-top:3px;white-space:nowrap;
     font-variant-numeric:tabular-nums}
+  /* 热度指数 + 涨跌% 标签 */
+  .hot-tag{font-variant-numeric:tabular-nums;font-weight:600}
+  .hot-tag.up{color:#1f9d6b}
+  .hot-tag.down{color:#e0392b}
+  .hot-tag.new{color:#c08a00}
   /* 综述整段交给外层 .scroller 滚：这里再套一层 overflow 会出现双滚动条，
      滚到一半卡在综述里出不去，很难受 */
   .ai-cb{margin:9px 0 0 28px;font-size:12px;line-height:1.78;color:var(--ink-2);
@@ -6874,8 +6879,19 @@ setInterval(refreshPool, 10000);
     return Math.round(s / 86400) + ' 天前';
   }
 
-  function srcLabel(it){
-    return it.sourceCount ? it.sourceCount + ' 家' : '';
+  // 热度指数 + 真实涨跌%（涨正降负，无历史标「新」，持平标「持平」）；旧缓存缺 heat 时回退到「X 家」
+  function hotLabel(it){
+    const heat = it.heat;
+    if(heat == null) return it.sourceCount ? it.sourceCount + ' 家' : '';
+    let s = '热度 ' + heat;
+    if(it.isNew) s += ' <span class="hot-tag new">新</span>';
+    else if(it.deltaPct === 0) s += ' <span class="hot-tag">持平</span>';
+    else if(typeof it.deltaPct === 'number'){
+      const up = it.deltaPct > 0;
+      s += ' <span class="hot-tag ' + (up ? 'up' : 'down') + '">' +
+           (up ? '↑' : '↓') + Math.abs(it.deltaPct) + '%</span>';
+    }
+    return s;
   }
 
   /* 左栏卡片：只露三条。这块是引子，读完得点开弹窗 */
@@ -6893,7 +6909,7 @@ setInterval(refreshPool, 10000);
       return '<button class="ai-row" type="button" data-i="' + i + '" title="' + esc(tip) + '">' +
         '<span class="ai-no">' + esc(it.rank || i + 1) + '</span>' +
         '<span class="ai-tx">' + esc(it.title) + '</span>' +
-        '<span class="ai-n">' + esc(srcLabel(it)) + '</span>' +
+        '<span class="ai-n">' + hotLabel(it) + '</span>' +
       '</button>';
     }).join('');
   }
@@ -6937,7 +6953,7 @@ setInterval(refreshPool, 10000);
         '<div class="ai-ch">' +
           '<span class="ai-cn">' + esc(it.rank || '') + '</span>' +
           '<div class="ai-ct">' + esc(it.title) + '</div>' +
-          '<span class="ai-cm">' + esc(srcLabel(it)) + '</span>' +
+          '<span class="ai-cm">' + hotLabel(it) + '</span>' +
         '</div>' +
         digHtml + actsBlock(it) +
       '</div>';

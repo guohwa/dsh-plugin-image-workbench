@@ -832,6 +832,8 @@ _AIHOT_TTL = 600              # 热点榜缓存 10 分钟
 _AIHOT_STORY_TTL = 1800       # 事件综述缓存 30 分钟，综述是按天演化的，不用勤取
 _AIHOT_HOT: dict = {"at": 0.0, "items": [], "err": ""}
 _AIHOT_STORY: dict = {}
+# 各事件的热度基线，用来算真实涨跌%：storyId -> {"basis": int, "at": float}
+_AIHOT_HISTORY: dict = {}
 
 
 async def _aihot_json(path: str) -> dict:
@@ -875,6 +877,7 @@ def _aihot_slim(raw: dict) -> list:
             "rank": int(it.get("rank") or 0),
             "title": title,
             "sourceCount": int(it.get("sourceCount") or 0),
+            "signalCount": int(it.get("signalCount") or 0),
             "participantCount": int(it.get("participantCount") or 0),
             "latestAt": str(it.get("latestAt") or ""),
             "storyId": _aihot_story_id(links.get("story")),
@@ -903,6 +906,32 @@ async def _aihot_attach_digests(items: list):
     await asyncio.gather(*[one(it) for it in (items or [])])
 
 
+def _aihot_enrich_trends(items: list):
+    """给每条热点算一个「热度指数」和真实的涨跌百分比。
+
+    aihot.news 的「热度指数 / 上升下降%」是站内的专有计算值，没有任何公开接口能拿到
+    （/hot-topics 只有 sourceCount/signalCount/participantCount，OpenAPI 里也没有 heat 字段），
+    所以这里用我们本来就抓得到的真实指标派生态一样的展示：
+      - 热度 = signalCount + participantCount（讨论信号量 + 参与者，aihot 自己的原始数据）
+      - 涨跌% = 与上一次抓取（缓存 10 分钟刷新一次）相比的变化，正升负降，无历史标「新」
+    基线每分钟最多刷新一次，避免同一次刷新里重复抓取把涨跌冲成 0。
+    """
+    now = time.time()
+    for it in (items or []):
+        sid = it.get("storyId") or it.get("title") or ""
+        basis = int(it.get("signalCount") or 0) + int(it.get("participantCount") or 0)
+        it["heat"] = basis
+        prev = _AIHOT_HISTORY.get(sid)
+        if prev and prev.get("basis"):
+            it["deltaPct"] = round((basis - prev["basis"]) / prev["basis"] * 100)
+            it["isNew"] = False
+        else:
+            it["deltaPct"] = None
+            it["isNew"] = True
+        if not prev or now - prev.get("at", 0) > 60:
+            _AIHOT_HISTORY[sid] = {"basis": basis, "at": now}
+
+
 @app.get("/api/aihot/topics")
 async def api_aihot_topics(fresh: int = 0):
     """当前 AI 热点榜（事件级），给左栏选题卡片和放大弹窗用。
@@ -919,6 +948,7 @@ async def api_aihot_topics(fresh: int = 0):
         if not items:
             raise RuntimeError("接口没返回内容")
         await _aihot_attach_digests(items)
+        _aihot_enrich_trends(items)
         _AIHOT_HOT.update({"at": now, "items": items, "err": ""})
         return JSONResponse({"ok": True, "stale": False, "at": now, "items": items})
     except Exception as e:
@@ -1221,6 +1251,7 @@ async def _ensure_aihot_hot():
     try:
         items = _aihot_slim(await _aihot_json("/hot-topics"))
         if items:
+            _aihot_enrich_trends(items)
             _AIHOT_HOT.update({"at": time.time(), "items": items, "err": ""})
     except Exception:
         pass
