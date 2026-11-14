@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-image-workbench",
-  "version": "1.1.44",
+  "version": "1.1.45",
   "type": "module",
   "description": "Bluxe手绘工坊 · 生图工作台（图文 / 摄影）：DSH 侧栏图像生成工作台，默认使用内置本地账号池，亦支持任意 OpenAI 兼容接口（Base URL / API Key / 模型）；可自定义工作台名称与图片存储目录。",
   "main": "./host.js",

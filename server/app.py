@@ -3229,13 +3229,15 @@ async def _wx_get_token(gateway: str, token: str) -> str | None:
 # 每一屏 = 一个小标题（h2，带左侧色条）+ 正文段落 + 一张配图。
 # 小标题来自每条分镜的 title 字段；若为空则只显示正文与图片，不出空标题。
 # tail_html：首屏专用，在第一张图之后追加「内容要点」等区块。
-def _wx_news_section(title: str, caption: str, url: str, tail_html: str = "") -> str:
+# first=True 表示这是文章第一屏：标题紧贴作者行下方，不再额外留出顶部空行（否则顶部会多出一行空白）。
+def _wx_news_section(title: str, caption: str, url: str, tail_html: str = "", first: bool = False) -> str:
     esc_title = _wx_escape((title or "").strip())
     esc_cap = _wx_escape((caption or "").strip())
     parts: list[str] = ['<section style="margin:0 0 22px;">']
     if esc_title:
+        title_mt = "0" if first else "18px"
         parts.append(
-            '<h2 style="font-size:18px;font-weight:700;color:#1f9d6b;margin:18px 0 10px;'
+            '<h2 style="font-size:18px;font-weight:700;color:#1f9d6b;margin:' + title_mt + ' 0 10px;'
             'padding:4px 0 4px 12px;line-height:1.45;'
             'border-left:4px solid #1f9d6b;'
             'background:linear-gradient(90deg,rgba(31,157,107,.10),rgba(31,157,107,0));">'
@@ -3567,7 +3569,7 @@ async def api_push_wechat_draft(req: PushDraftRequest):
     sections = []
     for i, sc in enumerate(screens):
         tail = _wx_lead_block(lead_points) if (i == 0 and lead_points) else ""
-        sections.append(_wx_news_section(sc["title"], sc["caption"], sc["url"], tail_html=tail))
+        sections.append(_wx_news_section(sc["title"], sc["caption"], sc["url"], tail_html=tail, first=(i == 0)))
     footer_data = await _wx_footer_content(req.title, screens)
     parts = sections + [_wx_news_footer(footer_data)]
     content_html = (
