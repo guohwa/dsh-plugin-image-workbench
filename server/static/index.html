@@ -1046,7 +1046,6 @@
     <div class="rectop" id="recTopics">
       <div class="rectop-h">
         <span class="rectop-t">推荐话题</span>
-        <span class="rectop-badge" id="recSource" title="优先取实时知乎热榜并加工成讨论型选题；抓不到时用当前 AIHOT 真热点加工，再兜底常青选题库。这里标的是本批实际来源，不把兜底说成实时">读取中</span>
         <span class="spacer"></span>
         <button class="rectop-a" id="recNext" type="button" title="换三条；一轮翻完会重新洗牌，不会连着出现重复">下一批 ↻</button>
       </div>
@@ -1055,7 +1054,6 @@
       </div>
       <div class="rectop-foot">
         <button class="rectop-open" id="recOpen" type="button" title="打开多平台热点榜：知乎 / 小红书 / 抖音 / 今日头条 / 快手 / 微博 / B 站">全平台热点 ↗</button>
-        <span class="rectop-page" id="recPage" title="点这里也能打开多平台热点榜"></span>
       </div>
     </div>
 
@@ -6636,9 +6634,8 @@ setInterval(refreshPool, 10000);
 (function(){
   const listEl = document.getElementById('recList');
   const nextBtn = document.getElementById('recNext');
-  const srcEl = document.getElementById('recSource');
   const pageEl = document.getElementById('recPage');
-  if(!listEl || !nextBtn || !srcEl) return;
+  if(!listEl || !nextBtn) return;
 
   const PAGE = 3;
   let pool = [], order = [], cursor = 0, batch = 0, busy = false;
@@ -6650,13 +6647,6 @@ setInterval(refreshPool, 10000);
       const t = a[i]; a[i] = a[j]; a[j] = t;
     }
     return a;
-  }
-  function sourceLabel(d){
-    const s = String(d.source || '');
-    // 池子里仍掺着常青题，别因为有实时层就把整批说成实时
-    if(s.indexOf('知乎热榜') >= 0) return '知乎热榜 + 常青';
-    if(s.indexOf('AIHOT') >= 0) return '热点 + 常青';
-    return '常青选题库';
   }
   function render(){
     if(!pool.length){
@@ -6709,15 +6699,11 @@ setInterval(refreshPool, 10000);
       const r = await fetch('/api/topics/recommend' + (fresh ? '?fresh=1' : ''));
       const d = await r.json();
       pool = (d.items || []).filter(function(x){ return x && x.text; });
-      srcEl.textContent = sourceLabel(d);
-      srcEl.title = '本批来源：' + String(d.source || '常青选题库') +
-        '。优先实时知乎热榜，抓不到用 AIHOT 真热点加工，再兜底常青题库；不把兜底说成实时。';
       order = shuffle(pool.map(function(_, i){ return i; }));
       cursor = 0; batch = 0;
       render();
     }catch(e){
       listEl.innerHTML = '<div class="rectop-load">没读到话题，点「下一批 ↻」重试</div>';
-      srcEl.textContent = '读取失败';
     }finally{
       busy = false; nextBtn.disabled = false;
     }
@@ -6826,8 +6812,6 @@ setInterval(refreshPool, 10000);
   const recOpen = document.getElementById('recOpen');
   if(recOpen) recOpen.onclick = hbOpen;
   if(pageEl) pageEl.onclick = hbOpen;
-  srcEl.style.cursor = 'pointer';
-  srcEl.onclick = hbOpen;
   if(hbRefresh) hbRefresh.onclick = function(){ hbLoad(1); };
   if(hbClose && hbDlg) hbClose.onclick = function(){ hbDlg.close(); };
 })();

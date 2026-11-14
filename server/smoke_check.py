@@ -885,8 +885,7 @@ ok('三层话题交错，前三条来自不同层',
 ok('常青题库够翻十批以上', len(app._evergreen_topics()) >= 24,
    len(app._evergreen_topics()))
 ok('推荐话题卡片插在热点榜与选题框之间',
-   all(x in _src_html for x in ('id="recTopics"', 'id="recList"', 'id="recNext"',
-                                'id="recSource"', 'id="recPage"'))
+   all(x in _src_html for x in ('id="recTopics"', 'id="recList"', 'id="recNext"'))
    and 0 < _src_html.find('id="aihotList"') < _src_html.find('id="recTopics"')
         < _src_html.find('label for="topic"'))
 ok('每批固定三条、翻批只走本地洗牌',
@@ -896,11 +895,10 @@ ok('点选推荐话题填进选题框并断开旧热点综述',
    all(x in _src_html for x in ('function pick(it)', "t.value = String(it.text || '')",
                                 'state.hotStory = null', "bindDraft(null, '')",
                                 'saveSession()')))
-ok('来源标记不把兜底说成实时热榜',
-   "return '知乎热榜 + 常青'" in _src_html
-   and "return '热点 + 常青'" in _src_html
-   and "return '常青选题库'" in _src_html
-   and '池子里仍掺着常青题' in _src_html)
+ok('来源标记已移除，卡片不再显示实时/常青来源标注',
+   'id="recSource"' not in _src_html
+   and 'function sourceLabel' not in _src_html
+   and 'id="recPage"' not in _src_html)
 
 # ---- 多平台热点榜弹窗（1.1.37）----
 ok('GET /api/topics/platforms 已注册',
@@ -941,9 +939,8 @@ ok('情绪化热榜标题只展示原题不加工',
    app._hb_angle('震惊！一定要看完的 3 个秘密') is None)
 ok('可接自定义热榜源',
    'TOPIC_HOT_API_' in _src_app and 'custom' in _src_app)
-ok('卡片底部三个入口都能打开弹窗',
-   all(x in _src_html for x in ('id="recOpen"', 'class="rectop-page" id="recPage"',
-                                'srcEl.onclick = hbOpen', 'pageEl.onclick = hbOpen')))
+ok('底部入口能打开多平台热点弹窗',
+   all(x in _src_html for x in ('id="recOpen"', 'recOpen.onclick = hbOpen')))
 ok('弹窗含平台页签、状态说明与两列卡片',
    all(x in _src_html for x in ('id="hotBoardDlg"', 'id="hbTabs"', 'id="hbNote"',
                                 'id="hbList"', 'hb-grid', '.hb-dot.off')))
