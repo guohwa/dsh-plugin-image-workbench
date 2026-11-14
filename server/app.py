@@ -885,6 +885,24 @@ def _aihot_slim(raw: dict) -> list:
     return out
 
 
+async def _aihot_attach_digests(items: list):
+    """尽力给每条热点挂上事件综述（AI 已提炼的内容）；取不到不影响列表，留空即可。
+
+    走 /stories/<id> 现拉，带 30 分钟缓存；并发取，整体不超过一次列表的成本。
+    """
+    async def one(it):
+        sid = it.get("storyId")
+        if not sid:
+            it["digest"] = ""
+            return
+        try:
+            data = await _aihot_story_data(sid)
+            it["digest"] = str((data or {}).get("digest") or "")
+        except Exception:
+            it["digest"] = ""
+    await asyncio.gather(*[one(it) for it in (items or [])])
+
+
 @app.get("/api/aihot/topics")
 async def api_aihot_topics(fresh: int = 0):
     """当前 AI 热点榜（事件级），给左栏选题卡片和放大弹窗用。
@@ -900,6 +918,7 @@ async def api_aihot_topics(fresh: int = 0):
         items = _aihot_slim(await _aihot_json("/hot-topics"))
         if not items:
             raise RuntimeError("接口没返回内容")
+        await _aihot_attach_digests(items)
         _AIHOT_HOT.update({"at": now, "items": items, "err": ""})
         return JSONResponse({"ok": True, "stale": False, "at": now, "items": items})
     except Exception as e:
@@ -1317,7 +1336,7 @@ def _hb_hot(v) -> str:
 
 
 def _hot_board_rows(data) -> list:
-    """兼容 NewsNow(items) / 60s(data) / vvhan(data) 三种壳，留标题、热度、链接。"""
+    """兼容 NewsNow(items) / 60s(data) / vvhan(data) 三种壳，留标题、热度、链接、摘要。"""
     rows = data
     if isinstance(data, dict):
         rows = data.get("items") or data.get("data") or data.get("list") or []
@@ -1328,18 +1347,24 @@ def _hot_board_rows(data) -> list:
     out = []
     for x in rows:
         if isinstance(x, str):
-            t, hot, url = x, "", ""
+            t, hot, url, desc = x, "", "", ""
         elif isinstance(x, dict):
             t = str(x.get("title") or x.get("name") or x.get("word")
                     or x.get("query") or x.get("desc") or "")
             hot = _hb_hot(x.get("hot_value") or x.get("hot") or x.get("hotValue")
                           or x.get("heat") or "")
             url = str(x.get("url") or x.get("link") or x.get("mobileUrl") or "")
+            # 个别源会在 desc/content/summary 里直接带一句话摘要，尽量抓出来当「内容」
+            desc = str(x.get("desc") or x.get("content") or x.get("summary")
+                       or x.get("brief") or x.get("description") or x.get("digest") or "")
         else:
             continue
         t = re.sub(r"\s+", " ", t).strip()[:80]
         if t:
-            out.append({"title": t, "hot": hot, "url": url[:300]})
+            d = re.sub(r"\s+", " ", desc).strip()
+            # 摘要和标题重复就没必要单独显示了
+            out.append({"title": t, "hot": hot, "url": url[:300],
+                        "desc": (d[:200] if (d and d != t) else "")})
     return out[:30]
 
 
@@ -1354,7 +1379,8 @@ def _hot_board_items(rows: list, name: str, status: str) -> list:
         else:
             text, why, angle = title, "原始热榜标题，未套讨论角度", False
         out.append({"rank": i, "title": title, "hot": str(r.get("hot") or ""),
-                    "url": str(r.get("url") or ""), "text": text, "why": why,
+                    "url": str(r.get("url") or ""), "desc": str(r.get("desc") or ""),
+                    "text": text, "why": why,
                     "angle": angle, "status": status})
     return out
 

@@ -379,6 +379,12 @@
   .hb-btn.ghost{background:#fff;border-color:var(--line);color:var(--ink-2)}
   .hb-why{font-size:9.5px;color:var(--ink-3);flex:1;min-width:0;overflow:hidden;
     text-overflow:ellipsis;white-space:nowrap}
+  .hb-desc{font-size:10.5px;color:var(--ink-2);line-height:1.55;background:#fafbff;border:1px solid #eef0fb;
+    border-radius:6px;padding:5px 7px;word-break:break-word;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .hb-src{border:1px solid var(--line);background:#fff;color:var(--ink-2);font:inherit;font-size:10px;
+    border-radius:6px;padding:3px 8px;cursor:pointer;white-space:nowrap;text-decoration:none}
+  .hb-src:hover{color:var(--primary);border-color:#d5c9fb;background:#fcfbff}
   .hb-empty{grid-column:1/-1;font-size:12px;color:var(--ink-3);padding:22px;text-align:center}
   /* 放大弹窗：高度定死，综述在卡内滚动；展开不同长度的条目时窗口不跟着抽 */
   dialog.aihot-dlg{width:min(780px,96vw);height:min(84vh,800px);padding:0}
@@ -6801,15 +6807,20 @@ setInterval(refreshPool, 10000);
       const why = String(it.why || '');
       const kind = p.status === 'live' ? '实时热榜' : '平台向 · 加工题';
       const angle = it.angle ? '<div class="hb-angle" title="' + esc(why) + '">' + esc(text) + '</div>' : '';
+      const desc = String(it.desc || '').trim();
+      const descHtml = desc ? '<div class="hb-desc">' + esc(desc) + '</div>' : '';
+      // 「看来源」用 a.hb-src（不是 .hb-btn），避免被「用作选题」的处理逻辑误抓去填选题框
+      const srcBtn = it.url ? '<a class="hb-src" href="' + esc(it.url) + '" target="_blank" rel="noopener noreferrer">看来源</a>' : '';
       return '<div class="hb-card">' +
         '<div class="hb-top"><span class="hb-rank">' + (it.rank || i + 1) + '</span>' +
           '<span class="hb-title" title="' + esc(title) + '">' + esc(title) + '</span>' +
           (it.hot ? '<span class="hb-hot">' + esc(it.hot) + '</span>' : '') + '</div>' +
         '<div class="hb-meta"><span class="hb-plat">' + esc(p.name) + '</span>' +
-          '<span class="hb-kind">' + esc(kind) + '</span></div>' + angle +
+          '<span class="hb-kind">' + esc(kind) + '</span></div>' + angle + descHtml +
         '<div class="hb-acts">' +
           '<button class="hb-btn" type="button" data-act="use" data-i="' + i + '">用作选题</button>' +
           '<button class="hb-btn ghost" type="button" data-act="raw" data-i="' + i + '">原题</button>' +
+          srcBtn +
           '<span class="hb-why" title="' + esc(why) + '">' + esc(why) + '</span>' +
         '</div></div>';
     }).join('');
@@ -6877,7 +6888,9 @@ setInterval(refreshPool, 10000);
       return;
     }
     listEl.innerHTML = items.slice(0, 3).map(function(it, i){
-      return '<button class="ai-row" type="button" data-i="' + i + '">' +
+      const dig = String(it.digest || '').trim();
+      const tip = (dig ? dig + ' ｜ ' : '') + '点开看综述 / 用作选题';
+      return '<button class="ai-row" type="button" data-i="' + i + '" title="' + esc(tip) + '">' +
         '<span class="ai-no">' + esc(it.rank || i + 1) + '</span>' +
         '<span class="ai-tx">' + esc(it.title) + '</span>' +
         '<span class="ai-n">' + esc(srcLabel(it)) + '</span>' +
@@ -6914,14 +6927,19 @@ setInterval(refreshPool, 10000);
     }
     dlistEl.innerHTML = items.map(function(it){
       const id = it.storyId || '';
-      const on = !!(id && openIds[id]);
-      return '<div class="ai-card' + (on ? ' on' : '') + '" data-id="' + esc(id) + '">' +
+      const dig = String(it.digest || '').trim();
+      // 列表阶段已经把事件综述抓回来了：有就直接铺在卡片上，没有才提示点开
+      const digHtml = dig
+        ? '<div class="ai-cb">' + esc(dig) + '</div>'
+        : (id ? '<div class="ai-cb ld">点标题展开综述</div>'
+              : '<div class="ai-cb ld">这条没有事件综述。</div>');
+      return '<div class="ai-card' + (id ? '' : ' noid') + '" data-id="' + esc(id) + '">' +
         '<div class="ai-ch">' +
           '<span class="ai-cn">' + esc(it.rank || '') + '</span>' +
           '<div class="ai-ct">' + esc(it.title) + '</div>' +
           '<span class="ai-cm">' + esc(srcLabel(it)) + '</span>' +
         '</div>' +
-        (on ? digestBlock(it) + actsBlock(it) : '') +
+        digHtml + actsBlock(it) +
       '</div>';
     }).join('');
   }
@@ -6931,7 +6949,12 @@ setInterval(refreshPool, 10000);
     digs[id] = {loading: true};
     fetch('/api/aihot/story?id=' + encodeURIComponent(id), {cache: 'no-store'})
       .then(function(r){ return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
-      .then(function(d){ digs[id] = {text: d.digest || ''}; })
+      .then(function(d){
+        digs[id] = {text: d.digest || ''};
+        // 回写进列表项：renderList 直接读 it.digest，不复用 digs 缓存
+        const it = items.find(function(x){ return (x.storyId || '') === id; });
+        if(it) it.digest = d.digest || '';
+      })
       .catch(function(e){ digs[id] = {err: '综述没拉到：' + (e.message || '网络问题')}; })
       .then(function(){ renderList(); });
   }
