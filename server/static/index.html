@@ -402,6 +402,11 @@
     font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;
     font-variant-numeric:tabular-nums}
   .ai-card.on .ai-cn{background:var(--primary);color:#fff}
+  /* 手风琴箭头：展开时朝下，折叠时朝右；点标题切换唯一展开项 */
+  .ai-toggle{flex:0 0 auto;width:16px;height:16px;margin-top:2px;color:var(--ink-3);
+    font-size:11px;line-height:1;display:inline-flex;align-items:center;justify-content:center}
+  .ai-toggle::before{content:"▾"}
+  .ai-card:not(.on) .ai-toggle::before{content:"▸"}
   .ai-ct{flex:1;min-width:0;font-size:13.5px;font-weight:600;line-height:1.5;word-break:break-word}
   .ai-cm{flex:0 0 auto;font-size:10.5px;color:var(--ink-3);margin-top:3px;white-space:nowrap;
     font-variant-numeric:tabular-nums}
@@ -3676,7 +3681,7 @@ function pForm(d, isCreate){
     ${pField('API Key','api_key','',{req:true,pw:true,hint:isCreate?'新增必填':'留空沿用已保存密钥'})}
     ${pModelField('出图模型','model_image',d.model_image||'gpt-image-2','image','正在读取接口模型…')}
     ${pModelField('文案模型','model_text',d.model_text||'auto','text','auto = 由号池挑号')}
-    ${pField('号池数据目录（选填）','pool_dir',d.pool_dir||'',{hint:'需为已存在的目录'})}
+    ${isCreate ? '' : pField('号池数据目录（选填）','pool_dir',d.pool_dir||'',{hint:'需为已存在的目录'})}
     ${pSelect('支持参考图','supports_edits',se,[['1','支持（/v1/images/edits）'],['0','不支持']],'关掉后只用文生图')}
     ${pSelect('返回格式','image_response_format',d.image_response_format||'auto',
       [['auto','自动'],['b64_json','b64_json'],['url','url']],'')}
@@ -6869,7 +6874,8 @@ setInterval(refreshPool, 10000);
   let items = [];
   let busy = false;
   let lastErr = '';
-  const openIds = Object.create(null);   // 弹窗里已展开的条目（按 storyId 记，重渲染不丢）
+  let openId = null;                      // 手风琴：同一时间只展开一条（按 storyId），其余自动折叠
+  let didInitOpen = false;                // 首屏只默认展开第一条一次，之后尊重用户手动折叠
   const digs = Object.create(null);      // storyId -> {loading} | {text} | {err}
 
   function ago(iso){
@@ -6960,20 +6966,24 @@ setInterval(refreshPool, 10000);
     }
     dlistEl.innerHTML = items.map(function(it){
       const id = it.storyId || '';
+      const isOpen = (id && id === openId);   // 只有这一个展开，其余折叠
       const dig = String(it.digest || '').trim();
-      // 列表阶段已经把事件综述抓回来了：有就直接铺在卡片上，没有才提示点开
-      const digHtml = dig
-        ? '<div class="ai-cb">' + esc(dig) + '</div>'
-        : (id ? '<div class="ai-cb ld">点标题展开综述</div>'
-              : '<div class="ai-cb ld">这条没有事件综述。</div>');
-      return '<div class="ai-card' + (id ? '' : ' noid') + '" data-id="' + esc(id) + '">' +
+      // 展开的卡片才铺综述；列表阶段后端已把综述抓回，有就直接显示，没有才转圈
+      const digHtml = isOpen
+        ? (dig
+            ? '<div class="ai-cb">' + esc(dig) + '</div>'
+            : (id ? '<div class="ai-cb ld">正在拉综述…</div>'
+                  : '<div class="ai-cb ld">这条没有事件综述。</div>'))
+        : '';
+      return '<div class="ai-card' + (isOpen ? ' on' : '') + (id ? '' : ' noid') + '" data-id="' + esc(id) + '">' +
         '<div class="ai-ch">' +
           '<span class="ai-cn">' + esc(it.rank || '') + '</span>' +
           '<div class="ai-ct">' + esc(it.title) + '</div>' +
           fermentTag(it) +
           '<span class="ai-cm">' + hotLabel(it) + '</span>' +
+          '<span class="ai-toggle" aria-hidden="true"></span>' +
         '</div>' +
-        digHtml + actsBlock(it) +
+        (isOpen ? (digHtml + actsBlock(it)) : '') +
       '</div>';
     }).join('');
   }
@@ -6995,8 +7005,9 @@ setInterval(refreshPool, 10000);
 
   function toggle(id){
     if(!id) return;
-    if(openIds[id]) delete openIds[id];
-    else { openIds[id] = true; ensureDigest(id); }
+    // 点已展开的 → 收起；点别的 → 只展开它（其余靠单变量自动折叠）
+    if(openId === id) openId = null;
+    else { openId = id; ensureDigest(id); }
     renderList();
   }
 
@@ -7016,6 +7027,12 @@ setInterval(refreshPool, 10000);
       .then(function(d){
         items = Array.isArray(d.items) ? d.items : [];
         lastErr = d.ok ? '' : (d.err || '接口没返回内容');
+        // 首屏只默认展开第一条一次；之后用户手动折叠/展开都尊重，刷新不会重置回第一条
+        if(!didInitOpen && items.length){
+          openId = items[0].storyId || '';
+          didInitOpen = true;
+          if(openId) ensureDigest(openId);
+        }
         if(d.stale && d.err) setNote('刚才没连上 AIHOT，下面是上一份缓存。', d.err);
         else if(d.stale) setNote('用的是十分钟内取过的缓存。');
         else setNote(NOTE_DEFAULT);
@@ -7035,8 +7052,8 @@ setInterval(refreshPool, 10000);
   }
 
   function openDlg(expandId){
-    if(expandId && !openIds[expandId]){
-      openIds[expandId] = true;
+    if(expandId){
+      openId = expandId;
       ensureDigest(expandId);
     }
     if(!items.length && !busy) load(false);
@@ -7077,7 +7094,10 @@ setInterval(refreshPool, 10000);
   });
   moreBtn.addEventListener('click', function(){ openDlg(''); });
   closeBtn.addEventListener('click', function(){ if(dlg.open) dlg.close(); });
-  refreshBtn.addEventListener('click', function(){ load(true); });
+  refreshBtn.addEventListener('click', function(){
+    toast('正在刷新 AI 热点…');
+    load(true);
+  });
 
   dlistEl.addEventListener('click', function(e){
     const card = e.target.closest('.ai-card');
