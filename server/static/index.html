@@ -391,6 +391,19 @@
   dialog.aihot-dlg[open]{display:flex;flex-direction:column}
   dialog.aihot-dlg .inner{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;padding:14px}
   dialog.aihot-dlg .scroller{flex:1 1 auto;min-height:0;max-height:none;padding-right:4px;outline:none}
+  /* 频道 tab + 分类 tab：两级切换。频道是主导航，分类是频道内的子类（仅精选/全部动态有）。 */
+  .ah-tabs,.ah-cats{display:flex;gap:5px;flex:none;overflow-x:auto;padding-bottom:6px;margin-bottom:7px;
+    scrollbar-width:thin}
+  .ah-tabs{border-bottom:1px solid var(--line)}
+  .ah-cats[hidden]{display:none}
+  .ah-tab{border:1px solid var(--line);background:#fff;color:var(--ink-2);border-radius:8px;
+    font:inherit;font-size:12px;padding:5px 12px;cursor:pointer;white-space:nowrap;flex:0 0 auto}
+  .ah-tab:hover{border-color:#d5c9fb;color:var(--primary)}
+  .ah-tab.on{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:600}
+  .ah-cat{border:1px solid var(--line);background:#fff;color:var(--ink-2);border-radius:999px;
+    font:inherit;font-size:11px;padding:3px 10px;cursor:pointer;white-space:nowrap;flex:0 0 auto}
+  .ah-cat:hover{border-color:#d5c9fb;color:var(--primary)}
+  .ah-cat.on{background:#f1eefe;border-color:#cfc2f8;color:var(--primary);font-weight:600}
   .aihot-note{font-size:11px;color:var(--ink-3);margin:0 0 9px;line-height:1.55}
   .aihot-note b{color:var(--warn);font-weight:600}
   .aihot-dlist{display:flex;flex-direction:column;gap:8px}
@@ -1430,6 +1443,8 @@
       <button class="btn ghost mini" id="aihotRefresh" type="button">刷新</button>
       <button class="btn ghost mini" id="aihotClose" type="button">关闭</button>
     </div>
+    <div class="ah-tabs" id="ahTabs"></div>
+    <div class="ah-cats" id="ahCats" hidden></div>
     <div class="aihot-note" id="aihotNote">过去 48 小时里被多个独立信源同时讨论的 AI 事件，越靠前讨论的人越多。点标题展开综述。</div>
     <div class="scroller" tabindex="-1"><div class="aihot-dlist" id="aihotDList"></div></div>
   </div>
@@ -6868,15 +6883,70 @@ setInterval(refreshPool, 10000);
   const moreBtn = document.getElementById('aihotMore');
   const closeBtn = document.getElementById('aihotClose');
   const refreshBtn = document.getElementById('aihotRefresh');
+  const tabsEl = document.getElementById('ahTabs');
+  const catsEl = document.getElementById('ahCats');
   if(!listEl || !dlg || !dlistEl || !moreBtn || !closeBtn || !refreshBtn) return;
 
   const NOTE_DEFAULT = '过去 48 小时里被多个独立信源同时讨论的 AI 事件，越靠前讨论的人越多。点标题展开综述。';
-  let items = [];
+  let items = [];                         // 当前频道显示的条目
+  let hotItems = [];                      // 热点榜固定数据，左栏小卡片专用（不随弹窗频道切换）
   let busy = false;
   let lastErr = '';
-  let openId = null;                      // 手风琴：同一时间只展开一条（按 storyId），其余自动折叠
+  let openId = null;                      // 手风琴：同一时间只展开一条（按 id），其余自动折叠
   let didInitOpen = false;                // 首屏只默认展开第一条一次，之后尊重用户手动折叠
   const digs = Object.create(null);      // storyId -> {loading} | {text} | {err}
+
+  // 频道与分类：优先用后端 /api/aihot/channels 返回的菜单，取不到用这份兜底。
+  const CATS_ALL = [
+    {key:'', name:'全部'}, {key:'ai-models', name:'AI 模型'},
+    {key:'ai-products', name:'AI 产品'}, {key:'industry', name:'行业'},
+    {key:'paper', name:'论文'}, {key:'tip', name:'教程'}, {key:'opinion', name:'观点'}
+  ];
+  const FALLBACK_CHANNELS = [
+    {key:'hot', name:'热点榜', cats:[]},
+    {key:'selected', name:'精选', cats:CATS_ALL},
+    {key:'all', name:'全部动态', cats:CATS_ALL},
+    {key:'daily', name:'AI 日报', cats:[]}
+  ];
+  let channels = FALLBACK_CHANNELS;
+  let channel = 'hot';                    // 当前频道 key
+  let cat = '';                           // 当前分类 key（''=全部）
+  const feedCache = Object.create(null);  // "channel|cat" -> {at, items, err, stale, ok}
+  const FEED_TTL = 10 * 60 * 1000;
+
+  // 频道 tab / 分类 tab：菜单来自后端 channels，选中态由 channel/cat 驱动
+  function renderTabs(){
+    if(!tabsEl) return;
+    tabsEl.innerHTML = channels.map(function(c){
+      return '<button class="ah-tab' + (c.key === channel ? ' on' : '') + '" type="button" data-ch="' +
+        esc(c.key) + '">' + esc(c.name) + '</button>';
+    }).join('');
+    if(!catsEl) return;
+    const cur = channels.filter(function(c){ return c.key === channel; })[0];
+    const cats = (cur && cur.cats) || [];
+    if(!cats.length){ catsEl.innerHTML = ''; catsEl.hidden = true; return; }
+    catsEl.hidden = false;
+    catsEl.innerHTML = cats.map(function(c){
+      return '<button class="ah-cat' + (c.key === cat ? ' on' : '') + '" type="button" data-cat="' +
+        esc(c.key) + '">' + esc(c.name) + '</button>';
+    }).join('');
+  }
+
+  function selectChannel(key){
+    if(key === channel) return;
+    channel = key; cat = '';
+    openId = null; didInitOpen = false;
+    renderTabs();
+    load(false);
+  }
+
+  function selectCat(key){
+    if(key === cat) return;
+    cat = key;
+    openId = null; didInitOpen = false;
+    renderTabs();
+    load(false);
+  }
 
   function ago(iso){
     if(!iso) return '';
@@ -6889,10 +6959,15 @@ setInterval(refreshPool, 10000);
     return Math.round(s / 86400) + ' 天前';
   }
 
-  // 热度指数 + 真实涨跌%（涨正降负，无历史标「新」，持平标「持平」）；旧缓存缺 heat 时回退到「X 家」
+  // 热度指数 + 真实涨跌%（涨正降负，无历史标「新」，持平标「持平」）。
+  // 热点榜有 heat 走热度；精选/动态/日报没有，回退到日期或来源。
   function hotLabel(it){
     const heat = it.heat;
-    if(heat == null) return it.sourceCount ? it.sourceCount + ' 家' : '';
+    if(heat == null){
+      if(channel === 'daily' && it.date) return esc(it.date);
+      if(it.date) return ago(it.date);
+      return it.sourceCount ? it.sourceCount + ' 家' : '';
+    }
     let s = '热度 ' + heat;
     if(it.isNew) s += ' <span class="hot-tag new">新</span>';
     else if(it.deltaPct === 0) s += ' <span class="hot-tag">持平</span>';
@@ -6916,16 +6991,16 @@ setInterval(refreshPool, 10000);
     return '';
   }
 
-  /* 左栏卡片：只露三条。这块是引子，读完得点开弹窗 */
+  /* 左栏卡片：固定露热点榜三条（不受弹窗频道切换影响）。这块是引子，读完点开弹窗 */
   function renderChip(){
-    if(!items.length){
+    if(!hotItems.length){
       listEl.innerHTML = '<div class="aihot-load">' +
         (busy ? '正在拉今天的 AI 热点…'
               : '暂时没拉到热点' + (lastErr ? '（' + esc(lastErr) + '）' : '') + '，点「全部 ›」重试') +
         '</div>';
       return;
     }
-    listEl.innerHTML = items.slice(0, 3).map(function(it, i){
+    listEl.innerHTML = hotItems.slice(0, 3).map(function(it, i){
       const dig = String(it.digest || '').trim();
       const tip = (dig ? dig + ' ｜ ' : '') + '点开看综述 / 用作选题';
       return '<button class="ai-row" type="button" data-i="' + i + '" title="' + esc(tip) + '">' +
@@ -6939,7 +7014,7 @@ setInterval(refreshPool, 10000);
 
   function digestBlock(it){
     const id = it.storyId;
-    if(!id) return '<div class="ai-cb ld">这条没有事件综述，可以直接看原文。</div>';
+    if(!id) return '<div class="ai-cb">' + esc(String(it.digest || '').trim() || '这条没有摘要，可以直接看原文。') + '</div>';
     const d = digs[id];
     if(!d || d.loading) return '<div class="ai-cb ld">正在拉综述…</div>';
     if(d.err) return '<div class="ai-cb ld">' + esc(d.err) + '</div>';
@@ -6951,12 +7026,16 @@ setInterval(refreshPool, 10000);
   function actsBlock(it){
     const parts = [];
     if(it.latestAt) parts.push('<span class="ai-src">最近更新 ' + esc(ago(it.latestAt)) + '</span>');
+    else if(it.source) parts.push('<span class="ai-src">' + esc(it.source) + '</span>');
     parts.push('<span class="spacer"></span>');
     parts.push('<button class="btn ghost mini ai-use" type="button">用作选题</button>');
     if(it.aihot) parts.push('<a class="ai-lnk" href="' + esc(it.aihot) + '" target="_blank" rel="noopener noreferrer">站内看</a>');
     if(it.original) parts.push('<a class="ai-lnk" href="' + esc(it.original) + '" target="_blank" rel="noopener noreferrer">原文</a>');
     return '<div class="ai-acts">' + parts.join('') + '</div>';
   }
+
+  // 条目的唯一 key：热点榜用 storyId，其余频道用 aihot 链接（都唯一）
+  function itemKey(it){ return it.storyId || it.aihot || it.title || ''; }
 
   function renderList(){
     if(!items.length){
@@ -6965,21 +7044,24 @@ setInterval(refreshPool, 10000);
       return;
     }
     dlistEl.innerHTML = items.map(function(it){
-      const id = it.storyId || '';
+      const id = itemKey(it);
       const isOpen = (id && id === openId);   // 只有这一个展开，其余折叠
-      const dig = String(it.digest || '').trim();
-      // 展开的卡片才铺综述；列表阶段后端已把综述抓回，有就直接显示，没有才转圈
+      const isHot = channel === 'hot';
+      // 热点榜：展开时按需拉综述；其余频道：summary 已在条目里，直接铺
       const digHtml = isOpen
-        ? (dig
-            ? '<div class="ai-cb">' + esc(dig) + '</div>'
-            : (id ? '<div class="ai-cb ld">正在拉综述…</div>'
-                  : '<div class="ai-cb ld">这条没有事件综述。</div>'))
+        ? (isHot
+            ? (it.digest && String(it.digest).trim()
+                ? '<div class="ai-cb">' + esc(it.digest) + '</div>'
+                : '<div class="ai-cb ld">正在拉综述…</div>')
+            : (String(it.digest || '').trim()
+                ? '<div class="ai-cb">' + esc(it.digest) + '</div>'
+                : '<div class="ai-cb ld">这条没有摘要，可以直接看原文。</div>'))
         : '';
       return '<div class="ai-card' + (isOpen ? ' on' : '') + (id ? '' : ' noid') + '" data-id="' + esc(id) + '">' +
         '<div class="ai-ch">' +
           '<span class="ai-cn">' + esc(it.rank || '') + '</span>' +
           '<div class="ai-ct">' + esc(it.title) + '</div>' +
-          fermentTag(it) +
+          (isHot ? fermentTag(it) : '') +
           '<span class="ai-cm">' + hotLabel(it) + '</span>' +
           '<span class="ai-toggle" aria-hidden="true"></span>' +
         '</div>' +
@@ -6996,7 +7078,7 @@ setInterval(refreshPool, 10000);
       .then(function(d){
         digs[id] = {text: d.digest || ''};
         // 回写进列表项：renderList 直接读 it.digest，不复用 digs 缓存
-        const it = items.find(function(x){ return (x.storyId || '') === id; });
+        const it = hotItems.find(function(x){ return (x.storyId || '') === id; });
         if(it) it.digest = d.digest || '';
       })
       .catch(function(e){ digs[id] = {err: '综述没拉到：' + (e.message || '网络问题')}; })
@@ -7007,7 +7089,14 @@ setInterval(refreshPool, 10000);
     if(!id) return;
     // 点已展开的 → 收起；点别的 → 只展开它（其余靠单变量自动折叠）
     if(openId === id) openId = null;
-    else { openId = id; ensureDigest(id); }
+    else {
+      openId = id;
+      // 只有热点榜条目要拉事件综述（有 storyId）；其余频道摘要已在数据里
+      if(channel === 'hot'){
+        const hit = items.find(function(x){ return itemKey(x) === id; });
+        if(hit && hit.storyId) ensureDigest(hit.storyId);
+      }
+    }
     renderList();
   }
 
@@ -7017,25 +7106,65 @@ setInterval(refreshPool, 10000);
     else noteEl.textContent = text;
   }
 
+  function noteForChannel(d){
+    if(channel === 'hot'){
+      if(d.stale && d.err) return ['刚才没连上 AIHOT，下面是上一份缓存。', d.err];
+      if(d.stale) return ['用的是十分钟内取过的缓存。', ''];
+      return [NOTE_DEFAULT, ''];
+    }
+    if(d.stale && d.err) return ['这次没连上 AIHOT，下面是上一份缓存。', d.err];
+    if(d.stale) return ['用的是十分钟内取过的缓存。', ''];
+    const names = {selected:'精选', all:'全部动态', daily:'AI 日报'};
+    return ['AIHOT ' + (names[channel] || '动态') + (cat ? ' · 当前分类' : '') + '，点标题展开摘要，可一键用作选题。', ''];
+  }
+
+  function applyData(d, isHot){
+    const got = Array.isArray(d.items) ? d.items : [];
+    lastErr = d.ok ? '' : (d.err || '接口没返回内容');
+    if(isHot){ hotItems = got; items = got; }
+    else { items = got; }
+    if(!didInitOpen && items.length){
+      openId = itemKey(items[0]);
+      didInitOpen = true;
+      if(isHot && openId) ensureDigest(openId);
+    }
+    const nt = noteForChannel(d);
+    setNote(nt[0], nt[1]);
+  }
+
+  // 统一入口：按当前频道取数。热点榜走 /topics，其余走 /feed（带本地缓存）。
   function load(fresh){
     if(busy) return;
     busy = true; lastErr = '';
     renderChip();
     if(dlg.open) renderList();
-    fetch('/api/aihot/topics' + (fresh ? '?fresh=1' : ''), {cache: 'no-store'})
+    const isHot = channel === 'hot';
+    const key = channel + '|' + cat;
+    if(!isHot && !fresh && feedCache[key] && Date.now() - feedCache[key].at < FEED_TTL){
+      items = feedCache[key].items;
+      busy = false;
+      setNote(feedCache[key].stale ? '用的是十分钟内取过的缓存。'
+              : 'AIHOT ' + (({selected:'精选', all:'全部动态', daily:'AI 日报'})[channel] || '动态') +
+                (cat ? ' · 当前分类' : '') + '，点标题展开摘要，可一键用作选题。', '');
+      // 命中本地缓存也要恢复「首条默认展开」，否则切回旧频道没法直接用作选题
+      if(!didInitOpen && items.length){
+        openId = itemKey(items[0]);
+        didInitOpen = true;
+      }
+      renderChip();
+      if(dlg.open) renderList();
+      return;
+    }
+    const url = isHot
+      ? '/api/aihot/topics' + (fresh ? '?fresh=1' : '')
+      : '/api/aihot/feed?channel=' + encodeURIComponent(channel) +
+        '&category=' + encodeURIComponent(cat) + (fresh ? '&fresh=1' : '');
+    fetch(url, {cache: 'no-store'})
       .then(function(r){ return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
       .then(function(d){
-        items = Array.isArray(d.items) ? d.items : [];
-        lastErr = d.ok ? '' : (d.err || '接口没返回内容');
-        // 首屏只默认展开第一条一次；之后用户手动折叠/展开都尊重，刷新不会重置回第一条
-        if(!didInitOpen && items.length){
-          openId = items[0].storyId || '';
-          didInitOpen = true;
-          if(openId) ensureDigest(openId);
-        }
-        if(d.stale && d.err) setNote('刚才没连上 AIHOT，下面是上一份缓存。', d.err);
-        else if(d.stale) setNote('用的是十分钟内取过的缓存。');
-        else setNote(NOTE_DEFAULT);
+        applyData(d, isHot);
+        if(!isHot) feedCache[key] = {at: Date.now(), items: items,
+          stale: !!(d.stale || !d.ok), err: d.err || ''};
         busy = false;
         renderChip();
         if(dlg.open) renderList();
@@ -7044,17 +7173,29 @@ setInterval(refreshPool, 10000);
         busy = false;
         lastErr = e.message || '网络问题';
         renderChip();
-        if(dlg.open){
-          setNote('没连上 AIHOT。', lastErr);
-          renderList();
-        }
+        if(dlg.open){ setNote('没连上 AIHOT。', lastErr); renderList(); }
       });
+  }
+
+  // 后端菜单（能让运营改频道/分类而不用改前端）；取不到就用页面内置那份。
+  function loadChannels(){
+    fetch('/api/aihot/channels', {cache: 'no-store'})
+      .then(function(r){ return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+      .then(function(d){
+        if(Array.isArray(d.channels) && d.channels.length) channels = d.channels;
+        renderTabs();
+      })
+      .catch(function(){ /* 用 FALLBACK_CHANNELS */ });
   }
 
   function openDlg(expandId){
     if(expandId){
       openId = expandId;
-      ensureDigest(expandId);
+      // 只有热点榜条目才有 storyId 需要按需拉综述；其余频道摘要已在数据里
+      if(channel === 'hot'){
+        const hit = items.find(function(x){ return itemKey(x) === expandId; });
+        if(hit && hit.storyId) ensureDigest(hit.storyId);
+      }
     }
     if(!items.length && !busy) load(false);
     if(!dlg.open) dlg.showModal();
@@ -7089,14 +7230,26 @@ setInterval(refreshPool, 10000);
   listEl.addEventListener('click', function(e){
     const row = e.target.closest('.ai-row');
     if(!row) return;
-    const it = items[Number(row.dataset.i)];
+    // 左栏小卡片永远来自热点榜：点它先切回热点榜频道，再展开对应那条
+    if(channel !== 'hot'){ channel = 'hot'; cat = ''; openId = null; renderTabs(); }
+    if(items !== hotItems) items = hotItems;
+    const it = hotItems[Number(row.dataset.i)];
     openDlg(it ? it.storyId : '');
   });
   moreBtn.addEventListener('click', function(){ openDlg(''); });
   closeBtn.addEventListener('click', function(){ if(dlg.open) dlg.close(); });
   refreshBtn.addEventListener('click', function(){
-    toast('正在刷新 AI 热点…');
+    toast(channel === 'hot' ? '正在刷新 AI 热点…' : '正在刷新内容…');
     load(true);
+  });
+
+  if(tabsEl) tabsEl.addEventListener('click', function(e){
+    const b = e.target.closest('.ah-tab');
+    if(b) selectChannel(b.dataset.ch);
+  });
+  if(catsEl) catsEl.addEventListener('click', function(e){
+    const b = e.target.closest('.ah-cat');
+    if(b) selectCat(b.dataset.cat);
   });
 
   dlistEl.addEventListener('click', function(e){
@@ -7104,13 +7257,15 @@ setInterval(refreshPool, 10000);
     if(!card) return;
     const id = card.dataset.id;
     if(e.target.closest('.ai-use')){
-      const hit = items.filter(function(x){ return (x.storyId || '') === id; })[0];
+      const hit = items.filter(function(x){ return itemKey(x) === id; })[0];
       if(hit) useAsTopic(hit);
       return;
     }
     if(e.target.closest('.ai-ch')) toggle(id);
   });
 
+  renderTabs();
+  loadChannels();
   load(false);
 })();
 </script>

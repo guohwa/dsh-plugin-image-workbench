@@ -839,6 +839,28 @@ _AIHOT_HISTORY: dict = {}
 _AIHOT_SCRAPE: dict = {"at": 0.0, "data": None, "err": ""}
 _AIHOT_PREV_IDS: set = set()
 
+# 除「热点榜」外的三个内容频道：精选 / 全部 AI 动态 / AI 日报。
+# 热点榜走 /topics（有热度、事件综述那套），这三个走 /feed（item 级、无 storyId）。
+# 分类只对 items 类频道有意义，和 aihot.news 站内 category 一一对应。
+_AIHOT_FEED_CATS = [
+    ("", "全部"),
+    ("ai-models", "AI 模型"),
+    ("ai-products", "AI 产品"),
+    ("industry", "行业"),
+    ("paper", "论文"),
+    ("tip", "教程"),
+    ("opinion", "观点"),
+]
+_AIHOT_CAT_KEYS = {k for k, _ in _AIHOT_FEED_CATS}
+AIHOT_CHANNELS = [
+    {"key": "hot", "name": "热点榜", "cats": []},
+    {"key": "selected", "name": "精选", "cats": [{"key": k, "name": n} for k, n in _AIHOT_FEED_CATS]},
+    {"key": "all", "name": "全部动态", "cats": [{"key": k, "name": n} for k, n in _AIHOT_FEED_CATS]},
+    {"key": "daily", "name": "AI 日报", "cats": []},
+]
+_AIHOT_FEED_TTL = 600            # 三个 feed 频道各缓存 10 分钟
+_AIHOT_FEED: dict = {}           # "channel|category" -> {"at": float, "items": list, "err": str}
+
 
 async def _aihot_json(path: str) -> dict:
     """取 AIHOT 的一个 JSON 接口。
@@ -1052,6 +1074,107 @@ async def api_aihot_topics(fresh: int = 0):
                              "items": _AIHOT_HOT["items"], "err": msg})
 
 
+def _aihot_slim_feed(raw: dict, channel: str) -> list:
+    """把 /items（精选/全部动态）和 /dailies（日报）规整成一种卡片结构。
+
+    统一成前端 renderList 认识的字段：title / digest / source / date / aihot / original。
+    这些是 item 级内容，没有 storyId，所以不会有事件综述和热度徽章——前端据此只给
+    「站内看 / 原文 / 用作选题」，不拉综述、不填 state.hotStory。
+    """
+    out = []
+    if channel == "daily":
+        # 日报列表：{date, generatedAt, leadTitle, leadParagraph, links}
+        for it in (raw.get("items") or []):
+            if not isinstance(it, dict):
+                continue
+            title = str(it.get("leadTitle") or "").strip()
+            if not title:
+                continue
+            links = it.get("links") or {}
+            date = str(it.get("date") or "")
+            out.append({
+                "rank": len(out) + 1,
+                "title": title,
+                "digest": str(it.get("leadParagraph") or "").strip(),
+                "source": "AI 日报" + (" · " + date if date else ""),
+                "date": date,
+                "aihot": str(links.get("aihot") or ""),
+                "original": "",
+            })
+    else:
+        # 精选 / 全部动态：{title, summary, source{name}, links, category, publishedAt}
+        for it in (raw.get("items") or []):
+            if not isinstance(it, dict):
+                continue
+            title = str(it.get("title") or "").strip()
+            if not title:
+                continue
+            links = it.get("links") or {}
+            src = it.get("source") or {}
+            src_name = str(src.get("name") or "") if isinstance(src, dict) else str(src)
+            out.append({
+                "rank": len(out) + 1,
+                "title": title,
+                "digest": str(it.get("summary") or it.get("reason") or "").strip(),
+                "source": src_name,
+                "date": str(it.get("publishedAt") or it.get("discoveredAt") or ""),
+                "category": str(it.get("category") or ""),
+                "aihot": str(links.get("aihot") or ""),
+                "original": str(links.get("original") or ""),
+            })
+    return out
+
+
+@app.get("/api/aihot/channels")
+async def api_aihot_channels():
+    """弹窗频道与分类菜单：前端据此渲染两级 tab，不用在页面里写死。"""
+    return JSONResponse({"ok": True, "channels": AIHOT_CHANNELS})
+
+
+@app.get("/api/aihot/feed")
+async def api_aihot_feed(channel: str = "selected", category: str = "", fresh: int = 0):
+    """精选 / 全部动态 / AI 日报三个频道的内容，带 10 分钟缓存。
+
+    channel: selected | all | daily；category 只对 selected/all 生效，须是站内分类 key。
+    拉不到时退回上次结果并带 err/stale，前端标一句「上一份」，不让弹窗空白。
+    """
+    ch = str(channel or "selected").strip()
+    if ch not in ("selected", "all", "daily"):
+        return JSONResponse({"ok": False, "err": "未知频道", "items": []}, status_code=400)
+    cat = str(category or "").strip()
+    if ch == "daily" or cat not in _AIHOT_CAT_KEYS:
+        cat = ""                      # 日报无分类；非法/空分类一律当「全部」
+    key = ch + "|" + cat
+    now = time.time()
+    hit = _AIHOT_FEED.get(key)
+    if hit and not fresh and now - hit["at"] < _AIHOT_FEED_TTL:
+        return JSONResponse({"ok": True, "stale": False, "at": hit["at"],
+                             "channel": ch, "category": cat, "items": hit["items"]})
+    try:
+        if ch == "daily":
+            raw = await _aihot_json("/dailies")
+        else:
+            path = "/items?mode=" + ch + "&limit=30"
+            if cat:
+                path += "&category=" + cat
+            raw = await _aihot_json(path)
+        items = _aihot_slim_feed(raw, ch)
+        if not items:
+            raise RuntimeError("接口没返回内容")
+        _AIHOT_FEED[key] = {"at": now, "items": items, "err": ""}
+        return JSONResponse({"ok": True, "stale": False, "at": now,
+                             "channel": ch, "category": cat, "items": items})
+    except Exception as e:
+        msg = (str(e) or e.__class__.__name__)[:120]
+        have = bool(hit and hit["items"])
+        if hit:
+            hit["err"] = msg
+        return JSONResponse({"ok": have, "stale": have,
+                             "at": hit["at"] if hit else 0,
+                             "channel": ch, "category": cat,
+                             "items": (hit or {}).get("items", []), "err": msg})
+
+
 def _aihot_story_clean(sid: str) -> str:
     """事件 id 只认 AIHOT 自己给的 uuid，顺手挡掉拼 URL 的花样。"""
     return re.sub(r"[^0-9a-zA-Z\-]", "", str(sid or ""))[:64]
@@ -1153,6 +1276,8 @@ _TOPIC_BAD = re.compile(
     r"逆袭|揭秘|看完沉默|建议收藏|他说了一句话|扎心|治愈|自律|坚持|努力")
 # 干货的最低门槛：得有数字，或者有一个能动手验证的动作
 _TOPIC_SOLID = re.compile(r"\d|[0-9一二三四五六七八九十]|[先查算改拆记核实标列数试对比留换删]")
+# 热榜原题自带的「你怎么看」式空问句：加工前先剥掉，别让表态句混进选题
+_TOPIC_FILLER = re.compile(r"[，,]?\s*(?:对此|你对此)?\s*你怎么看\s*[，,？?]?")
 
 # 把一条热点标题变成可讨论的选题切口。每条都要求读者给出依据或做法，
 # 而不是表态。选哪个角度由标题决定，同一条热点每次都稳定落在同一个角度。
@@ -1202,8 +1327,9 @@ _EVERGREEN_TOPICS = (
 
 
 def _topic_clean(text: str) -> str:
-    """压掉空白和控制字符，截断到能塞进选题框的长度。"""
+    """压掉空白、剥掉原题自带的空问句，截断到能塞进选题框的长度。"""
     s = re.sub(r"\s+", " ", str(text or "")).strip()
+    s = _TOPIC_FILLER.sub("", s).strip().rstrip("，,、：:？? ")
     if len(s) > 64:
         s = s[:63].rstrip("，,、：: ") + "…"
     return s

@@ -110,6 +110,28 @@ _tmp_hot = app._aihot_slim({"items": [
 ok('热点榜瘦身：丢空标题、字段齐全',
    len(_tmp_hot) == 1 and _tmp_hot[0]['sourceCount'] == 7 and _tmp_hot[0]['storyId'] == 'abc-1')
 ok('热点榜瘦身：坏输入不抛异常', app._aihot_slim({}) == [] and app._aihot_slim({"items": None}) == [])
+# 多频道：四个频道 + 两个新路由，菜单/瘦身逻辑别在升级中被碰丢
+ok('GET /api/aihot/channels 已注册',
+   any(getattr(r, 'path', '') == '/api/aihot/channels'
+       and 'GET' in getattr(r, 'methods', set()) for r in app.app.routes))
+ok('GET /api/aihot/feed 已注册',
+   any(getattr(r, 'path', '') == '/api/aihot/feed'
+       and 'GET' in getattr(r, 'methods', set()) for r in app.app.routes))
+ok('AIHOT 四频道齐全（热点榜/精选/全部动态/AI 日报）',
+   [c['key'] for c in app.AIHOT_CHANNELS] == ['hot', 'selected', 'all', 'daily']
+   and all(len(c['cats']) == 7 for c in app.AIHOT_CHANNELS if c['key'] in ('selected', 'all')))
+_tmp_feed = app._aihot_slim_feed({"items": [
+    {"title": "模型甲", "category": "ai-models", "summary": "摘要一",
+     "source": {"name": "信源甲"}, "links": {"aihot": "https://aihot.news/items/m1"}},
+    {"title": "   "}, "bad",
+]}, "selected")
+ok('feed 瘦身：精选保留分类、丢空标题与非字典',
+   len(_tmp_feed) == 1 and _tmp_feed[0]['category'] == 'ai-models'
+   and _tmp_feed[0]['title'] == '模型甲' and _tmp_feed[0]['source'] == '信源甲')
+ok('feed 瘦身：日报取 leadTitle、坏输入不抛异常',
+   app._aihot_slim_feed({"items": [{"leadTitle": "今日日报", "date": "2026-11-14",
+                                    "leadParagraph": "昨天发生了这些"}]}, "daily")[0]['title'] == '今日日报'
+   and app._aihot_slim_feed({}, "all") == [])
 # 版本比较：必须按数字段比，字符串比会把 1.1.9 判成比 1.1.10 新
 _ver_cases = [('1.1.9', '1.1.10', False), ('1.1.17', '1.1.16', True), ('1.1', '1.1.0', False),
               ('1.1.17', '1.1.17', False), ('1.1.17-beta.1', '1.1.17', False),
@@ -130,6 +152,14 @@ ok('前端停止链路完整',
 ok('前端 AI 热点选题节点齐全',
    all(x in _src_html for x in ('id="aihotList"', 'id="aihotDlg"', 'id="aihotDList"',
                                 'id="aihotMore"', 'id="aihotRefresh"')))
+ok('前端热点两级 tab 节点与切换逻辑齐全',
+   'id="ahTabs"' in _src_html and 'id="ahCats"' in _src_html
+   and all(x in _src_html for x in ('function renderTabs', 'function selectChannel',
+                                    'function selectCat', '/api/aihot/channels',
+                                    "'/api/aihot/feed?channel='")))
+ok('前端左栏热点数据与弹窗频道解耦（hotItems 已声明）',
+   'let hotItems = []' in _src_html and 'hotItems.slice(0, 3)' in _src_html
+   and 'items = hotItems' in _src_html)
 ok('前端选题卡片排在选题输入框之前',
    0 < _src_html.find('id="aihotList"') < _src_html.find('label for="topic"'))
 ok('前端标注了数据来源 AIHOT', 'AIHOT（aihot.news）' in _src_html)
@@ -861,6 +891,9 @@ ok('话题池不含毒鸡汤空词',
    not any(app._TOPIC_BAD.search(x['text']) for x in _ritems))
 ok('话题池不出现「你怎么看」式空问句',
    not any('你怎么看' in x['text'] for x in _ritems))
+ok('热榜原题的空问句在加工前被剥掉（单元级，不依赖实时数据）',
+   '你怎么看' not in app._topic_clean('外媒曝某队收紧纹身限制，国脚需戴护臂，对此你怎么看，限制是否合理？')
+   and '限制是否合理' in app._topic_clean('外媒曝某队收紧纹身限制，国脚需戴护臂，对此你怎么看，限制是否合理？'))
 ok('鸡汤句被闸门拒绝', not app._topic_ok('只要努力坚持，人生一定会变好'))
 ok('具体可验证的选题被接受',
    app._topic_ok('把 200 页 PDF 先标页码再问 AI，答案能翻回原文核对吗'))
