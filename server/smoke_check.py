@@ -120,6 +120,19 @@ ok('GET /api/aihot/feed 已注册',
 ok('GET /api/aihot/daily 已注册',
    any(getattr(r, 'path', '') == '/api/aihot/daily'
        and 'GET' in getattr(r, 'methods', set()) for r in app.app.routes))
+ok('GET /api/history/pick 已注册',
+   any(getattr(r, 'path', '') == '/api/history/pick'
+       and 'GET' in getattr(r, 'methods', set()) for r in app.app.routes))
+ok('POST /api/tasks/{task_id}/fill 已注册',
+   any(getattr(r, 'path', '') == '/api/tasks/{task_id}/fill'
+       and 'POST' in getattr(r, 'methods', set()) for r in app.app.routes))
+_route_paths = [getattr(r, 'path', '') for r in app.app.routes]
+ok('换图候选接口必须排在 /api/history/{job_id} 之前',
+   _route_paths.index('/api/history/pick') < _route_paths.index('/api/history/{job_id}'),
+   '顺序反了会把 pick 当成 job_id，候选列表永远 404')
+ok('DELETE /api/history/{job_id} 已注册（删单张）',
+   any(getattr(r, 'path', '') == '/api/history/{job_id}'
+       and 'DELETE' in getattr(r, 'methods', set()) for r in app.app.routes))
 ok('AIHOT 四频道齐全（热点榜/精选/全部动态/AI 日报）',
    [c['key'] for c in app.AIHOT_CHANNELS] == ['hot', 'selected', 'all', 'daily']
    and all(len(c['cats']) == 7 for c in app.AIHOT_CHANNELS if c['key'] in ('selected', 'all')))
@@ -189,6 +202,20 @@ ok('前端热点两级 tab 节点与切换逻辑齐全',
 ok('前端左栏热点数据与弹窗频道解耦（hotItems 已声明）',
    'let hotItems = []' in _src_html and 'hotItems.slice(0, 3)' in _src_html
    and 'items = hotItems' in _src_html)
+ok('前端跨批次换图节点齐全',
+   all(x in _src_html for x in ('id="pickDlg"', 'id="pickList"', 'id="pickConfirm"',
+                                'id="pickFilter"', 'id="pickSelText"', 'data-act="fill"',
+                                'function openPick', 'function confirmFill',
+                                '/api/history/pick')))
+ok('换图后只重建单个任务行，不整页重载',
+   'function taskRowEl' in _src_html and 'function replaceTaskRow' in _src_html
+   and 'row.dataset.taskId' in _src_html and 'old.replaceWith(el)' in _src_html)
+ok('前端历史卡片有单张删除入口',
+   'data-act="del"' in _src_html and 'function deleteHistoryOne' in _src_html
+   and '/api/history/' in _src_html)
+ok('删单张后同步头部计数，删空则移除任务行',
+   'function removeFromTask' in _src_html and 'replaceTaskRow(task)' in _src_html
+   and 'row.remove()' in _src_html)
 ok('前端选题卡片排在选题输入框之前',
    0 < _src_html.find('id="aihotList"') < _src_html.find('label for="topic"'))
 ok('前端标注了数据来源 AIHOT', 'AIHOT（aihot.news）' in _src_html)
@@ -617,6 +644,98 @@ try:
 except Exception as e:
     ok('剔除名单可用', False, str(e)[:120])
 
+# 跨批次换图：原位替换，图和标题/文案/提示词一起搬，位置与批次归属不动
+try:
+    import tempfile, json as _json
+    from pathlib import Path as _P
+    import history as _hist
+    with tempfile.TemporaryDirectory() as _td:
+        _root = _P(_td)
+        _img = _root / 'images'; _img.mkdir()
+        _th = _root / 'thumbs'; _th.mkdir()
+        (_img / 'src.png').write_bytes(b'PNG' * 100)
+        (_th / 'dst1_c.webp').write_bytes(b'old')
+        _rows = [
+            {'id': 'dst1', 'task_id': 'T1', 'seq': 0, 'created': 1, 'finished': 2,
+             'group': '批次A', 'status': 'error', 'error': '高度重复',
+             'title': '旧标题', 'body': '旧文案', 'prompt': '旧提示词', 'image': None},
+            {'id': 'src1', 'task_id': 'T2', 'seq': 1, 'created': 3, 'finished': 4,
+             'group': '批次B', 'status': 'done', 'title': '新标题', 'body': '新文案',
+             'prompt': '新提示词', 'image': 'src.png', 'ratio': '1:1',
+             'account': 'new@x.com'},
+        ]
+        _hp = _root / 'hist.jsonl'
+        _hp.write_text('\n'.join(_json.dumps(r, ensure_ascii=False) for r in _rows) + '\n',
+                       encoding='utf-8')
+        _h = _hist.History(_hp, _img, _th)
+        _r = _h.fill_slot('dst1', 'src1')
+        _d = _h.get('dst1') or {}
+        ok('换图：图 / 标题 / 文案 / 提示词一起搬过来',
+           _r.get('ok') and _d.get('status') == 'done' and _d.get('title') == '新标题'
+           and _d.get('body') == '新文案' and _d.get('prompt') == '新提示词',
+           str(_d)[:120])
+        ok('换图：位置、批次归属、排序字段不动',
+           _d.get('id') == 'dst1' and _d.get('task_id') == 'T1'
+           and _d.get('seq') == 0 and _d.get('group') == '批次A')
+        ok('换图：图片独立复制，不和来源共用文件',
+           bool(_d.get('image')) and (_img / _d['image']).is_file()
+           and _d['image'] != 'src.png' and (_img / 'src.png').is_file())
+        ok('换图：旧缩略图缓存清掉（不残留旧图）',
+           not (_th / 'dst1_c.webp').exists())
+        ok('换图：同一张拒绝自替换', _h.fill_slot('dst1', 'dst1').get('ok') is False)
+        _pall = _h.pick()
+        _pex = _h.pick(exclude_task='T1')
+        ok('换图：候选只要成图，且能排除当前批次',
+           _pall['total'] == 2 and _pex['total'] == 1
+           and _pex['items'][0]['task_id'] == 'T2',
+           f"all={_pall['total']} excl={_pex['total']}")
+        ok('换图：原位替换不追加重复记录',
+           len([x for x in _hp.read_text(encoding='utf-8').splitlines() if x.strip()]) == 2)
+except Exception as e:
+    ok('跨批次换图可用', False, str(e)[:120])
+
+# 删单张：只删这一条，同批其他图不动；记录没了，推送里自然也不再有这一屏
+try:
+    import tempfile as _tf2, json as _json2
+    from pathlib import Path as _P2
+    import history as _hist2
+    with _tf2.TemporaryDirectory() as _td2:
+        _r2 = _P2(_td2)
+        _img2 = _r2 / 'images'; _img2.mkdir()
+        _th2 = _r2 / 'thumbs'; _th2.mkdir()
+        for _n in ('a.png', 'b.png'):
+            (_img2 / _n).write_bytes(b'PNG' * 100)
+        for _n in ('a_c.webp', 'a_p.webp', 'b_c.webp'):
+            (_th2 / _n).write_bytes(b'old')
+        _rows2 = [
+            {'id': 'a', 'task_id': 'T1', 'seq': 0, 'group': '批次A', 'status': 'done',
+             'title': '要删的', 'body': '要删的文案', 'prompt': '要删的提示词', 'image': 'a.png'},
+            {'id': 'b', 'task_id': 'T1', 'seq': 1, 'group': '批次A', 'status': 'done',
+             'title': '要留的', 'body': '留下的文案', 'image': 'b.png'},
+            {'id': 'c', 'task_id': 'T2', 'seq': 0, 'group': '批次B', 'status': 'error',
+             'error': '高度重复', 'title': '别处的'},
+        ]
+        _hp2 = _r2 / 'hist.jsonl'
+        _hp2.write_text('\n'.join(_json2.dumps(r, ensure_ascii=False) for r in _rows2) + '\n',
+                        encoding='utf-8')
+        _h2 = _hist2.History(_hp2, _img2, _th2)
+        _dr = _h2.remove_one('a')
+        ok('删单张：返回剩余条数与任务归属',
+           _dr.get('ok') and _dr.get('left') == 1 and _dr.get('task_id') == 'T1',
+           str(_dr))
+        ok('删单张：记录、原图、缩略图一起清掉',
+           _h2.get('a') is None and not (_img2 / 'a.png').exists()
+           and not (_th2 / 'a_c.webp').exists() and _dr.get('images', 0) >= 3)
+        ok('删单张：同批其他图和别的批次都不动',
+           _h2.get('b') is not None and (_img2 / 'b.png').exists()
+           and (_th2 / 'b_c.webp').exists() and _h2.get('c') is not None)
+        ok('删单张：这条的标题/文案/提示词跟着消失（推送里也没了）',
+           all(i.get('title') != '要删的' for i in (_h2.task_one('T1') or {}).get('items', [])))
+        ok('删单张：删不存在的 id 安全返回',
+           _h2.remove_one('nope').get('ok') is False)
+except Exception as e:
+    ok('删单张可用', False, str(e)[:120])
+
 # 额度为 0 的号不再算「可用」
 try:
     _rows = [{'status': '正常', 'quota': 0, 'cls': 'ok'},
@@ -1037,6 +1156,53 @@ ok('首图区块能把要点插在图片之后',
                         tail_html=app._wx_lead_block(['· 要点一'])).count('内容要点') == 1)
 ok('普通屏不带要点区块',
    app._wx_news_section('标题', '正文', 'http://x/y.jpg').count('内容要点') == 0)
+
+# ---- 带明确时间的重点信息必须放第一句，作为整篇中心思想 ----
+print('=== 要点时间置顶 ===')
+_pts_mid = ['· 采用稀疏混合专家架构',
+            '· Qwen 团队 11 月 16 日正式发布 Qwen4-Max',
+            '· 输入价格每百万词元 1.5 美元']
+ok('要点里的时间句被提到第一句',
+   app._wx_timed_first(_pts_mid, [])[0].startswith('· Qwen 团队 11 月 16 日'),
+   str(app._wx_timed_first(_pts_mid, [])))
+ok('「正式发布」压过「截止报名」这类次要日期',
+   '发布' in app._wx_timed_first(['· 活动报名 11 月 20 日截止',
+                                  '· 11 月 16 日正式发布上线'], [])[0])
+ok('要点无时间时从正文补抽带日期的事实',
+   '11 月 16 日' in app._wx_timed_first(
+       ['· 参数达到 2.4 万亿'],
+       [{'caption': '先铺垫一句。Qwen 团队 11 月 16 日正式发布 Qwen4-Max。'}])[0])
+ok('全篇无日期时不虚构时间',
+   app._wx_timed_first(['· 参数很大'], [{'caption': '这段没有日期。'}]) == ['· 参数很大'])
+ok('「今天」这类相对时间也能置顶',
+   app._wx_timed_first(['· 参数很大', '· 今天正式开放申请'], [])[0].startswith('· 今天'))
+_app_src = pathlib.Path(app.__file__).read_text(encoding='utf-8')
+ok('公众号摘要优先用要点第一条（中心思想）',
+   'lead_points[0] if lead_points' in _app_src)
+
+# ---- 热点原文第一句本身就是时间和事件，直接拿它当中心思想 ----
+print('=== 热点原文第一句 ===')
+_story_prompt = ('事件：阿里发布 Qwen4-Max，预览版先行接入多产品\n'
+                 '综述：Qwen 团队 11 月 16 日正式发布旗舰模型 Qwen4-Max，'
+                 '这是基于新的 Qwen4 架构，采用 2.4 万亿参数稀疏 MoE。\n')
+_story_lead = app._wx_story_lead(_story_prompt)
+ok('热点综述第一句抽成中心思想',
+   _story_lead.startswith('Qwen 团队 11 月 16 日正式发布'), repr(_story_lead))
+ok('抽出的中心思想不超过 44 字', 0 < len(_story_lead) <= 44, len(_story_lead))
+ok('综述里只有促销日期时不硬凑',
+   app._wx_story_lead('综述：开放第三方模型，11 月 11 日起限时优惠。') == '')
+ok('没有综述块（手动选题）时返回空',
+   app._wx_story_lead('主题：画一张公众号封面') == '')
+_p3 = app._wx_timed_first(['· 采用 2.4 万亿参数稀疏 MoE',
+                           '· Qwen 团队 11 月 16 日正式发布 Qwen4-Max',
+                           '· 输入价格 1.5 美元'], [], _story_lead)
+ok('热点原文第一句排在要点第一位', _p3[0] == '· ' + _story_lead, repr(_p3[0]))
+ok('与提炼出的重复句只留一条', len(_p3) == 3, _p3)
+ok('去掉「· 」和空格后仍能认出重复句',
+   app._wx_pts_key('Qwen 团队 11 月 16 日正式发布 Qwen4-Max')
+   == app._wx_pts_key('Qwen团队11月16日正式发布Qwen4-Max'))
+ok('推送时从历史提示词里取热点第一句',
+   "_wx_story_lead(rec.get('prompt')" in _app_src.replace('"', "'"))
 
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')

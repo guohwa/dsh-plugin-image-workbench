@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -192,11 +193,11 @@ class History:
         with self._lock:
             return next((r for r in reversed(self._items) if r["id"] == job_id), None)
 
-    def image_path(self, job_id: str) -> Path | None:
-        rec = self.get(job_id)
-        if not rec or not rec.get("image"):
+    def _path_of(self, rec: dict) -> Path | None:
+        """按记录里的 image 文件名找原图。不取锁，调用方自己在锁内/外决定。"""
+        name = str((rec or {}).get("image") or "")
+        if not name:
             return None
-        name = str(rec["image"])
         if self._finder:
             return self._finder(name)
         for d in (self.images_dir, self.images_dir.parent / "images"):
@@ -204,6 +205,10 @@ class History:
             if p.is_file():
                 return p
         return None
+
+    def image_path(self, job_id: str) -> Path | None:
+        rec = self.get(job_id)
+        return self._path_of(rec) if rec else None
 
     def _any_image(self, name: str) -> Path:
         """按文件名定位原图：交给 finder 做多目录兜底，没注入就按当前目录找。"""
@@ -423,6 +428,23 @@ class History:
                 pass
         return {"ok": True, "deleted": 1, "images": gone}
 
+    def remove_one(self, job_id: str) -> dict:
+        """删掉历史里的单条记录：索引 + 原图 + 缩略图。
+
+        和 drop_record 的区别只在语义：那个是「重做成功后替换旧图」的内部步骤，
+        这个由用户主动触发。这条记录一消失，它的标题、正文、提示词也跟着没了，
+        推送公众号按 job_id 取不到图，自然不会再出现在推送里。
+        left 是该任务剩下的条数，前端据此决定整行要不要一起移除。
+        """
+        rec = self.get(job_id)
+        if not rec:
+            return {"ok": False, "deleted": 0, "images": 0, "left": 0, "task_id": ""}
+        tid = str(rec.get("task_id") or "")
+        r = self.drop_record(job_id, tid or None)
+        r["task_id"] = tid
+        r["left"] = len(self._task_rows(tid)) if tid else 0
+        return r
+
     def delete_task(self, task_id: str) -> dict:
         """删掉整个任务：索引、图片原图、缩略图一起清。
 
@@ -500,6 +522,139 @@ class History:
             "page": offset // limit + 1,
             "pages": max(1, (total + limit - 1) // limit),
             "items": out,
+        }
+
+    # ---------- 跨批次换图：把别的批次的一张成图填到这一位 ----------
+    def pick(self, q: str = "", limit: int = 24, offset: int = 0,
+             exclude_task: str = "") -> dict:
+        """选图弹窗的候选：所有生成成功、有图的记录，默认排除当前这一批。"""
+        q = (q or "").strip().lower()
+        exclude_task = str(exclude_task or "").strip()
+        with self._lock:
+            rows = list(reversed(self._items))
+        out: list[dict] = []
+        for r in rows:
+            if r.get("status") != "done" or not r.get("image"):
+                continue
+            if exclude_task and str(r.get("task_id") or "") == exclude_task:
+                continue
+            if q:
+                blob = " ".join(str(r.get(k) or "") for k in
+                                ("title", "topic", "group", "prompt", "body"))
+                if q not in blob.lower():
+                    continue
+            out.append({
+                "id": r["id"],
+                "title": r.get("title") or r.get("topic") or "",
+                "task_id": r.get("task_id") or "",
+                "task_title": r.get("group") or r.get("title") or "",
+                "body": (r.get("body") or "")[:120],
+                "finished": r.get("finished"),
+                "ratio": r.get("ratio"),
+                "width": r.get("width"),
+                "height": r.get("height"),
+                "thumb_url": f"/api/history/{r['id']}/thumb",
+            })
+        total = len(out)
+        limit = max(1, min(int(limit or 24), 100))
+        offset = max(0, int(offset or 0))
+        page = out[offset:offset + limit]
+        return {"total": total, "offset": offset, "limit": limit,
+                "has_more": offset + len(page) < total,
+                "page": offset // limit + 1,
+                "pages": max(1, (total + limit - 1) // limit),
+                "items": page}
+
+    # 换图时跟着来源走的字段：内容和出图参数都来自来源，图和文字才不会打架
+    _FILL_FROM_SRC = (
+        "image", "width", "height", "bytes", "ratio", "prompt", "body",
+        "title", "topic", "mode", "image_mode", "shoot_type", "account",
+        "account_email", "style_id", "layout_id", "color_id", "ref_id",
+        "ref_mode", "env_id", "attempts",
+    )
+
+    def fill_slot(self, dst_id: str, src_id: str) -> dict:
+        """把来源那张成图整条搬到目标位置（原位替换）。
+
+        用户场景：某一批里有一张一直生成失败（比如被判和第三方高度重复），
+        从别的批次挑一张成图填到这一位，标题 / 正文 / 提示词一起过来，
+        之后推送公众号看到的就是拼凑后的内容。
+        """
+        dst_id, src_id = str(dst_id or ""), str(src_id or "")
+        if not dst_id or not src_id:
+            return {"ok": False, "error": "参数不完整"}
+        if dst_id == src_id:
+            return {"ok": False, "error": "来源和目标不能是同一张"}
+
+        with self._lock:
+            dst = next((r for r in self._items if str(r.get("id")) == dst_id), None)
+            src = next((r for r in self._items if str(r.get("id")) == src_id), None)
+            if not dst or not src:
+                return {"ok": False, "error": "找不到这两条记录，刷新后再试"}
+            if src.get("status") != "done" or not src.get("image"):
+                return {"ok": False, "error": "来源这张还没生成成功"}
+            src_path = self._path_of(src)
+            if not src_path or not src_path.is_file():
+                return {"ok": False, "error": "来源图文件已经找不到了"}
+            try:
+                self.images_dir.mkdir(parents=True, exist_ok=True)
+                # 不用 copy2：保留源 mtime 会让缩略图缓存判断成「没变」，
+                # 换完还显示旧图。copyfile 让新文件 mtime=现在。
+                name = f"fill_{dst_id}_{int(time.time())}{src_path.suffix or '.png'}"
+                shutil.copyfile(src_path, self.images_dir / name)
+            except Exception as e:
+                return {"ok": False, "error": "复制图片失败：" + str(e)[:60]}
+
+            old_path = self._path_of(dst)
+            new = dict(dst)
+            for k in self._FILL_FROM_SRC:
+                if k in src:
+                    new[k] = src.get(k)
+            new["image"] = name
+            new["status"] = "done"
+            new["error"] = ""
+            # id / task_id / seq / created / finished / group 保持不动：
+            # 位置、批次归属和排序都别因为换一张图而跳
+            rows = [new if str(r.get("id")) == dst_id else r for r in self._items]
+            self._items = rows
+            self._rewrite(rows)
+
+        # 旧图和旧缩略图在锁外清：被替换掉的那张已经没有记录引用它
+        if old_path and old_path.is_file():
+            try:
+                old_path.unlink()
+            except Exception:
+                pass
+        try:
+            for p in self.thumbs_dir.glob(dst_id + "_*.webp"):
+                p.unlink(missing_ok=True)
+            (self.thumbs_dir / (dst_id + ".jpg")).unlink(missing_ok=True)
+        except Exception:
+            pass
+        return {"ok": True, "dst_id": dst_id, "src_id": src_id, "image": name}
+
+    def task_one(self, task_id: str) -> dict | None:
+        """单个任务的最新分组（换图后前端就地重绘这一行用）。"""
+        rows = self._task_rows(task_id)
+        if not rows:
+            return None
+        first = rows[0]
+        g = str(first.get("group") or first.get("title") or "未命名")
+        modes: dict[str, int] = {}
+        for r in rows:
+            m = r.get("mode") or "image"
+            modes[m] = modes.get(m, 0) + 1
+        return {
+            "task_id": task_id,
+            "title": g,
+            "group": g,
+            "created": int(first.get("created") or 0),
+            "finished": max(int(r.get("finished") or 0) for r in rows),
+            "total": len(rows),
+            "done": sum(1 for r in rows if r.get("status") == "done"),
+            "error": sum(1 for r in rows if r.get("status") == "error"),
+            "modes": modes,
+            "items": [self._task_brief(r) for r in rows],
         }
 
     def _public(self, r: dict) -> dict:

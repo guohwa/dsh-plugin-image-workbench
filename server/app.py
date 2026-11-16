@@ -3184,10 +3184,40 @@ async def api_history(limit: int = 24, offset: int = 0, q: str = "", status: str
     return JSONResponse(HISTORY.list(limit=limit, offset=offset, q=q, status=status))
 
 
+@app.get("/api/history/pick")
+async def api_history_pick(q: str = "", limit: int = 24, offset: int = 0,
+                           exclude_task: str = ""):
+    """换图弹窗的候选：其他批次已生成成功的图。
+
+    必须注册在 /api/history/{job_id} 之前，否则 "pick" 会被当成 job_id。
+    """
+    return JSONResponse(HISTORY.pick(q=q, limit=limit, offset=offset,
+                                     exclude_task=exclude_task))
+
+
 @app.get("/api/tasks")
 async def api_tasks(limit: int = 20, offset: int = 0, q: str = ""):
     """历史按「一次批量出图」分组，默认一页 20 个任务。"""
     return JSONResponse(HISTORY.tasks(limit=limit, offset=offset, q=q))
+
+
+class FillSlotRequest(BaseModel):
+    dst_id: str
+    src_id: str
+
+
+@app.post("/api/tasks/{task_id}/fill")
+async def api_task_fill(task_id: str, req: FillSlotRequest):
+    """从别的批次拉一张成图填到这一位：图、标题、正文、提示词一起换。"""
+    dst = HISTORY.get(req.dst_id)
+    if not dst:
+        raise HTTPException(404, "目标记录不存在")
+    if str(dst.get("task_id") or "") != str(task_id):
+        raise HTTPException(400, "目标记录不属于这个任务")
+    r = HISTORY.fill_slot(req.dst_id, req.src_id)
+    if not r.get("ok"):
+        raise HTTPException(400, r.get("error") or "填充失败")
+    return JSONResponse({"ok": True, "task": HISTORY.task_one(task_id)})
 
 
 @app.get("/api/tasks/{task_id}")
@@ -3354,6 +3384,18 @@ async def api_history_one(job_id: str):
     if not rec:
         raise HTTPException(404, "record not found")
     return JSONResponse(HISTORY._public(rec))
+
+
+@app.delete("/api/history/{job_id}")
+async def api_history_delete(job_id: str):
+    """删掉历史里的单张记录（图 + 这一条的标题/正文/提示词），删完找不回来。
+
+    只删这一条，同批次其他图不动。删掉之后这一批再推送公众号，就少这一屏。
+    """
+    r = HISTORY.remove_one(job_id)
+    if not r.get("deleted"):
+        raise HTTPException(404, "record not found")
+    return JSONResponse(r)
 
 
 def _variant_response(job_id: str, kind: str):
@@ -3660,10 +3702,137 @@ def _wx_parse_points(raw: str) -> list[str]:
         return []
     out = []
     for x in d:
-        s = _wx_clean_line(x, 34)
-        if s and re.search(r"[一-鿿]", s):
-            out.append("· " + re.sub(r"^\s*·\s*", "", s))
+        s = _wx_clean_line(x, 44)
+        if not s or not re.search(r"[一-鿿]", s):
+            continue
+        # 模型偶尔会把「正文未注明日期」这种交代材料的话写进要点，读者看了莫名其妙，直接丢
+        if _WX_META.search(s):
+            continue
+        out.append("· " + re.sub(r"^\s*·\s*", "", s))
     return out[:5]
+
+
+# 带明确时间的句子要顶到要点第一条：读者第一眼就得知道「什么时候发生了什么」。
+# 强时间＝具体日期；弱时间＝今天/昨日这类相对说法，仅在没有具体日期时兜底。
+_WX_TIME_STRONG = re.compile(
+    r"\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*[日号]"
+    r"|\d{1,2}\s*月\s*\d{1,2}\s*[日号]"
+    r"|\d{4}\s*[-/.]\s*\d{1,2}\s*[-/.]\s*\d{1,2}"
+)
+_WX_TIME_WEAK = re.compile(r"今天|今日|昨天|昨日|前天|本周|上周|本月|当月")
+# 核心动作决定「这条是不是中心思想」。「推出」太宽泛（推出新品 / 推出优惠）不算核心，
+# 只有发布、上线、开源、宣布这类硬事件才配占正位
+_WX_CORE_ACT = re.compile(r"发布|上线|开源|宣布|官宣|融资|收购|获批|任命|辞任|离职|上市|发售")
+_WX_ACT = re.compile(
+    r"发布|上线|开源|宣布|推出|公布|官宣|开售|预售|定档|生效|"
+    r"融资|收购|获批|任命|辞任|离职|接入|开放|上市|发售"
+)
+# 促销与流程性日期（限时优惠、报名截止）不算中心思想，别让它把正位占了
+_WX_PROMO = re.compile(r"优惠|折扣|促销|限时|补贴|红包|代金券|券后")
+_WX_MINOR = re.compile(r"截止|报名|开奖|抽奖|结束|敬请期待")
+# 交代材料本身的话（「正文未注明」「本文」）不能出现在读者看的要点里
+_WX_META = re.compile(r"正文未|文中未|正文没|文中没|本文|上文|上述|综上|据材料|从内容看")
+_WX_TIME_MIN = 4      # 到这个分才算「够格当中心思想」
+
+
+def _wx_story_lead(prompt: str) -> str:
+    """热点选题的原文第一句：从 prompt 里存的「综述：…」抠出时间和事件。
+
+    热点原文第一句本身就是「谁 + 几月几日 + 发布了什么」，这比让模型从各屏正文
+    回头提炼可靠得多——提炼环节最容易把日期压成「近日」，或者干脆当冗余删掉。
+    抠不出来就返回空，绝不自己补日期。
+    """
+    m = re.search(r"综述：\s*([^\n]+)", str(prompt or ""))
+    if not m:
+        return ""
+    seg = re.sub(r"\s+", " ", m.group(1)).strip()
+    first = re.split(r"[。！？!?]", seg)[0]
+    # 综述第一句常常是一长串参数罗列，按逗号累加，凑到「日期 + 核心动作」就收
+    acc = ""
+    for piece in re.split(r"[，；;]", first):
+        acc = (acc + "，" + piece) if acc else piece
+        if (len(acc) >= 8 and _WX_TIME_STRONG.search(acc)
+                and _WX_CORE_ACT.search(acc)):
+            return _wx_clean_line(acc, 44)
+        if len(acc) > 60:
+            break
+    # 第一句没写日期：往后找带日期的事实句，促销和报名截止这类跳过
+    for sent in re.split(r"(?<=[。！？!?])", seg):
+        if not _WX_TIME_STRONG.search(sent):
+            continue
+        if _WX_PROMO.search(sent) or _WX_MINOR.search(sent):
+            continue
+        head = re.split(r"[，；;]", sent)[0]
+        pick = head if (_WX_CORE_ACT.search(head) and len(head) >= 10) else sent
+        return _wx_clean_line(pick, 44)
+    return ""
+
+
+def _wx_pts_key(s: str) -> str:
+    """要点去重用的指纹：去掉「· 」、空白和标点再比，避免「Qwen 团队 11 月 16 日」
+    和「Qwen团队11月16日」被当成两句不同的话。"""
+    t = re.sub(r"^\s*·\s*", "", str(s or ""))
+    return re.sub(r"[^\w\u4e00-\u9fff]", "", t)[:12]
+
+
+def _wx_timed_first(points: list[str], screens: list[dict],
+                    lead: str = "") -> list[str]:
+    """把带明确时间的那条提到第一句，作为整篇的中心思想。
+
+    正解是热点原文第一句（lead），它天生写着「几月几日发生了什么」，直接顶上去；
+    拿不到时才退两步：已有的带时间要点置顶（优先「日期 + 发布/上线」这类动作句，
+    别让「某日截止报名」占了正位），再不行从正文里抠一句带日期的事实补第一条。
+    """
+    pts = [p for p in (points or []) if str(p).strip()]
+    hint = re.sub(r"^\s*·\s*", "", str(lead or "")).strip()
+    if hint and _WX_TIME_STRONG.search(hint):
+        # 提炼出来的要点常和原文第一句重复，按指纹去重，别同一句说两遍
+        key = _wx_pts_key(hint)
+        pts = [p for p in pts if _wx_pts_key(p) != key]
+        return ["· " + hint] + pts
+    if not pts:
+        return pts
+
+    def score(p: str) -> int:
+        strong = bool(_WX_TIME_STRONG.search(p))
+        if not (strong or _WX_TIME_WEAK.search(p)):
+            return 0
+        # 具体日期 4 / 今天这类相对时间 3；核心动作 +2、次要动作 +1
+        s = (4 if strong else 3) + (2 if _WX_CORE_ACT.search(p)
+                                   else 1 if _WX_ACT.search(p) else 0)
+        # 促销价、报名截止这类日期不是中心思想，压下去；句子里另带发布/上线则从轻
+        if _WX_PROMO.search(p) or _WX_MINOR.search(p):
+            s -= 1 if _WX_CORE_ACT.search(p) else 3
+        return s
+
+    best = max(range(len(pts)), key=lambda i: (score(pts[i]), -i))
+    if score(pts[best]) >= _WX_TIME_MIN:
+        return [pts[best]] + [p for i, p in enumerate(pts) if i != best]
+
+    # 要点里没有够格的：从正文抠一句带具体日期的事实补到第一位。
+    # 先找「日期 + 核心动作」，没有再放宽到任意日期句；促销/截止类一律跳过，
+    # 否则「11 月 11 日起限时优惠」会被当成整篇的中心思想。
+    caps: list[str] = []
+    for sc in screens or []:
+        cap = re.sub(r"\s+", " ", str(sc.get("caption") or "")).strip()
+        if cap:
+            caps.extend(re.split(r"(?<=[。！？!?])", cap))
+    for need_core in (True, False):
+        for sent in caps:
+            if not _WX_TIME_STRONG.search(sent):
+                continue
+            if _WX_PROMO.search(sent) or _WX_MINOR.search(sent):
+                continue
+            if need_core and not _WX_CORE_ACT.search(sent):
+                continue
+            line = _wx_clean_line(sent, 44)
+            if line and re.search(r"[一-鿿]", line):
+                return ["· " + re.sub(r"^\s*·\s*", "", line)] + pts
+
+    # 一条够格的都没有：至少别让促销 / 截止这类日期占着第一句，往下沉一位
+    if pts and 0 < score(pts[0]) < _WX_TIME_MIN:
+        return pts[1:] + [pts[0]]
+    return pts
 
 
 def _wx_lead_fallback(screens: list[dict]) -> list[str]:
@@ -3673,7 +3842,7 @@ def _wx_lead_fallback(screens: list[dict]) -> list[str]:
         c = re.sub(r"\s+", "", (sc.get("caption") or "").strip())
         if not c:
             continue
-        first = re.split(r"(?<=[。！？!?])", c)[0].strip()[:32]
+        first = re.split(r"(?<=[。！？!?])", c)[0].strip()[:44]
         if first and re.search(r"[一-鿿]", first):
             out.append("· " + first)
         if len(out) >= 3:
@@ -3681,8 +3850,13 @@ def _wx_lead_fallback(screens: list[dict]) -> list[str]:
     return out
 
 
-async def _wx_lead_summary(topic: str, screens: list[dict]) -> list[str]:
-    """从本期图文正文提炼 3-5 条事实要点，放在首图下方。AI 不可用/非法时降级。"""
+async def _wx_lead_summary(topic: str, screens: list[dict],
+                           lead: str = "") -> list[str]:
+    """从本期图文正文提炼 3-5 条事实要点，放在首图下方。AI 不可用/非法时降级。
+
+    lead 是热点原文的第一句（时间和事件），有它就直接占第一条，不让提炼环节
+    把日期磨掉。没有它才靠正文和模型。
+    """
     lines = []
     for i, sc in enumerate(screens[:12], 1):
         t = re.sub(r"\s+", " ", (sc.get("title") or "").strip())[:40]
@@ -3690,13 +3864,22 @@ async def _wx_lead_summary(topic: str, screens: list[dict]) -> list[str]:
         if t or c:
             lines.append(f"{i}. 小标题：{t}｜正文：{c}")
     if not lines:
-        return []
+        return ["· " + lead] if (lead and _WX_TIME_STRONG.search(lead)) else []
     prompt = (
         "你是公众号编辑，下面是一期图文的内容（各屏小标题与正文）。请提炼 3 到 5 条「内容要点」，"
         "放在首图下方给读者快速过一遍。\n"
         "要求：\n"
+        "- 第一条是整篇的中心思想：如果本期讲的是某月某日发布、上线、开源、宣布、收购这类事件，"
+        "第一条必须点明「几月几日发生了什么」，日期放在句首，不要写成「近日」「日前」\n"
+        "- 正文里写了日期的，日期必须原样保留；正文没写日期就不要补，"
+        "也不要写「近日」「日前」这种模糊说法\n"
+        "- 不知道具体日期时，直接写事件本身，绝对不要写「正文未注明」「文中未提」「本文」这类元描述\n"
+        "- 不要出现「正文」「本文」「上述」「综上」这类指代材料本身的词\n"
+        "- 限时优惠、报名截止这类日期不算中心思想，不要放在第一条\n"
+        "- 第一条必须是能一眼看出「什么时候发生了什么」的事实，不要写成泛泛的行业判断\n"
+        "- 其余几条按重要性往下排，补关键数字、条件、影响\n"
         "- 只说清楚事实，不抒情、不喊口号、不写金句、不复述小标题原话\n"
-        "- 每条是一句完整的话，不超过 32 字，直接点出关键信息（数字、人物、结论）\n"
+        "- 每条是一句完整的话，不超过 40 字，直接点出关键信息（数字、人物、结论）\n"
         "- 禁止空词大词：坚持、努力、重要、重视、关键、认知、思维、突破、赋能、打造、助力、"
         "旨在、标志着、大家都知道、我们要、一定要\n"
         "- 不要破折号、不要弯引号（用「」）、不要加粗、不要 emoji、不要 markdown\n"
@@ -3708,10 +3891,10 @@ async def _wx_lead_summary(topic: str, screens: list[dict]) -> list[str]:
         raw = await pool_mod.chat_once(prompt, max_tokens=400, temperature=0.4, timeout=25)
         pts = _wx_parse_points(raw)
         if pts:
-            return pts
+            return _wx_timed_first(pts, screens, lead)
     except Exception as e:
         print("wx lead summary AI failed:", e)
-    return _wx_lead_fallback(screens)
+    return _wx_timed_first(_wx_lead_fallback(screens), screens, lead)
 
 
 _WX_FOLLOW = "觉得有用，点个「关注」，我会持续分享能落地的 AI 新技术、新玩法。"
@@ -3937,7 +4120,15 @@ async def api_push_wechat_draft(req: PushDraftRequest):
                              "errors": errors})
     # 拼带小标题+正文+插图的 HTML；结尾按本期文案现写，AI 不可用时自动降级
     # 首图下方追加「内容要点」：从本期正文提炼 3-5 条事实，直接说清关键信息
-    lead_points = await _wx_lead_summary(req.title, screens)
+    # 热点选题的原文第一句天生带着「几月几日 + 发生了什么」（prompt 里存着事件综述），
+    # 直接拿它当中心思想，别指望模型从各屏正文回头提炼——那一步最会把日期磨成「近日」
+    lead_hint = ""
+    for it in prepared:
+        rec = HISTORY.get(it["job_id"]) or {}
+        lead_hint = _wx_story_lead(rec.get("prompt") or "")
+        if lead_hint:
+            break
+    lead_points = await _wx_lead_summary(req.title, screens, lead_hint)
     sections = []
     for i, sc in enumerate(screens):
         tail = _wx_lead_block(lead_points) if (i == 0 and lead_points) else ""
@@ -3952,7 +4143,10 @@ async def api_push_wechat_draft(req: PushDraftRequest):
     )
     first_title = _wx_escape((screens[0]["title"] or "").strip())
     first_cap = (screens[0]["caption"] or "").strip()
-    digest = ((first_title + "：" if first_title else "") + first_cap)[:64]
+    # 摘要优先用要点第一条：那句带时间的中心思想，订阅号列表里一眼就能看到「发生了什么」，
+    # 没提炼出来才退回「首屏小标题：首屏正文」
+    lead_line = re.sub(r"^\s*·\s*", "", (lead_points[0] if lead_points else "")).strip()
+    digest = (lead_line or ((first_title + "：" if first_title else "") + first_cap))[:64]
     title = ((req.title or "AI 生成的图文").strip() or "AI 生成的图文")[:32]
     wx_token = await _wx_get_token(gateway, token)
     if not wx_token:

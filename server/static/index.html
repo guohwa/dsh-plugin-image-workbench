@@ -715,8 +715,32 @@
   .hist-card b{font-size:12px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;
     -webkit-box-orient:vertical;overflow:hidden}
   .hist-card .hc-sub{font-size:10.5px;color:var(--ink-3);line-height:1.55}
-  .hist-card .hc-acts{display:flex;gap:5px;margin-top:auto;padding-top:6px}
-  .hist-card .hc-acts .mini{flex:1;text-align:center}
+  /* 五个动作排 3+2：第一排大图/下载/删除，第二排重做/换图。
+     格子只有二十几像素宽，字号和左右留白都得压住，否则「大图」会竖着排 */
+  .hist-card .hc-acts{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:auto;padding-top:6px}
+  .hist-card .hc-acts .mini{text-align:center;padding:3px 1px;font-size:9.5px;min-width:0;
+    white-space:nowrap;overflow:hidden}
+  .hist-card .hc-acts .mini.del{color:var(--ink-3)}
+  .hist-card .hc-acts .mini.del:hover{color:var(--err);border-color:#f2c6c6;background:#fff8f8}
+  /* 跨批次换图弹窗：选图网格 */
+  .pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(126px,1fr));gap:9px;
+    padding:2px 0 10px;max-height:min(58vh,500px);overflow:auto}
+  .pick-card{position:relative;border:1px solid var(--line);border-radius:10px;background:#fff;
+    overflow:hidden;cursor:pointer;transition:border-color .12s,box-shadow .12s}
+  .pick-card:hover{border-color:#d5c9fb;box-shadow:0 2px 10px rgba(106,90,224,.08)}
+  .pick-card.on{border-color:var(--primary);box-shadow:0 0 0 2px rgba(106,90,224,.16)}
+  .pick-card.on::after{content:'✓';position:absolute;top:5px;right:5px;width:17px;height:17px;
+    border-radius:50%;background:var(--primary);color:#fff;font-size:10px;line-height:17px;text-align:center}
+  .pick-card .pc-thumb{aspect-ratio:3/4;background:#f6f5fb;overflow:hidden;display:flex;
+    align-items:center;justify-content:center}
+  .pick-card .pc-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .pick-card .pc-body{padding:6px 7px 7px;display:flex;flex-direction:column;gap:2px}
+  .pick-card .pc-body b{font-size:11.5px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;
+    -webkit-box-orient:vertical;overflow:hidden}
+  .pick-card .pc-sub{font-size:10px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pick-foot{display:flex;align-items:center;gap:8px;padding-top:8px;border-top:1px solid var(--line);margin-top:2px}
+  .pick-foot #pickSelText{font-size:11.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;max-width:62%}
   .hist-empty{padding:34px;text-align:center;color:var(--ink-3);font-size:12px}
   .hist-empty[hidden]{display:none}
   .hist-more{display:flex;justify-content:center;margin-top:10px}
@@ -757,7 +781,7 @@
   .task-grid .hist-card b{font-size:11.5px;-webkit-line-clamp:2}
   .task-grid .hist-card .hc-sub{font-size:10px}
   .task-grid .hist-card .hc-acts{padding-top:5px;gap:4px}
-  .task-grid .hist-card .hc-acts .mini{padding:4px 6px;font-size:10.5px}
+  .task-grid .hist-card .hc-acts .mini{padding:3px 1px;font-size:9.5px}
   .task-empty{padding:14px;text-align:center;color:var(--ink-3);font-size:11.5px}
   .pager{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:11.5px;color:var(--ink-3);flex:none}
   .pager .spacer{flex:1}
@@ -1517,6 +1541,31 @@
       <span class="spacer"></span>
       <button id="taskPrev" type="button" disabled>上一页</button>
       <button id="taskNext" type="button" disabled>下一页</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- 跨批次换图：从别的批次挑一张成图，填到历史里的某一位 -->
+<dialog id="pickDlg" class="wide">
+  <div class="inner">
+    <div class="dlg-head">
+      <h3>从其他批次选一张图 <span id="pickHint">图和标题、正文、提示词会一起换过来</span></h3>
+      <span class="spacer"></span>
+      <input id="pickFilter" placeholder="搜标题 / 批次 / 提示词">
+      <button class="btn ghost mini" id="pickClose" type="button">关闭</button>
+    </div>
+    <div class="pick-grid" id="pickList"></div>
+    <div class="pager">
+      <span id="pickInfo">—</span>
+      <span class="spacer"></span>
+      <button id="pickPrev" type="button" disabled>上一页</button>
+      <button id="pickNext" type="button" disabled>下一页</button>
+    </div>
+    <div class="pick-foot">
+      <span id="pickSelText">还没选图</span>
+      <span class="spacer"></span>
+      <button class="btn ghost mini" id="pickCancel" type="button">取消</button>
+      <button class="btn primary mini" id="pickConfirm" type="button" disabled>填到这一位</button>
     </div>
   </div>
 </dialog>
@@ -4969,12 +5018,17 @@ function renderTasks(){
     return;
   }
 
-  t.items.forEach(task=>{
+  t.items.forEach(task=> box.appendChild(taskRowEl(task)));
+}
+
+/* 单个任务行：渲染与事件都在这里。换图后只重建这一行，别把别的行的展开状态冲掉。 */
+function taskRowEl(task){
     const items = task.items || [];
     const nImg = items.filter(i=>i.image_url).length;
     const nText = (task.modes && task.modes.text) || 0;
     const row = document.createElement('div');
     row.className = 'task-row';
+    row.dataset.taskId = task.task_id || '';
     row.innerHTML =
         '<div class="task-head">'
       + '<span class="tw">▶</span>'
@@ -5030,9 +5084,130 @@ function renderTasks(){
         document.querySelectorAll('.push-mode-sel').forEach(s => { if (s !== modeSel) s.value = modeSel.value; });
       };
     }
-    box.appendChild(row);
+    return row;
+}
+
+/* 换图完成后只替换这一行：保留展开状态，其他批次不重新拉取 */
+function replaceTaskRow(task){
+  const old = [...document.querySelectorAll('#taskList .task-row')]
+    .find(r => r.dataset.taskId === task.task_id);
+  if (!old){ loadTasks(state.tasks.page); return; }
+  const open = old.classList.contains('open');
+  const el = taskRowEl(task);
+  if (open){
+    el.classList.add('open');
+    const body = el.querySelector('.task-body');
+    body.hidden = false;
+    fillTaskGrid(body, task.items || [], task);
+    body.dataset.filled = '1';
+  }
+  old.replaceWith(el);
+  if (open) el.scrollIntoView({block:'nearest'});
+}
+
+/* ===== 跨批次换图 =====
+   某一位一直生成失败时，从别的批次挑一张成图填进来。图和标题、正文、提示词一起换，
+   之后这一批推送公众号读的就是替换后的内容，看到的就是拼凑结果。 */
+const PICK = {dst:null, task:null, sel:null, page:1, pages:1, limit:24, q:'', seq:0};
+
+function openPick(rec, task){
+  PICK.dst = rec; PICK.task = task; PICK.sel = null;
+  PICK.page = 1; PICK.q = ''; PICK.seq++;
+  $('#pickFilter').value = '';
+  $('#pickConfirm').disabled = true;
+  $('#pickSelText').textContent = '还没选图';
+  $('#pickHint').textContent = '填到「' + clipText(rec.title || '这一位', 18) + '」，图和标题、正文、提示词一起换';
+  const dlg = $('#pickDlg');
+  if (!dlg.open) dlg.showModal();
+  loadPick(1);
+}
+
+async function loadPick(page){
+  if (!PICK.task) return;
+  const my = ++PICK.seq;   // 快速翻页或搜索时，旧响应不能盖掉新结果
+  const box = $('#pickList');
+  box.innerHTML = '<div class="task-empty">加载中…</div>';
+  let d;
+  try{
+    const url = '/api/history/pick?limit=' + PICK.limit
+      + '&offset=' + (Math.max(1, page) - 1) * PICK.limit
+      + '&q=' + encodeURIComponent(PICK.q)
+      + '&exclude_task=' + encodeURIComponent(PICK.task.task_id);
+    d = await (await fetch(url)).json();
+  }catch(e){
+    if (my === PICK.seq) box.innerHTML = '<div class="task-empty">候选图加载失败，换个词再试</div>';
+    return;
+  }
+  if (my !== PICK.seq) return;
+  PICK.page = Math.max(1, page);
+  PICK.pages = d.pages || 1;
+  $('#pickInfo').textContent = d.total
+    ? `第 ${PICK.page} / ${PICK.pages} 页 · 共 ${d.total} 张可选` : '';
+  $('#pickPrev').disabled = PICK.page <= 1;
+  $('#pickNext').disabled = PICK.page >= PICK.pages;
+  if (!d.items || !d.items.length){
+    box.innerHTML = '<div class="task-empty">' +
+      (PICK.q ? '没有匹配「' + esc(PICK.q) + '」的图' : '其他批次还没有可用的成图') + '</div>';
+    return;
+  }
+  box.innerHTML = '';
+  d.items.forEach(it=>{
+    const el = document.createElement('div');
+    el.className = 'pick-card';
+    el.dataset.id = it.id;
+    el.innerHTML = '<div class="pc-thumb"><img src="' + esc(it.thumb_url) + '" loading="lazy" decoding="async" alt=""></div>'
+      + '<div class="pc-body"><b>' + esc(it.title || '未命名') + '</b>'
+      + '<span class="pc-sub">' + esc(it.task_title || '') + ' · ' + fmtTime(it.finished) + '</span></div>';
+    el.onclick = ()=>{
+      PICK.sel = it;
+      box.querySelectorAll('.pick-card.on').forEach(x=> x.classList.remove('on'));
+      el.classList.add('on');
+      $('#pickSelText').textContent = '已选：' + (it.title || '这张图');
+      $('#pickConfirm').disabled = false;
+    };
+    el.ondblclick = ()=> confirmFill();
+    box.appendChild(el);
   });
 }
+
+async function confirmFill(){
+  if (!PICK.sel || !PICK.dst || !PICK.task) return;
+  const btn = $('#pickConfirm');
+  const oldTxt = btn.textContent;
+  btn.disabled = true; btn.textContent = '填充中…';
+  try{
+    const r = await fetch('/api/tasks/' + encodeURIComponent(PICK.task.task_id) + '/fill', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({dst_id: PICK.dst.id, src_id: PICK.sel.id})
+    });
+    const d = await r.json().catch(()=>({}));
+    if (!r.ok || !d.ok) throw new Error(d.detail || d.error || ('HTTP ' + r.status));
+    $('#pickDlg').close();
+    toast('已把「' + clipText(PICK.sel.title || '这张图', 20) + '」填到这一位', {type:'ok', title:'换图完成'});
+    if (d.task) replaceTaskRow(d.task);
+    else loadTasks(state.tasks.page);
+  }catch(e){
+    toast('换图失败：' + (e.message || '网络问题'), {type:'err', title:'换图失败'});
+  }finally{
+    btn.disabled = false; btn.textContent = oldTxt;
+  }
+}
+
+/* 弹窗事件只绑一次 */
+(function bindPick(){
+  const dlg = $('#pickDlg');
+  if (!dlg) return;
+  $('#pickClose').onclick = ()=> dlg.close();
+  $('#pickCancel').onclick = ()=> dlg.close();
+  $('#pickPrev').onclick = ()=> loadPick(PICK.page - 1);
+  $('#pickNext').onclick = ()=> loadPick(PICK.page + 1);
+  $('#pickConfirm').onclick = confirmFill;
+  let timer = null;
+  $('#pickFilter').oninput = ()=>{
+    clearTimeout(timer);
+    timer = setTimeout(()=>{ PICK.q = $('#pickFilter').value.trim(); loadPick(1); }, 280);
+  };
+})();
 
 // 历史任务「推送」按钮：把该任务里所有已成图的记录推到公众号草稿箱（模式看右侧下拉）
 async function pushHistoryTask(task, row){
@@ -5091,7 +5266,9 @@ function histCard(rec, task, idx, siblings){
     + `<span class="hc-sub">${esc(rec.account || '')}</span>`
     + '<div class="hc-acts">'
     + (ok ? '<button class="mini" data-act="view" type="button">大图</button><button class="mini" data-act="dl" type="button">下载</button>' : '')
+    + '<button class="mini del" data-act="del" type="button" title="删掉这一张，图和这一条的标题、正文、提示词一起删，之后推送公众号不再包含这一屏">删除</button>'
     + '<button class="mini" data-act="reuse" type="button" title="只载入这一张，改完出图后原位替换原任务里这张">重做</button>'
+    + '<button class="mini" data-act="fill" type="button" title="从其他批次挑一张成图填到这一位，图和标题、正文、提示词一起换过来">换图</button>'
     + '</div></div>';
   const img = el.querySelector('img');
   if (img){
@@ -5109,6 +5286,8 @@ function histCard(rec, task, idx, siblings){
       const act = b.dataset.act;
       if (act === 'view') openHistoryView(rec, siblings);
       else if (act === 'dl') downloadHistory(rec);
+      else if (act === 'fill') openPick(rec, task);
+      else if (act === 'del') deleteHistoryOne(rec, task);
       else redoHistoryOne(rec, task, idx);
     };
   });
@@ -5135,6 +5314,51 @@ function downloadHistory(rec){
   a.href = rec.download_url; a.download = '';
   document.body.appendChild(a); a.click(); a.remove();
   toast('开始下载：' + (rec.title || ''));
+}
+
+/* 删单张：只删这一条记录，同批次其他图不动。
+   记录一删，它的标题、正文、提示词跟着没了，之后这一批推送公众号就少这一屏。
+   整批被删空时任务行一起移除，不留一个空壳在列表里。 */
+async function deleteHistoryOne(rec, task){
+  const hasImg = rec.status === 'done' && rec.image_url;
+  const tip = '删除「' + (rec.title || '这一条') + '」？\n\n'
+    + (hasImg ? '图片文件会一起删掉，' : '')
+    + '这条的标题、正文、提示词也一起删，之后这一批推送公众号不会再包含这一屏。\n'
+    + '同批次其他图不受影响，删完找不回来。';
+  if (!confirm(tip)) return;
+  try{
+    const r = await fetch('/api/history/' + encodeURIComponent(rec.id), {method:'DELETE'});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    removeFromTask(task, rec.id);
+    if (!(task.items || []).length){
+      state.tasks.items = (state.tasks.items || []).filter(t=> t.task_id !== task.task_id);
+      state.tasks.total = Math.max(0, (+state.tasks.total || 0) - 1);
+      const row = [...document.querySelectorAll('#taskList .task-row')]
+        .find(x=> x.dataset.taskId === task.task_id);
+      if (row) row.remove();
+      $('#historyCount').textContent = state.tasks.total + ' 个任务';
+      if (!state.tasks.items.length) renderTasks();
+    } else {
+      replaceTaskRow(task);
+    }
+    toast('已删除这一条' + (d.images ? ' · 清掉 ' + d.images + ' 个文件' : '')
+      + (d.left ? '，这一批还剩 ' + d.left + ' 条' : ''));
+  }catch(e){ toast('删除失败：' + e.message); }
+}
+
+/* 从任务里剔掉一条并同步头部计数，避免删完「9 条 · 9 张图 · 9 成功」还挂着旧数 */
+function removeFromTask(task, id){
+  const items = task.items || [];
+  const at = items.findIndex(x=> x.id === id);
+  if (at < 0) return;
+  const gone = items.splice(at, 1)[0];
+  task.total = Math.max(0, (+task.total || 0) - 1);
+  if (gone.status === 'done') task.done = Math.max(0, (+task.done || 0) - 1);
+  else task.error = Math.max(0, (+task.error || 0) - 1);
+  if (task.modes && gone.status === 'done' && !gone.image_url){
+    task.modes.text = Math.max(0, (+task.modes.text || 0) - 1);
+  }
 }
 
 /* 单张重做：只把历史里这一张的图型 / 风格 / 主题色 / 比例 / 出图模式 / 提示词载回左侧，
