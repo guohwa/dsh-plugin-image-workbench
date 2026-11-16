@@ -1125,6 +1125,101 @@ def _aihot_slim_feed(raw: dict, channel: str) -> list:
     return out
 
 
+# ---- 单日日报明细：公开 /dailies 每天只有头条 1 条，完整 N 条在官网日报页 SSR 里 ----
+_AIHOT_DAILY_TTL = 600
+_AIHOT_DAILY: dict = {}
+
+
+def _clean_html(s: str) -> str:
+    return html.unescape(re.sub(r"<[^>]+>", "", str(s or ""))).strip()
+
+
+def _aihot_daily_parse(page: str, date: str) -> list:
+    """纯解析：把日报页 SSR HTML 拆成头条 + 明细条目。抽出来便于离线回归。"""
+    out = []
+    # 头条：ld+json 的 NewsArticle.headline / description
+    lm = re.search(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', page, re.S)
+    if lm:
+        try:
+            ld = json.loads(lm.group(1))
+            head = re.sub(r"^AI 日报｜[^：]*：", "", str(ld.get("headline") or ""))
+            desc = re.sub(r"^11月\d+日 AI 新闻：", "", str(ld.get("description") or ""))
+            if head:
+                out.append({"title": head, "digest": desc, "source": "头条",
+                            "aihot": "https://aihot.news/daily/" + date, "original": ""})
+        except Exception:
+            pass
+
+    # 明细：每个 id="r-xxx" 的 article = 一条
+    for am in re.finditer(r'<article\b[^>]*id="r-([a-z0-9]+)".*?</article>', page, re.S):
+        block = am.group(0)
+        tm = re.search(r'<h3[^>]*>\s*<a[^>]*href="(/items/[^"]+)"[^>]*>(.*?)</a>', block, re.S)
+        if not tm:
+            continue
+        sm = re.search(r'<span class="truncate">([^<]+)</span>', block)
+        pm = re.search(r'<p class="mt-2 line-clamp-4[^"]*"[^>]*>(.*?)</p>', block, re.S)
+        om = re.search(r'<a href="(https?://[^"]+)"[^>]*aria-label="阅读[^"]*原文[^"]*"[^>]*>\s*原文', block)
+        out.append({
+            "title": _clean_html(tm.group(2)),
+            "digest": _clean_html(pm.group(1)) if pm else "",
+            "source": _clean_html(sm.group(1)) if sm else "",
+            "aihot": "https://aihot.news" + tm.group(1),
+            "original": html.unescape(om.group(1)) if om else "",
+        })
+    return out
+
+
+def _aihot_daily_scrape(date: str) -> list:
+    """抓 aihot.news/daily/<date> 的服务端渲染页并解析当天全部条目。
+
+    = 1 条头条（ld+json 的 headline/description）+ N 条分类明细（id="r-xxx" 的 article）。
+    普通 HTTP GET 可绕过 Cloudflare（同 /hot 的结论），失败返回 [] 由上层回退。
+    """
+    import httpx as _hx
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date or ""):
+        return []
+    try:
+        with _hx.Client(trust_env=False, timeout=15, follow_redirects=True,
+                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                 "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+                                 "Accept-Language": "zh-CN,zh;q=0.9"}) as c:
+            r = c.get("https://aihot.news/daily/" + date)
+        if r.status_code != 200:
+            return []
+        return _aihot_daily_parse(r.text, date)
+    except Exception:
+        return []
+
+
+@app.get("/api/aihot/daily")
+async def api_aihot_daily(date: str = "", fresh: int = 0):
+    """某一天 AI 日报的完整条目（头条 + 全部分类明细），带 10 分钟缓存。
+
+    只给前端「展开某天」时按需调用，列表页仍走 /api/aihot/feed 的轻量头条，不额外抓页面。
+    抓不到时退回上次缓存并带 err/stale。
+    """
+    day = str(date or "").strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+        return JSONResponse({"ok": False, "err": "日期格式不对", "items": []}, status_code=400)
+    now = time.time()
+    hit = _AIHOT_DAILY.get(day)
+    if hit and not fresh and now - hit["at"] < _AIHOT_DAILY_TTL:
+        return JSONResponse({"ok": True, "stale": False, "date": day, "items": hit["items"]})
+    try:
+        items = await asyncio.to_thread(_aihot_daily_scrape, day)
+        if not items:
+            raise RuntimeError("日报页面没解析出条目")
+        _AIHOT_DAILY[day] = {"at": now, "items": items, "err": ""}
+        return JSONResponse({"ok": True, "stale": False, "date": day, "items": items})
+    except Exception as e:
+        msg = (str(e) or e.__class__.__name__)[:120]
+        have = bool(hit and hit["items"])
+        if hit:
+            hit["err"] = msg
+        return JSONResponse({"ok": have, "stale": have, "date": day,
+                             "items": (hit or {}).get("items", []), "err": msg})
+
+
 @app.get("/api/aihot/channels")
 async def api_aihot_channels():
     """弹窗频道与分类菜单：前端据此渲染两级 tab，不用在页面里写死。"""

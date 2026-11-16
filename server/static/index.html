@@ -442,6 +442,18 @@
   .ai-lnk{font-size:11px;color:var(--ink-3);text-decoration:none;padding:3px 7px;border-radius:6px;
     white-space:nowrap}
   .ai-lnk:hover{color:var(--primary);background:#f1eefe}
+  /* AI 日报展开后的当天完整明细：主卡摘要下面嵌一层紧凑子列表 */
+  .ai-daily-detail{margin:10px 0 2px 28px;padding-left:10px;border-left:2px solid #eae4fb}
+  .ai-dl-ld{font-size:11.5px;color:var(--ink-3);padding:4px 0}
+  .ai-dl-hd{font-size:11px;color:var(--primary);font-weight:600;margin-bottom:6px}
+  .ai-dl-row{padding:6px 0;border-top:1px dashed #efeaf7}
+  .ai-dl-row:first-of-type{border-top:none}
+  .ai-dl-t{font-size:12px;font-weight:600;line-height:1.5;color:var(--ink);word-break:break-word;
+    display:flex;gap:6px;align-items:baseline}
+  .ai-dl-no{flex:0 0 auto;font-size:10px;color:var(--ink-3);font-weight:500}
+  .ai-dl-dg{margin:3px 0 0 20px;font-size:11px;line-height:1.7;color:var(--ink-2)}
+  .ai-dl-acts{display:flex;gap:2px;align-items:center;flex-wrap:wrap;margin:4px 0 0 20px}
+  .ai-dl-acts .spacer{flex:1}
   /* 选择器高度定死：换分组 / 搜索后结果从 170 张变 13 张时，弹窗不能跟着抽一下。
      内部用 flex 把列表撑满，滚动交给 .scroller，头部和搜索框固定不动 */
   dialog.picker{width:min(1240px,96vw);height:min(86vh,880px);padding:0}
@@ -6913,6 +6925,8 @@ setInterval(refreshPool, 10000);
   let cat = '';                           // 当前分类 key（''=全部）
   const feedCache = Object.create(null);  // "channel|cat" -> {at, items, err, stale, ok}
   const FEED_TTL = 10 * 60 * 1000;
+  const dailyCache = Object.create(null); // 日期 -> {at, items, loading, err}：单日完整明细
+  const DAILY_TTL = 10 * 60 * 1000;
 
   // 频道 tab / 分类 tab：菜单来自后端 channels，选中态由 channel/cat 驱动
   function renderTabs(){
@@ -7016,10 +7030,17 @@ setInterval(refreshPool, 10000);
     const id = it.storyId;
     if(!id) return '<div class="ai-cb">' + esc(String(it.digest || '').trim() || '这条没有摘要，可以直接看原文。') + '</div>';
     const d = digs[id];
+    // 列表已带综述时直接用，不必等 /story 回来；没有也不会卡在加载态
+    const carried = String(it.digest || '').trim();
+    if((!d || d.loading) && carried) return '<div class="ai-cb">' + esc(carried) + '</div>';
     if(!d || d.loading) return '<div class="ai-cb ld">正在拉综述…</div>';
-    if(d.err) return '<div class="ai-cb ld">' + esc(d.err) + '</div>';
-    const text = String(d.text || '').trim();
-    if(!text) return '<div class="ai-cb ld">这条暂时没有综述。</div>';
+    if(d.err) return '<div class="ai-cb">' + esc(d.err) + '</div>';
+    const text = String(d.text || '').trim() || carried;
+    // AIHOT 有的事件没有综述，但会给一条最新进展；用它兜底，别让人以为还在加载
+    if(!text){
+      const latest = String(d.latest || '').trim();
+      return '<div class="ai-cb">' + esc(latest || '这条暂时没有综述，可以直接看原文。') + '</div>';
+    }
     return '<div class="ai-cb">' + esc(text) + '</div>';
   }
 
@@ -7047,16 +7068,12 @@ setInterval(refreshPool, 10000);
       const id = itemKey(it);
       const isOpen = (id && id === openId);   // 只有这一个展开，其余折叠
       const isHot = channel === 'hot';
-      // 热点榜：展开时按需拉综述；其余频道：summary 已在条目里，直接铺
-      const digHtml = isOpen
-        ? (isHot
-            ? (it.digest && String(it.digest).trim()
-                ? '<div class="ai-cb">' + esc(it.digest) + '</div>'
-                : '<div class="ai-cb ld">正在拉综述…</div>')
-            : (String(it.digest || '').trim()
-                ? '<div class="ai-cb">' + esc(it.digest) + '</div>'
-                : '<div class="ai-cb ld">这条没有摘要，可以直接看原文。</div>'))
-        : '';
+      // 展开时统一走 digestBlock：它会区分「还在加载 / 没有综述 / 有内容」，
+      // 不会把「综述为空」误判成「正在加载」而永远挂着
+      const digHtml = isOpen ? digestBlock(it) : '';
+      // 日报：展开时除了头条摘要，还要铺当天完整明细（按需拉取）
+      const isDaily = channel === 'daily' && it.date;
+      const detailHtml = (isOpen && isDaily) ? dailyDetailHtml(it) : '';
       return '<div class="ai-card' + (isOpen ? ' on' : '') + (id ? '' : ' noid') + '" data-id="' + esc(id) + '">' +
         '<div class="ai-ch">' +
           '<span class="ai-cn">' + esc(it.rank || '') + '</span>' +
@@ -7065,9 +7082,62 @@ setInterval(refreshPool, 10000);
           '<span class="ai-cm">' + hotLabel(it) + '</span>' +
           '<span class="ai-toggle" aria-hidden="true"></span>' +
         '</div>' +
-        (isOpen ? (digHtml + actsBlock(it)) : '') +
+        (isOpen ? (digHtml + detailHtml + actsBlock(it)) : '') +
       '</div>';
     }).join('');
+  }
+
+  // 日报某天的完整明细：缓存命中直接渲染，否则拉 /api/aihot/daily 后回填。
+  // 每条明细和主卡片一样能「用作选题 / 站内看 / 原文」，事件 id 空（日报明细没有 storyId）。
+  function dailyDetailHtml(it){
+    const day = String(it.date || '');
+    const c = dailyCache[day];
+    let body;
+    if(!c || c.loading){
+      body = '<div class="ai-dl-ld">正在展开这一天的全部动态…</div>';
+    }else if(c.err && !(c.items && c.items.length)){
+      body = '<div class="ai-dl-ld">' + esc(c.err) + '，<a class="ai-lnk" href="' +
+        esc(it.aihot || '') + '" target="_blank" rel="noopener noreferrer">去官网看</a></div>';
+    }else{
+      const list = c.items || [];
+      body = '<div class="ai-dl-hd">当天 ' + list.length + ' 条动态' +
+        (c.stale ? '（上一份缓存）' : '') + '</div>' +
+        list.map(function(x, i){
+          const acts = [];
+          acts.push('<button class="btn ghost mini ai-use" type="button" data-dl="' + i + '">用作选题</button>');
+          if(x.aihot) acts.push('<a class="ai-lnk" href="' + esc(x.aihot) +
+            '" target="_blank" rel="noopener noreferrer">站内看</a>');
+          if(x.original) acts.push('<a class="ai-lnk" href="' + esc(x.original) +
+            '" target="_blank" rel="noopener noreferrer">原文</a>');
+          return '<div class="ai-dl-row">' +
+            '<div class="ai-dl-t"><span class="ai-dl-no">' + (i + 1) + '</span>' + esc(x.title) + '</div>' +
+            (x.digest ? '<div class="ai-dl-dg">' + esc(x.digest) + '</div>' : '') +
+            '<div class="ai-dl-acts">' +
+              (x.source ? '<span class="ai-src">' + esc(x.source) + '</span>' : '') +
+              '<span class="spacer"></span>' + acts.join('') +
+            '</div>' +
+          '</div>';
+        }).join('');
+    }
+    return '<div class="ai-daily-detail" data-day="' + esc(day) + '">' + body + '</div>';
+  }
+
+  function ensureDailyDetail(day){
+    if(!day) return;
+    const c = dailyCache[day];
+    if(c && !c.loading && Date.now() - (c.at || 0) < DAILY_TTL) return;
+    dailyCache[day] = {loading: true, at: (c && c.at) || 0, items: (c && c.items) || [], err: ''};
+    renderList();
+    fetch('/api/aihot/daily?date=' + encodeURIComponent(day) + (c ? '&fresh=1' : ''), {cache: 'no-store'})
+      .then(function(r){ return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+      .then(function(d){
+        if(!d.ok || !(d.items || []).length) throw new Error(d.err || '这一天暂时没有明细');
+        dailyCache[day] = {loading: false, at: Date.now(), items: d.items,
+                           stale: !!d.stale, err: ''};
+      })
+      .catch(function(e){ dailyCache[day] = {loading: false, at: 0,
+                                             items: (c && c.items) || [], err: e.message || '网络问题'}; })
+      .then(function(){ renderList(); });
   }
 
   function ensureDigest(id){
@@ -7076,12 +7146,12 @@ setInterval(refreshPool, 10000);
     fetch('/api/aihot/story?id=' + encodeURIComponent(id), {cache: 'no-store'})
       .then(function(r){ return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
       .then(function(d){
-        digs[id] = {text: d.digest || ''};
-        // 回写进列表项：renderList 直接读 it.digest，不复用 digs 缓存
+        // 有的事件接口只给 latest 没有 digest，两个都存，渲染时按优先级兜底
+        digs[id] = {text: d.digest || '', latest: d.latest || ''};
         const it = hotItems.find(function(x){ return (x.storyId || '') === id; });
         if(it) it.digest = d.digest || '';
       })
-      .catch(function(e){ digs[id] = {err: '综述没拉到：' + (e.message || '网络问题')}; })
+      .catch(function(e){ digs[id] = {err: '综述没拉到，可点原文看详情。'}; })
       .then(function(){ renderList(); });
   }
 
@@ -7091,11 +7161,10 @@ setInterval(refreshPool, 10000);
     if(openId === id) openId = null;
     else {
       openId = id;
-      // 只有热点榜条目要拉事件综述（有 storyId）；其余频道摘要已在数据里
-      if(channel === 'hot'){
-        const hit = items.find(function(x){ return itemKey(x) === id; });
-        if(hit && hit.storyId) ensureDigest(hit.storyId);
-      }
+      // 按频道决定展开时要补的数据：热点榜拉综述，日报拉当天明细，其余频道摘要已在数据里
+      const hit = items.find(function(x){ return itemKey(x) === id; });
+      if(channel === 'hot' && hit && hit.storyId) ensureDigest(hit.storyId);
+      else if(channel === 'daily' && hit && hit.date) ensureDailyDetail(hit.date);
     }
     renderList();
   }
@@ -7127,6 +7196,7 @@ setInterval(refreshPool, 10000);
       openId = itemKey(items[0]);
       didInitOpen = true;
       if(isHot && openId) ensureDigest(openId);
+      else if(channel === 'daily' && items[0].date) ensureDailyDetail(items[0].date);
     }
     const nt = noteForChannel(d);
     setNote(nt[0], nt[1]);
@@ -7150,6 +7220,7 @@ setInterval(refreshPool, 10000);
       if(!didInitOpen && items.length){
         openId = itemKey(items[0]);
         didInitOpen = true;
+        if(channel === 'daily' && items[0].date) ensureDailyDetail(items[0].date);
       }
       renderChip();
       if(dlg.open) renderList();
@@ -7253,6 +7324,16 @@ setInterval(refreshPool, 10000);
   });
 
   dlistEl.addEventListener('click', function(e){
+    // 日报子列表里的「用作选题」优先处理（data-dl 指向当天明细的下标）
+    const dlUse = e.target.closest('.ai-use[data-dl]');
+    if(dlUse){
+      const wrap = dlUse.closest('.ai-daily-detail');
+      const day = wrap ? wrap.dataset.day : '';
+      const c = dailyCache[day];
+      const sub = c && c.items && c.items[Number(dlUse.dataset.dl)];
+      if(sub) useAsTopic(sub);
+      return;
+    }
     const card = e.target.closest('.ai-card');
     if(!card) return;
     const id = card.dataset.id;

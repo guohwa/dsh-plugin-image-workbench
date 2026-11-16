@@ -117,6 +117,9 @@ ok('GET /api/aihot/channels 已注册',
 ok('GET /api/aihot/feed 已注册',
    any(getattr(r, 'path', '') == '/api/aihot/feed'
        and 'GET' in getattr(r, 'methods', set()) for r in app.app.routes))
+ok('GET /api/aihot/daily 已注册',
+   any(getattr(r, 'path', '') == '/api/aihot/daily'
+       and 'GET' in getattr(r, 'methods', set()) for r in app.app.routes))
 ok('AIHOT 四频道齐全（热点榜/精选/全部动态/AI 日报）',
    [c['key'] for c in app.AIHOT_CHANNELS] == ['hot', 'selected', 'all', 'daily']
    and all(len(c['cats']) == 7 for c in app.AIHOT_CHANNELS if c['key'] in ('selected', 'all')))
@@ -132,6 +135,32 @@ ok('feed 瘦身：日报取 leadTitle、坏输入不抛异常',
    app._aihot_slim_feed({"items": [{"leadTitle": "今日日报", "date": "2026-11-14",
                                     "leadParagraph": "昨天发生了这些"}]}, "daily")[0]['title'] == '今日日报'
    and app._aihot_slim_feed({}, "all") == [])
+# 单日日报明细：SSR 解析必须头条 + 明细都拿到，非法日期不抓（离线内联 HTML，不依赖网络）
+ok('日报明细抓取：非法日期直接返回空',
+   app._aihot_daily_scrape('') == [] and app._aihot_daily_scrape('not-a-date') == [])
+_daily_html = '''
+<script type="application/ld+json">{"@type":"NewsArticle",
+ "headline":"AI 日报｜11月14日：今日头条事件","description":"11月14日 AI 新闻：头条摘要内容"}</script>
+<article id="r-aaa111"><span class="truncate">信源甲</span>
+ <h3><a href="/items/aaa111">明细标题甲</a></h3>
+ <p class="mt-2 line-clamp-4 text-ink-2">明细摘要甲</p>
+ <a href="https://example.com/a" aria-label="阅读信源甲原文：明细标题甲（新标签页）">原文</a></article>
+<article id="r-bbb222"><span class="truncate">信源乙</span>
+ <h3><a href="/items/bbb222">明细标题乙</a></h3>
+ <p class="mt-2 line-clamp-4">明细摘要乙</p></article>
+'''
+_daily_parsed = app._aihot_daily_parse(_daily_html, '2026-11-14')
+ok('日报解析：头条 + 2 条明细都抽到',
+   len(_daily_parsed) == 3
+   and _daily_parsed[0]['title'] == '今日头条事件'
+   and _daily_parsed[0]['digest'] == '头条摘要内容')
+ok('日报解析：明细字段齐全且原文/分类来源正确',
+   _daily_parsed[1]['title'] == '明细标题甲'
+   and _daily_parsed[1]['source'] == '信源甲'
+   and _daily_parsed[1]['digest'] == '明细摘要甲'
+   and _daily_parsed[1]['aihot'] == 'https://aihot.news/items/aaa111'
+   and _daily_parsed[1]['original'] == 'https://example.com/a'
+   and _daily_parsed[2]['original'] == '')
 # 版本比较：必须按数字段比，字符串比会把 1.1.9 判成比 1.1.10 新
 _ver_cases = [('1.1.9', '1.1.10', False), ('1.1.17', '1.1.16', True), ('1.1', '1.1.0', False),
               ('1.1.17', '1.1.17', False), ('1.1.17-beta.1', '1.1.17', False),
