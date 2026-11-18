@@ -13,6 +13,9 @@ concurrency:
   group: publish-npm
   cancel-in-progress: false
 
+permissions:
+  contents: write      # 建 GitHub Release 需要写权限
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -55,3 +58,22 @@ jobs:
           # 关键：npm publish 失败必须让这一步（进而整个发布）失败，
           # 否则会出现「CI 全绿但版本没上 npm」的静默丢失（已踩过 1.1.44 的坑）
           npm publish --access public || { ec=$?; echo "::error::npm publish 失败，退出码 $ec"; exit 1; }
+
+      # GitHub 的 Releases 列表只认 Release 对象，光推 tag 不会出现在那里，
+      # 手机上看到的「Latest」就会一直停在上一版（1.1.56 就漏过）。这里补上：
+      # 标题和条目都取自 changelog，和插件里「这次更新了什么」同一份文案。
+      - name: 创建或更新 GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/release-notes.mjs
+          TAG="$GITHUB_REF_NAME"
+          TITLE=$(cat release-title.txt)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TITLE" --notes-file release-notes.md
+            echo "::notice::Release $TAG 已存在，说明已更新"
+          else
+            gh release create "$TAG" --title "$TITLE" --notes-file release-notes.md --verify-tag
+            echo "::notice::Release $TAG 已创建"
+          fi

@@ -6,6 +6,10 @@
 # 本地探针脚本 / 截图 / 临时产物（绝不入库）
 _tmp/
 
+# Release 说明由 scripts/release-notes.mjs 现场生成，不入库
+release-title.txt
+release-notes.md
+
 # 本地生成的图片 / 参考图 / 缩略图（绝不入库）
 images/
 refs/
