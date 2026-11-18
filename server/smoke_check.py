@@ -1204,6 +1204,49 @@ ok('去掉「· 」和空格后仍能认出重复句',
 ok('推送时从历史提示词里取热点第一句',
    "_wx_story_lead(rec.get('prompt')" in _app_src.replace('"', "'"))
 
+# ---- 草稿标题按微信 64 字上限，不再按 32 字硬切 ----
+print('=== 草稿标题 ===')
+_t34 = 'OpenAI扩大科学家免费使用ChatGPT计划，发放5万个新名额！'
+ok('34 字标题完整保留，不再被截断', app._wx_title(_t34) == _t34, app._wx_title(_t34))
+_t71 = ('OpenAI宣布把面向科学家的免费ChatGPT计划再扩大一倍，新增五万个名额，'
+        '覆盖全球四十多个国家的科研机构与高校实验室，申请通道已经开放。')
+_r71 = app._wx_title(_t71)
+ok('超长标题收到 64 字以内', 0 < len(_r71) <= 64, len(_r71))
+ok('超长标题在标点处收尾，不切断词', _r71[-1] in '，。！？；：、,.!?;:', repr(_r71[-6:]))
+ok('没有标点时硬切 64 字', len(app._wx_title('一二三四五六七八九十' * 8)) == 64)
+_html = (ROOT / 'static' / 'index.html').read_text(encoding='utf-8')
+ok('前端推送标题也放宽到 64 字',
+   'slice(0, 32)' not in _html and _html.count('slice(0, 64)') >= 2,
+   _html.count('slice(0, 64)'))
+
+# ---- 手动选题：正文首句带日期时，内容要点第一条也要带 ----
+print('=== 正文首句 lead ===')
+_doc = ('OpenAI 于 11 月 18 日发布 GPT-6.2 Astra 和 Sol，两款模型即日起面向符合条件的用户开放，'
+        '开发者也能通过 API 调用。这次升级不只是性能提升。\n\n01｜旗舰更能打\n如果你要搭一个复杂网站。')
+_dlead = app._wx_doc_lead(_doc)
+ok('正文首句抽到「日期 + 发布」', '11 月 18 日' in _dlead and '发布' in _dlead, repr(_dlead))
+ok('lead 不把后面大段参数带进来', len(_dlead) <= 44 and '旗舰更能打' not in _dlead, repr(_dlead))
+ok('正文没日期就不编', app._wx_doc_lead('今天聊聊模型的发展。继续往下看。') == '')
+ok('只有促销日期不当 lead',
+   app._wx_doc_lead('11 月 11 日起限时优惠，欢迎选购。') == '',
+   repr(app._wx_doc_lead('11 月 11 日起限时优惠，欢迎选购。')))
+ok('markdown 标题不干扰抽取',
+   '11 月 18 日' in app._wx_doc_lead('# 新模型\n\nOpenAI 于 11 月 18 日发布 Astra，能力升级。'))
+_dpts = app._wx_timed_first(
+    ['· OpenAI 发布 Astra 与 Sol，两款模型面向复杂创作',
+     '· Astra 价格比旧款低 20%'],
+    [{'title': '01', 'caption': '如果你要搭一个复杂网站'}], _dlead)
+ok('抽到的日期 lead 顶到要点第一条', '11 月 18 日' in _dpts[0], repr(_dpts))
+_dup = app._wx_timed_first(
+    ['· OpenAI 发布 GPT-6.2 Astra 和 Sol，两款模型面向复杂创作',
+     '· Astra 价格低两成'], [], _dlead)
+ok('lead 与无日期的同事件要点只留一条', len(_dup) == 2 and '面向复杂创作' not in ''.join(_dup), _dup)
+_keep = app._wx_timed_first(
+    ['· OpenAI 发布 GPT-5，另涨价', '· Astra 价格低两成'], [], _dlead)
+ok('同公司不同产品的要点不被误删', len(_keep) == 3 and 'GPT-5' in ''.join(_keep), _keep)
+ok('推送时正文首句是热点 lead 的兜底',
+   "_wx_doc_lead(rec.get('doc_body')" in _app_src.replace('"', "'"))
+
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')
 sys.exit(0 if failed == 0 else 1)

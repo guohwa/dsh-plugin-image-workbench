@@ -3569,6 +3569,20 @@ def _wx_cfg() -> tuple[str, str]:
         gw = "https://" + gw
     return (gw, str(cfg.get("wx_token") or "").strip())
 
+def _wx_title(s: str, limit: int = 64) -> str:
+    """微信草稿标题：上限 64 字，超了往回找标点收尾，别把最后一个词切一半。
+
+    以前按 32 字硬切，「……发放 5 万个新名额！」会变成「……发放 5 万个新名」，
+    标题和首图上那句对不上，读者一眼就看出是截断的。
+    """
+    t = re.sub(r"\s+", " ", str(s or "")).strip()
+    if len(t) <= limit:
+        return t
+    cut = t[:limit]
+    m = max(cut.rfind(p) for p in "，。！？；：、,.!?;:")
+    return cut[:m + 1] if m >= limit * 0.6 else cut
+
+
 def _wx_escape(s: str) -> str:
     return html.escape(str(s or ""), quote=False)
 
@@ -3735,17 +3749,12 @@ _WX_META = re.compile(r"正文未|文中未|正文没|文中没|本文|上文|�
 _WX_TIME_MIN = 4      # 到这个分才算「够格当中心思想」
 
 
-def _wx_story_lead(prompt: str) -> str:
-    """热点选题的原文第一句：从 prompt 里存的「综述：…」抠出时间和事件。
-
-    热点原文第一句本身就是「谁 + 几月几日 + 发布了什么」，这比让模型从各屏正文
-    回头提炼可靠得多——提炼环节最容易把日期压成「近日」，或者干脆当冗余删掉。
-    抠不出来就返回空，绝不自己补日期。
-    """
-    m = re.search(r"综述：\s*([^\n]+)", str(prompt or ""))
-    if not m:
+def _wx_lead_from_seg(seg: str) -> str:
+    """从一段原文里抠「几月几日发生了什么」：先按逗号凑到日期+核心动作，
+    凑不齐再往后扫带日期的事实句。抠不出来返回空，绝不自己编日期。"""
+    seg = re.sub(r"\s+", " ", str(seg or "")).strip()
+    if not seg:
         return ""
-    seg = re.sub(r"\s+", " ", m.group(1)).strip()
     first = re.split(r"[。！？!?]", seg)[0]
     # 综述第一句常常是一长串参数罗列，按逗号累加，凑到「日期 + 核心动作」就收
     acc = ""
@@ -3768,11 +3777,50 @@ def _wx_story_lead(prompt: str) -> str:
     return ""
 
 
+def _wx_story_lead(prompt: str) -> str:
+    """热点选题的原文第一句：从 prompt 里存的「综述：…」抠出时间和事件。
+
+    热点原文第一句本身就是「谁 + 几月几日 + 发布了什么」，这比让模型从各屏正文
+    回头提炼可靠得多——提炼环节最容易把日期压成「近日」，或者干脆当冗余删掉。
+    抠不出来就返回空，绝不自己补日期。
+    """
+    m = re.search(r"综述：\s*([^\n]+)", str(prompt or ""))
+    if not m:
+        return ""
+    return _wx_lead_from_seg(m.group(1))
+
+
+def _wx_doc_lead(doc_body: str) -> str:
+    """手动输入选题时的中心思想：从整篇正文的首句抠时间和事件。
+
+    热点选题有「综述：」可依赖，手动选题没有；但它的正文第一段开头就是
+    「谁 + 几月几日 + 发布了什么」。只取首句（最多两段），不扫全文，避免把
+    后面的促销价或截止日误当成中心思想。抠不出来返回空，绝不补日期。
+    """
+    text = _plain_text(doc_body)
+    if not text:
+        return ""
+    head = re.split(r"(?<=[。！？!?])\s*", text, maxsplit=4)
+    return _wx_lead_from_seg("".join(head[:2]))
+
+
 def _wx_pts_key(s: str) -> str:
     """要点去重用的指纹：去掉「· 」、空白和标点再比，避免「Qwen 团队 11 月 16 日」
     和「Qwen团队11月16日」被当成两句不同的话。"""
     t = re.sub(r"^\s*·\s*", "", str(s or ""))
     return re.sub(r"[^\w\u4e00-\u9fff]", "", t)[:12]
+
+
+def _wx_lead_same_key(s: str) -> str:
+    """判断某条要点是不是在复述 lead 的同一件事：抹掉日期和「于」再比前 14 字。
+
+    lead 带日期、AI 提炼的那条不带，两者的普通指纹不一样，会同时留在要点里
+    （「11 月 18 日发布 Astra」和「发布 Astra 面向复杂创作」）。这里按事件主体
+    再比一次，把重复的那条去掉，别让读者连读两句同一件事。
+    """
+    t = re.sub(r"^\s*·\s*", "", str(s or "")).strip()
+    t = _WX_TIME_STRONG.sub("", t).replace("于", "")
+    return re.sub(r"[^\w\u4e00-\u9fff]", "", t)[:14]
 
 
 def _wx_timed_first(points: list[str], screens: list[dict],
@@ -3786,9 +3834,11 @@ def _wx_timed_first(points: list[str], screens: list[dict],
     pts = [p for p in (points or []) if str(p).strip()]
     hint = re.sub(r"^\s*·\s*", "", str(lead or "")).strip()
     if hint and _WX_TIME_STRONG.search(hint):
-        # 提炼出来的要点常和原文第一句重复，按指纹去重，别同一句说两遍
+        # 提炼出来的要点常和原文第一句重复：既要按原指纹去重，也要按「抹掉日期
+        # 和连接词」的事件指纹去重，免得「11 月 18 日发布 X」和「发布 X」并存
         key = _wx_pts_key(hint)
-        pts = [p for p in pts if _wx_pts_key(p) != key]
+        same = _wx_lead_same_key(hint)
+        pts = [p for p in pts if _wx_pts_key(p) != key and _wx_lead_same_key(p) != same]
         return ["· " + hint] + pts
     if not pts:
         return pts
@@ -4080,7 +4130,7 @@ async def api_push_wechat_draft(req: PushDraftRequest):
             return JSONResponse({"ok": False, "error": "没有成功上传任何贴图", "errors": errors})
         article = {
             "article_type": "newspic",
-            "title": ((req.title or "AI 生成的贴图").strip() or "AI 生成的贴图")[:32],
+            "title": _wx_title((req.title or "").strip() or "AI 生成的贴图"),
             "image_info": {"image_list": [{"image_media_id": m} for m in media_ids]},
             "need_open_comment": 0,
             "only_fans_can_comment": 0,
@@ -4126,6 +4176,8 @@ async def api_push_wechat_draft(req: PushDraftRequest):
     for it in prepared:
         rec = HISTORY.get(it["job_id"]) or {}
         lead_hint = _wx_story_lead(rec.get("prompt") or "")
+        if not lead_hint:
+            lead_hint = _wx_doc_lead(rec.get("doc_body") or "")
         if lead_hint:
             break
     lead_points = await _wx_lead_summary(req.title, screens, lead_hint)
@@ -4147,7 +4199,7 @@ async def api_push_wechat_draft(req: PushDraftRequest):
     # 没提炼出来才退回「首屏小标题：首屏正文」
     lead_line = re.sub(r"^\s*·\s*", "", (lead_points[0] if lead_points else "")).strip()
     digest = (lead_line or ((first_title + "：" if first_title else "") + first_cap))[:64]
-    title = ((req.title or "AI 生成的图文").strip() or "AI 生成的图文")[:32]
+    title = _wx_title((req.title or "").strip() or "AI 生成的图文")
     wx_token = await _wx_get_token(gateway, token)
     if not wx_token:
         return JSONResponse({"ok": False, "error": "无法获取微信 access_token", "errors": errors})
