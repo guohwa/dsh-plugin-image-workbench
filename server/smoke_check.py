@@ -1975,6 +1975,19 @@ ok('推荐组合只剩推荐带一个入口，顶部与单图下方的重复按�
    and "'/api/recommend'" in _html and 'avoid_layout' in _html)
 ok('推荐前先读原始关键字，不拿九行提示词去匹配题材',
    "(_qsOptimized && _qsRawKey) ? _qsRawKey : val('#qsKey')" in _html)
+# 2026-11-27：单图框留着旧提示词时，换一组一直吃单图，左侧正文被无视
+ok('推荐按「最后动过哪一边」读内容，并写明读的是哪边、可一键换边',
+   "if (_srcLast === 'single' && s) return {text: s, from: 'single'};" in _html
+   and "if (_srcLast === 'multi'  && m) return {text: m, from: 'multi'};" in _html
+   and "if (m) return {text: m, from: 'multi'};" in _html
+   and "function markSrc(which){" in _html
+   and "markSrc('multi');                 // 生成提示词是多图这一侧的动作" in _html
+   and "markSrc('single');" in _html
+   and "if (t.id === 'qsKey') markSrc('single');" in _html
+   and "t.closest('#itemList')" in _html
+   and 'id="crSrc"' in _html and 'class="cr-src"' in _html
+   and "e.target.closest('.cr-src')" in _html
+   and 'function comboSrcLabel(from)' in _html)
 ok('推荐后同步三张卡、记住这次风格，按钮变「换一组」',
    'state.sel.layout = L;' in _html and 'state.sel.color  = C;' in _html
    and "_comboLast = {layout: L.id, style: S.id, color: C.id};" in _html

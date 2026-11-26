@@ -150,6 +150,11 @@
      题材改用一枚小胶囊强调，后面的组合用普通字重，读起来更稳 */
   .combo-rec .cr-tag{display:inline-block;margin:0 7px 0 2px;padding:1px 7px;border-radius:7px;
     background:#efe9ff;color:#5b49d6;font-weight:600;letter-spacing:.2px}
+  /* 读的是哪一边：一枚可点的小胶囊，点一下换另一边重配（用户 2026-11-27 反馈读错来源） */
+  .combo-rec .cr-src{display:inline-block;margin:0 7px 0 0;padding:1px 7px;border-radius:7px;
+    border:1px solid #d8cbff;background:#fff;color:#5b49d6;font:inherit;font-size:11.5px;
+    line-height:1.7;cursor:pointer;transition:.14s;white-space:nowrap}
+  .combo-rec .cr-src:hover{background:#f3edff;border-color:#bda6ff}
   .combo-rec .cr-btn{flex:none;padding:7px 13px;font-size:12.5px;border-radius:9px}
   .combo-rec .cr-btn[disabled]{opacity:.55;cursor:default}
   .combo-rec.busy .cr-ic{animation:crspin 1s linear infinite}
@@ -2260,6 +2265,16 @@ function ensureStyle(){
    打分在后端（server/recommend.py），纯词表，不调模型，点一下就有结果。 */
 let _comboLast = null;      // 上一次推荐的三个 id，用来让「换一组」真的换
 let _comboBusy = false;
+/* 推荐读哪一边的内容。以前是「有分镜就多图，否则单图框有字就读单图」，
+   结果单图框里留着一句旧示例、左侧又写好了正文时，换一组一直吃单图那段旧词
+   （用户 2026-11-27 截图）。改成看「最后动过哪边」，并且把读的是哪边写在推荐带上。 */
+let _srcLast = '';          // 'single' 单图框 / 'multi' 左侧选题正文分镜 / '' 还没动过
+let _comboSrc = '';         // '' 跟随 _srcLast；'single' / 'multi' 用户点了推荐带上的切换
+function markSrc(which){
+  if (which !== 'single' && which !== 'multi') return;
+  _srcLast = which;
+  _comboSrc = '';           // 一动内容就回到自动跟随，别让上次的手动指定粘住
+}
 
 function comboSource(src){
   const val = sel => { const el = $(sel); return el ? (el.value || '') : ''; };
@@ -2270,15 +2285,23 @@ function comboSource(src){
     (state.items || []).forEach(it => { parts.push(it.title || '', it.body || ''); });
     return parts.join('\n').replace(/\n{2,}/g, '\n').trim();
   };
-  const hasItems = (state.items || []).some(it => (it.title || '').trim() || (it.body || '').trim());
   const s = singleText(), m = multiText();
   // 返回「文字 + 这段文字从哪来」：来源决定用单图的纯图-图文，还是多图的纯图-图文-摄影
   if (src === 'single') return s ? {text: s, from: 'single'} : {text: m, from: 'multi'};
   if (src === 'multi')  return m ? {text: m, from: 'multi'}  : {text: s, from: 'single'};
-  // 拆过分镜就按分镜走；没有分镜时单图框里写了什么就按单图走
-  if (hasItems && m) return {text: m, from: 'multi'};
+  if (_comboSrc === 'single' && s) return {text: s, from: 'single'};
+  if (_comboSrc === 'multi'  && m) return {text: m, from: 'multi'};
+  if (_srcLast === 'single' && s) return {text: s, from: 'single'};
+  if (_srcLast === 'multi'  && m) return {text: m, from: 'multi'};
+  // 没动过、或那一边是空的：左侧有正文/分镜就按多图（那是主内容），都没有才用单图关键字
+  if (m) return {text: m, from: 'multi'};
   if (s) return {text: s, from: 'single'};
-  return {text: m, from: 'multi'};
+  return {text: '', from: 'multi'};
+}
+function comboSrcLabel(from){
+  if (from === 'single') return '单图关键字';
+  const n = (state.items || []).filter(it => (it.title || '').trim() || (it.body || '').trim()).length;
+  return n ? '左侧正文与分镜（' + n + ' 条）' : '左侧正文';
 }
 
 function comboNote(html){
@@ -2303,7 +2326,7 @@ async function comboRecommend(src){
   if (btn) btn.textContent = '正在配…';
   const bar = $('#comboRec');
   if (bar) bar.classList.add('busy');
-  comboNote('正在读内容，给 170 个图型、372 种风格和 36 个配色打分…');
+  comboNote('正在读' + comboSrcLabel(picked.from) + '，给 170 个图型、372 种风格和 36 个配色打分…');
   try{
     // 单图 / 多图各自有自己的模式：单图按纯图-图文，多图按纯图-图文-摄影
     const body = {
@@ -2354,7 +2377,11 @@ async function comboRecommend(src){
       }catch(e){ /* 重拼失败不影响选型，出图时还会再拼一次 */ }
     }
 
-    comboNote('<i class="cr-tag">' + esc(tagTxt) + '</i> ' +
+    const other = picked.from === 'single' ? 'multi' : 'single';
+    comboNote('<button class="cr-src" id="crSrc" type="button" data-src="' + other +
+      '" title="这次读的是' + esc(comboSrcLabel(picked.from)) + '，点一下换成' +
+      esc(comboSrcLabel(other)) + '重新配">读：' + esc(comboSrcLabel(picked.from)) + ' ⇄</button>' +
+      '<i class="cr-tag">' + esc(tagTxt) + '</i> ' +
       esc(L.id + ' ' + L.title) + ' · ' + esc(styleName) + ' · ' + esc(C.name) +
       (d.note ? '　（' + esc(d.note) + '）' : ''));
     toast('图型 ' + L.title + ' · ' + styleName + ' · ' + C.name + modeTip,
@@ -3162,6 +3189,7 @@ function qsRestoreExample(){
   state.qsMode = 'pure-image';
   state.qsModeAuto = false;
   qsPaintMode();
+  markSrc('single');
   _qsFingerprint = qsCardFingerprint();   // 记下示例这套选型，改卡后仍能按原始关键字重拼
   qsStatus('已还原示例，可直接点「直接出图」', 'ok');
   toast('已还原示例的图型、风格、主题色和关键字', {type:'ok', title:'示例已还原'});
@@ -3235,6 +3263,7 @@ async function qsCompose(keyword){
   return (d.items && d.items[0] && d.items[0].prompt) || '';
 }
 async function qsPolish(){
+  markSrc('single');
   const kw = qsCurrentKeyword();
   if (!kw){ toast('先写关键字'); $('#qsKey').focus(); return; }
   ensureStyle();                 // 只选了图型就点这里：先把画风补上，别出空壳提示词
@@ -3253,6 +3282,7 @@ async function qsPolish(){
   finally{ qsBusy(false); }
 }
 async function qsGenerate(){
+  markSrc('single');
   let text = ($('#qsKey').value || '').trim();
   if (!text){ toast('先写关键字，或先点「优化提示词」'); $('#qsKey').focus(); return; }
   ensureStyle();                   // 同上：出图前也要有画风，否则出来的图跟选型无关
@@ -3516,6 +3546,7 @@ async function pollOne(id, i, topic, statusEl){
 }
 
 async function composeAll(){
+  markSrc('multi');                 // 生成提示词是多图这一侧的动作，推荐组合之后读左侧正文
   if (!state.items.length){
     // 清单为空但有选型 / 参考图 / 手改指令：自动补一条空白分镜，直接按出图指令拼
     const hasSel = state.sel.style || state.sel.layout || state.sel.color;
@@ -5366,6 +5397,21 @@ $('#qsGen').onclick = qsGenerate;
 $('#qsRestore').onclick = qsRestoreExample;
 /* 推荐组合只有一个入口：配图工坊那条推荐带（推荐理由也显示在那儿） */
 if ($('#comboRecBtn')) $('#comboRecBtn').onclick = ()=> comboRecommend('auto');
+/* 推荐带上的「读：xxx ⇄」：点一下换成另一边重新配 */
+if ($('#comboRecNote')) $('#comboRecNote').addEventListener('click', (e)=>{
+  const t = e.target.closest ? e.target.closest('.cr-src') : null;
+  if (!t) return;
+  e.preventDefault();
+  _comboSrc = t.dataset.src || '';
+  comboRecommend('auto');
+});
+/* 谁最后动过内容，推荐组合就按哪一边读：单图框 → 单图；选题/标题/正文/小说/分镜 → 多图 */
+document.addEventListener('input', (e)=>{
+  const t = e.target; if (!t) return;
+  if (t.id === 'qsKey') markSrc('single');
+  else if (t.id === 'topic' || t.id === 'docTitle' || t.id === 'docBody' || t.id === 'novelBody') markSrc('multi');
+  else if (t.closest && t.closest('#itemList')) markSrc('multi');
+});
 if ($('#qsKey')) $('#qsKey').addEventListener('input', qsFitKey);
 /* 单图纯图 / 图文切换：只影响单图拼词，多图模式保持自己的选择 */
 document.querySelectorAll('#qsModeSeg button').forEach(b=>{
@@ -5698,6 +5744,7 @@ function splitDoc(title, body, withNo = true){
 }
 
 async function splitToItems(){
+  markSrc('multi');
   const title = $('#docTitle').value.trim();
   const body  = $('#docBody').value.trim();
   if (!title && !body){
