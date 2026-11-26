@@ -3156,6 +3156,12 @@ function qsRestoreExample(){
   const box = $('#qsKey');
   if (box) box.value = QS_EXAMPLE.keyword;
   _qsRawKey = QS_EXAMPLE.rawKey; _qsOptimized = true;
+  /* 示例那条出图记录的提示词自己写着「不要文字」——它本来就是纯图，不是图文。
+     之前 syncPicks 里的 qsAutoMode 看到有图型就把页签推到图文，结果框里写着不要文字、
+     页签却是图文（用户 2026-11-27 反馈）。这里按示例本身定死纯图，并且不再自动跟随图型。 */
+  state.qsMode = 'pure-image';
+  state.qsModeAuto = false;
+  qsPaintMode();
   _qsFingerprint = qsCardFingerprint();   // 记下示例这套选型，改卡后仍能按原始关键字重拼
   qsStatus('已还原示例，可直接点「直接出图」', 'ok');
   toast('已还原示例的图型、风格、主题色和关键字', {type:'ok', title:'示例已还原'});

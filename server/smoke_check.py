@@ -1841,6 +1841,14 @@ ok('示例效果入口已去掉，只留还原示例按钮',
 ok('还原示例记住原始关键字与选型指纹，换卡后仍能按新组合重拼',
    '_qsRawKey = QS_EXAMPLE.rawKey; _qsOptimized = true;' in _html
    and '_qsFingerprint = qsCardFingerprint();' in _html)
+# 2026-11-27：示例提示词自己写着「不要文字」，还原后页签却被 qsAutoMode 顶到图文
+_restore_body = _html.split('function qsRestoreExample(){')[1].split('function qsCardFingerprint')[0]
+ok('还原示例按示例本身落到纯图，不再被图型自动顶成图文',
+   "state.qsMode = 'pure-image';" in _restore_body
+   and "state.qsModeAuto = false;" in _restore_body
+   and 'qsPaintMode();' in _restore_body
+   and _restore_body.index('syncPicks();') < _restore_body.index("state.qsMode = 'pure-image';")
+   and _restore_body.index("state.qsMode = 'pure-image';") < _restore_body.index('_qsFingerprint ='))
 # 2026-11-26 六次调整：单图快出成品登记进结果列表，修复右侧预览点不开
 ok('单图出完登记进结果列表，右侧预览可点击',
    "if (onFinish) onFinish('done', d);" in _html
