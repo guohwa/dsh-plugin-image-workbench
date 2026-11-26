@@ -204,9 +204,8 @@
   .pk-id{font-size:11px;color:#7b74a0;letter-spacing:.4px;font-variant-numeric:tabular-nums}
   .pk-name{font-size:12.5px;font-weight:600;color:var(--ink);line-height:1.34;word-break:break-word;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-  .pk-acts{position:absolute;top:2px;right:2px;z-index:2;display:flex;align-items:center;gap:7px}
-  /* 已选时右上角让给 X，别和「可选 (170)」叠在一起 */
-  .pick-row .pick-card.on .pk-head .pk-opt{visibility:hidden}
+  /* 清除按钮钉在卡片右下角，绝对定位不占文字宽度；右上角留给「可选 (170)」（用户 2026-11-27） */
+  .pk-acts{position:absolute;bottom:7px;right:7px;z-index:2;display:flex;align-items:center;gap:7px}
   /* 勾挂到缩略图右上角：卡片右上要留给 X，左上又会压住卡片图标（用户 2026-11-27） */
   .pick-row .pick-card.on::after{display:none}
   .pick-row .pick-card .pk-thumb{position:relative}
@@ -214,9 +213,9 @@
     border-radius:50%;background:var(--primary);color:#fff;font-size:10px;line-height:16px;text-align:center;
     box-shadow:0 1px 4px rgba(60,40,140,.35)}
   /* X 以前是 15px 的一点灰字，角落里很难瞄准；放大到 22px 并给圆底（用户 2026-11-27） */
-  .pk-clear{border:0;background:transparent;color:#a9a3bd;font-size:22px;line-height:1;cursor:pointer;
+  .pk-clear{border:1px solid var(--line);background:#fff;color:#8d87a3;font-size:22px;line-height:1;cursor:pointer;
     width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;
-    transition:.14s;padding:0 0 2px}
+    transition:.14s;padding:0 0 2px;box-shadow:0 1px 3px rgba(60,40,140,.06)}
   .pk-clear:hover{color:#fff;background:var(--err)}
   @media (max-width:860px){.pick-row{grid-template-columns:repeat(2,minmax(0,1fr))}}
   /* 参考图：拖进来高亮，缩略图按比例完整显示（裁掉边就看不出是同一张了） */
@@ -1217,7 +1216,7 @@
     <span class="ad-tag">提示</span>
     <div class="ad-view"><div class="ad-track" id="adTrack">
       <div class="ad-item" id="adSamples" title="刚安装成功时，缩略图会在后台自动补齐，补完刷新就是真图">刚安装完需要点时间同步图型、风格、主题色缩略图。</div>
-      <div class="ad-item">随机组合图型、风格之后需要再次生成提示词。</div>
+      <div class="ad-item">换了推荐组合之后，记得再点一次「生成提示词」。</div>
       <div class="ad-item">如果不知道怎么上手，可以试着直接点击「批量出图」。</div>
       <div class="ad-item">使用过程中有任何问题，可以多看看公众号详细介绍。</div>
       <div class="ad-item">如果发现其他问题，估计作者也搞不定，就直接问 AI 吧。</div>
@@ -1228,7 +1227,8 @@
     <button class="btn ghost mini" id="resetAll" type="button"
       title="清掉选题、标题、正文、分镜清单、补充要求和参考图；图型 / 风格 / 主题色变成不限。画幅、情绪、留白、出图模式保留">一键清空</button>
     <button class="btn" id="composeAll" type="button">生成提示词</button>
-    <button class="btn ghost" id="randomCombo" type="button">随机组合</button>
+    <button class="btn" id="comboTop" type="button"
+      title="读当前内容配一套图型 / 风格 / 主题色：单图读关键字，多图读选题、正文和分镜；配过之后再点就是换一组">推荐组合</button>
     <button class="btn primary" id="genImage" type="button">批量出图</button>
     <button class="btn stop" id="stopGen" type="button" title="停止当前正在出图与排队中的任务" disabled>停止生图</button>
     <span class="ha-sep"></span>
@@ -1465,7 +1465,6 @@
         <div class="qs-foot">
           <span class="qs-status" id="qsStatus"></span>
           <button class="qs-btn" id="qsRestore" type="button" title="一键还原示例的图型、风格、主题色和关键字">还原示例</button>
-          <button class="qs-btn" id="qsRec" type="button" title="按这个框里的内容配一套图型/风格/主题色，配好会自动切换图文或纯图">推荐组合</button>
           <button class="qs-btn" id="qsPolish" type="button" title="把关键字和上面的图型/风格/主题色/参考图拼成完整提示词，直接覆盖在这个输入框里，可继续手改">优化提示词</button>
           <button class="qs-btn primary" id="qsGen" type="button" title="按输入框里的提示词直接出一张图，不进分镜清单">直接出图</button>
         </div>
@@ -1510,8 +1509,8 @@
     </div>
     <div class="chips" id="moodChips"></div>
     <label class="cbx" style="margin-top:9px" id="fusionRow">
-      <input type="checkbox" id="fusion">
-      <span>缩微摄影融合 · 角色小、场景真，同光源同空间（已按图型自动判断：漫画分镜 / 插图默认勾上，纯色留白卡默认不勾，勾了会把角色缩成小人）</span>
+      <input type="checkbox" id="fusion" checked>
+      <span>缩微摄影融合 · 角色小、场景真，同光源同空间（默认开着：开了图更清晰、场景更真；不需要可以自己取消，取消后换图型也不会自动勾回来）</span>
     </label>
 
     <div class="stepbar">
@@ -2227,12 +2226,14 @@ function _fusionMap(){
   try{ return JSON.parse(sessionStorage.getItem('iw_fusion_by_layout') || '{}') || {}; }
   catch(e){ return {}; }
 }
+/* 缩微摄影融合：默认恒开（用户 2026-11-27：开了图更高清、场景更真）。
+   以前按图型判断，纯色留白卡会被自动关掉，用户每次进页面都得手动勾回来。
+   现在只在用户自己取消过一次之后才记住「关」，换图型也不会偷偷勾上。 */
 function syncFusionDefault(){
   const box = $('#fusion'); if (!box) return;
-  const id = (state.sel.layout && state.sel.layout.id) || '';
-  const map = _fusionMap();
-  if (Object.prototype.hasOwnProperty.call(map, id)){ box.checked = !!map[id]; return; }
-  box.checked = !isFlatLayout(state.sel.layout);
+  let off = false;
+  try{ off = sessionStorage.getItem('iw_fusion_off') === '1'; }catch(e){}
+  box.checked = !off;
 }
 
 /* ---------- 没选风格时的护栏（用户 2026-11-26） ----------
@@ -2287,7 +2288,7 @@ function comboNote(html){
   if (el && html != null) el.innerHTML = html;
 }
 
-async function comboRecommend(src){
+async function comboRecommend(src, trigger){
   if (_comboBusy) return;
   const picked = comboSource(src);
   const text = picked.text;
@@ -2297,10 +2298,13 @@ async function comboRecommend(src){
     toast('上面还没有内容：单图先写关键字，多图先写选题或拆好分镜', {type:'err', title:'没有可读的内容'});
     return;
   }
-  const btn = $('#comboRecBtn');
+  const btn = trigger || $('#comboRecBtn');
+  const recBtn = $('#comboRecBtn'), topBtn = $('#comboTop');
+  const allBtns = [recBtn, topBtn].filter(Boolean);
   const prevHtml = $('#comboRecNote') ? $('#comboRecNote').innerHTML : '';
   _comboBusy = true;
-  if (btn){ btn.disabled = true; btn.textContent = '正在配…'; }
+  allBtns.forEach(x=>{ x.disabled = true; });
+  if (btn) btn.textContent = '正在配…';
   const bar = $('#comboRec');
   if (bar) bar.classList.add('busy');
   comboNote('正在读内容，给 170 个图型、372 种风格和 36 个配色打分…');
@@ -2345,7 +2349,6 @@ async function comboRecommend(src){
     const tags = (d.tags || []).map(t => t.name);
     const tagTxt = tags.length ? tags.slice(0, 2).join(' · ') : '通用';
     const styleName = S.ref || S.name_en || S.id;
-    if (btn) btn.textContent = '换一组';
 
     // 单图这边：框里已经是提示词，就按新组合顺手重拼，别让画面和框里的字对不上
     if (useSingle && _qsOptimized){
@@ -2365,7 +2368,10 @@ async function comboRecommend(src){
     toast('推荐失败：' + e.message, {type:'err'});
   }finally{
     _comboBusy = false;
-    if (btn){ btn.disabled = false; if (!_comboLast) btn.textContent = '按内容推荐'; }
+    allBtns.forEach(x=>{ x.disabled = false; });
+    /* 推荐带里那个按钮自己会变「换一组」，顶部那个恒叫「推荐组合」 */
+    if (recBtn) recBtn.textContent = _comboLast ? '换一组' : '按内容推荐';
+    if (topBtn) topBtn.textContent = '推荐组合';
     if (bar) bar.classList.remove('busy');
   }
 }
@@ -5357,8 +5363,9 @@ $('#genImage').onclick = runImage;
 $('#qsPolish').onclick = qsPolish;
 $('#qsGen').onclick = qsGenerate;
 $('#qsRestore').onclick = qsRestoreExample;
+/* 推荐组合只留两个入口：顶部工具条（单图 / 多图通吃，按当前内容判断）和配图工坊那条推荐带 */
+if ($('#comboTop')) $('#comboTop').onclick = (e)=> comboRecommend('auto', e.currentTarget);
 if ($('#comboRecBtn')) $('#comboRecBtn').onclick = ()=> comboRecommend('auto');
-if ($('#qsRec')) $('#qsRec').onclick = ()=> comboRecommend('single');
 if ($('#qsKey')) $('#qsKey').addEventListener('input', qsFitKey);
 /* 单图纯图 / 图文切换：只影响单图拼词，多图模式保持自己的选择 */
 document.querySelectorAll('#qsModeSeg button').forEach(b=>{
@@ -5451,11 +5458,6 @@ $('#copyText').onclick = async ()=>{
   if (!t){ toast('还没有可复制的内容'); return; }
   try { await navigator.clipboard.writeText(t); toast('已复制'); } catch { toast('复制失败，请手动选择'); }
 };
-$('#randomCombo').onclick = ()=>{
-  const r = a => a[Math.floor(Math.random()*a.length)];
-  pick('style', r(state.styles)); pick('layout', r(state.layouts)); pick('color', r(state.colors));
-  toast('已随机组合：' + state.sel.style.id + ' / ' + state.sel.layout.id + ' / ' + state.sel.color.id);
-};
 $('#addItem').onclick = ()=> addItem();
 $('#importItems').onclick = ()=> openImport('list');
 $('#copyInstr').onclick = ()=> copyText($('#instrOut').textContent.trim(), '出图指令已复制');
@@ -5468,10 +5470,8 @@ $('#composeAll').onclick = composeAll;
 $('#mood').addEventListener('input', ()=>{ renderMoodChips(); syncInstr(); });
 $('#ratio').addEventListener('change', ()=>{ syncInstr(); syncRatioUi(); });
 $('#fusion').addEventListener('change', ()=>{
-  // 手动勾选按「当前图型」记下来，换别的图型仍按那张卡的默认走
-  const _fid = (state.sel.layout && state.sel.layout.id) || '';
-  const _fmap = _fusionMap(); _fmap[_fid] = $('#fusion').checked;
-  try{ sessionStorage.setItem('iw_fusion_by_layout', JSON.stringify(_fmap)); }catch(e){}
+  /* 只记「用户主动关过」这一个状态，不再按图型记（用户 2026-11-27：默认一直开着） */
+  try{ sessionStorage.setItem('iw_fusion_off', $('#fusion').checked ? '0' : '1'); }catch(e){}
   syncInstr();
   if (state.items.some(x=>(x.prompt||'').trim())) toast('组合已变，请重新点「生成提示词」或单条「重拼」');
 });

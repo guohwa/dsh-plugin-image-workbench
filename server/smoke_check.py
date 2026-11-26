@@ -1875,7 +1875,7 @@ ok('四张选择卡整块可点，更换按钮已去掉，X 放大且浮在右�
    and 'class="pk-change"' not in _html
    and "if (e.target.closest('.pk-clear')) return;" in _html
    and "if (e.target.closest('.pk-btn')) return;" in _html
-   and ".pk-acts{position:absolute;top:2px;right:2px" in _html
+   and ".pk-acts{position:absolute;bottom:7px;right:7px" in _html
    and 'font-size:22px' in _html
    and "body.addEventListener('keydown'" in _html)
 # 2026-11-26 八次调整：单图纯图/图文，多图纯图/图文/摄影
@@ -1959,15 +1959,25 @@ _rj = _rp.json() if _rp.status_code == 200 else {}
 ok('推荐接口可用，返回三件套 / 题材 / 标签',
    _rp.status_code == 200 and (_rj.get('layout') or {}).get('id') in _LAY_IDS
    and isinstance(_rj.get('tags'), list))
-ok('推荐带与按钮就位，单图也有入口',
-   'id="comboRec"' in _html and 'id="comboRecBtn"' in _html and 'id="qsRec"' in _html
+# 2026-11-27：入口收到顶部一个「推荐组合」，单图下方与顶部的「随机组合」都撤了
+ok('推荐组合统一到顶部工具条，单图/多图通吃，重复入口已撤',
+   'id="comboTop"' in _html and 'id="comboRecBtn"' in _html
+   and 'id="qsRec"' not in _html and 'id="randomCombo"' not in _html
+   and "comboRecommend('auto', e.currentTarget)" in _html
    and "'/api/recommend'" in _html and 'avoid_layout' in _html)
 ok('推荐前先读原始关键字，不拿九行提示词去匹配题材',
    "(_qsOptimized && _qsRawKey) ? _qsRawKey : val('#qsKey')" in _html)
-ok('推荐后同步三张卡、记住这次风格，按钮变「换一组」',
+ok('推荐后同步三张卡、记住这次风格，两个入口各用各的文案',
    'state.sel.layout = L;' in _html and 'state.sel.color  = C;' in _html
    and "_comboLast = {layout: L.id, style: S.id, color: C.id};" in _html
-   and "btn.textContent = '换一组';" in _html)
+   and "if (recBtn) recBtn.textContent = _comboLast ? '换一组' : '按内容推荐';" in _html
+   and "if (topBtn) topBtn.textContent = '推荐组合';" in _html)
+# 2026-11-27：缩微摄影融合默认常开，只有用户自己关过才记住「关」
+ok('缩微摄影融合默认常开，用户关过才记住',
+   '<input type="checkbox" id="fusion" checked>' in _html
+   and "sessionStorage.getItem('iw_fusion_off') === '1'" in _html
+   and "sessionStorage.setItem('iw_fusion_off'" in _html
+   and "iw_fusion_by_layout" not in _html.split('function syncFusionDefault')[1][:400])
 
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')
