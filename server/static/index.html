@@ -2115,8 +2115,10 @@ const state = {styles:[], layouts:[], colors:[], sel:{style:null, layout:null, c
   /* 「做成漫画」拆出来的固定设定：角色外貌锚点 + 场景锚点。
      每格出图都原样带上，否则逐张生成会变成同题不同人。 */
   comicBible:'',
-  /* 小说推文叠字：热点漫画的旁白在出图后压到画面顶部，画幅固定 9:16 */
-  comicNovel:true};
+  /* 小说推文叠字：热点漫画的旁白在出图后压到画面顶部，画幅固定 9:16。
+     默认 false —— 这是漫画分镜对话框里的开关（那个复选框自己默认勾上，勾了才写进 state）；
+     以前这里默认 true，导致普通图文的分镜条目也挂出「旁白」框（用户 2026-11-27 反馈）。 */
+  comicNovel:false};
 
 /* 气泡：默认是轻提示；出图完成走 ok（带勾，停 5 秒），失败走 err。
    页面在后台时不硬弹（反正看不见），先攒一条，切回来再补。 */
@@ -3355,7 +3357,7 @@ function renderItems(){
       + '<button class="it-del" type="button" title="删除这条">×</button>'
       + '</div>'
       + '<textarea class="it-body" rows="2" placeholder="这张图要说什么：画面里的人或物、动作、细节，以及图里要出现的那句话"></textarea>'
-      + ((state.comicNovel || typeof it.caption === 'string')
+      + ((state.comicNovel || (typeof it.caption === 'string' && it.caption.trim()))
          ? '<textarea class="it-caption" rows="2" placeholder="旁白：叠在画面顶部的话，「」里的对话会标红"></textarea>' : '')
       + '<input class="it-scene" placeholder="中层小辅助图（可选，留空则按文案自动选一件实物道具，如存钱罐/书/行李箱）">'
       + (it.visual ? '<textarea class="it-scene it-visual" rows="2" placeholder="画面表演要点（可改，只影响画面，不排进文字）"></textarea>' : '')
@@ -6933,7 +6935,7 @@ function draftSnapshot(){
     comic_novel: !!state.comicNovel,
     items: state.items.map(it=>({title: it.title || '', body: it.body || '',
       scene: it.scene || '', visual: it.visual || '', prompt: it.prompt || '',
-      link: it.link || '', caption: it.caption || ''})),
+      link: it.link || '', ...(it.caption ? {caption: it.caption} : {})})),
   };
 }
 
@@ -6950,7 +6952,10 @@ function applySnapshot(d){
     ? {title: String(hr.title), id: String(hr.id), level: String(hr.level || ''),
        url: String(hr.url || ''), platform: String(hr.platform || '')} : null;
   state.comicBible = String(d.comic_bible || '');
-  state.comicNovel = d.comic_novel !== false;   // 老草稿没这个字段，按默认叠字处理
+  /* 老草稿/旧会话没有 comic_novel 字段，或者写着 true 但一条旁白都没有：
+     都按普通图文恢复 —— 不然空 caption 会把旁白框带给每一篇（用户 2026-11-27） */
+  const _novCap = (d.items || []).some(it=> String((it && it.caption) || '').trim());
+  state.comicNovel = _novCap && d.comic_novel !== false;
   const cn = $('#comicNovel'); if(cn) cn.checked = state.comicNovel;
   $('#topic').value = d.topic || '';
   $('#docTitle').value = d.title || '';
@@ -6969,7 +6974,7 @@ function applySnapshot(d){
   $('#shootType').value = d.shoot_type || '';
   state.items = (d.items || []).map(it=>({title: it.title || '', body: it.body || '',
     scene: it.scene || '', visual: it.visual || '', prompt: it.prompt || '',
-    link: it.link || '', caption: it.caption || ''}));
+    link: it.link || '', ...(String(it.caption || '').trim() ? {caption: it.caption} : {})}));
   const sel = d.sel || {};
   // 存的是空串＝当时就是「不限」，得真的清回 null，否则会沿用页面上的默认组合
   const pick1 = (kind, id) => {
@@ -8456,7 +8461,8 @@ setInterval(refreshPool, 10000);
       return {
         title: String(i + 1).padStart(2, '0') + ' ' + (p.title || ('第' + (i + 1) + '格')),
         body: body, scene: '', visual: '', prompt: '', link: p.link || '',
-        caption: novel ? String(p.caption || p.dialog || '') : ''
+        /* 只有勾了叠字才写 caption 字段：写个空串进去，普通条目也会被判成"有旁白"而挂出输入框 */
+        ...(novel ? { caption: String(p.caption || p.dialog || '') } : {})
       };
     });
     renderItems();

@@ -1738,7 +1738,14 @@ ok('批量出图与单张出图都带叠字参数',
    str(_html.count('novel_overlay: true, overlay_text: it.caption.trim()')))
 ok('草稿快照保存旁白与叠字开关',
    'comic_novel: !!state.comicNovel' in _html
-   and "caption: it.caption || ''" in _html)
+   and "...(it.caption ? {caption: it.caption} : {})" in _html)
+# 2026-11-27 反馈：普通图文的分镜条目也挂出「旁白」框。根因是 state.comicNovel 默认 true，
+# 加上拆分/草稿里给每条写了空串 caption，`typeof it.caption === 'string'` 恒真。
+ok('旁白框只在漫画叠字模式或真有旁白文字时出现',
+   'comicNovel:false};' in _html
+   and "comicNovel || (typeof it.caption === 'string' && it.caption.trim())" in _html
+   and "...(novel ? { caption: String(p.caption || p.dialog || '') } : {})" in _html
+   and "state.comicNovel = _novCap && d.comic_novel !== false;" in _html)
 
 # ---- 公众号推送网关持久化 ----
 _secrets = pathlib.Path.home() / '.dsh' / 'image-workbench' / 'credentials.json'
