@@ -1868,6 +1868,16 @@ ok('折叠开关是看得见文字的按钮，收起态还带内容摘要',
    and 'function qsPaintMini()' in _html
    and 'class="qs-mini" id="qsMini"' in _html
    and '.quick-single:not(.collapsed) .qs-mini{display:none}' in _html)
+# 2026-11-27 反馈：整张卡都能点开选择器；「更换」按钮去掉；X 放大且不占文字宽度
+ok('四张选择卡整块可点，更换按钮已去掉，X 放大且浮在右上角',
+   'id="chgLayout"' not in _html and 'id="chgStyle"' not in _html
+   and 'id="chgColor"' not in _html and 'id="chgRef"' not in _html
+   and 'class="pk-change"' not in _html
+   and "if (e.target.closest('.pk-clear')) return;" in _html
+   and "if (e.target.closest('.pk-btn')) return;" in _html
+   and ".pk-acts{position:absolute;top:2px;right:2px" in _html
+   and 'font-size:22px' in _html
+   and "body.addEventListener('keydown'" in _html)
 # 2026-11-26 八次调整：单图纯图/图文，多图纯图/图文/摄影
 ok('单图默认纯图，多图三种模式齐全且彼此独立',
    'id="qsModeSeg"' in _html

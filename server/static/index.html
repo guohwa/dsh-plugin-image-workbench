@@ -190,8 +190,12 @@
   .pk-btn .t{font-size:12px;font-weight:600;display:flex;align-items:baseline;gap:4px}
   .pk-btn .t em{font-style:normal;font-weight:400;font-size:11px;color:var(--ink-3)}
   .pk-btn:hover .t em{color:var(--primary-2)}
-  /* 已选态：缩略图 + 编号/名称 + 更换 + 清除 */
-  .pk-body{display:flex;align-items:center;gap:10px;min-height:76px;padding:2px 0}
+  /* 已选态：缩略图 + 编号/名称 + 清除。整块可点，点了就重开选择器（用户 2026-11-27） */
+  .pk-body{display:flex;align-items:center;gap:10px;min-height:76px;padding:2px 0;cursor:pointer;
+    border-radius:9px;transition:.14s}
+  .pk-body:hover{background:#faf8ff}
+  .pk-body:hover .pk-name{color:var(--primary)}
+  .pk-body:focus-visible{outline:2px solid rgba(106,90,224,.45);outline-offset:2px}
   .pk-thumb{flex:0 0 auto;width:56px;height:56px;border-radius:9px;overflow:hidden;background:#f6f5fb;
     border:1px solid var(--line);display:flex;align-items:center;justify-content:center}
   .pk-thumb img{width:100%;height:100%;object-fit:cover;display:block}
@@ -200,12 +204,20 @@
   .pk-id{font-size:11px;color:#7b74a0;letter-spacing:.4px;font-variant-numeric:tabular-nums}
   .pk-name{font-size:12.5px;font-weight:600;color:var(--ink);line-height:1.34;word-break:break-word;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-  .pk-acts{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:7px}
-  .pk-change{border:1px solid var(--line);background:#fff;color:var(--ink-2);border-radius:7px;
-    font:inherit;font-size:11px;padding:3px 9px;cursor:pointer;transition:.12s;white-space:nowrap}
-  .pk-change:hover{color:var(--primary);border-color:#cfc6f7;background:#faf8ff}
-  .pk-clear{border:0;background:transparent;color:#b9b3cc;font-size:15px;line-height:1;cursor:pointer;padding:0 3px}
-  .pk-clear:hover{color:var(--err)}
+  .pk-acts{position:absolute;top:2px;right:2px;z-index:2;display:flex;align-items:center;gap:7px}
+  /* 已选时右上角让给 X，别和「可选 (170)」叠在一起 */
+  .pick-row .pick-card.on .pk-head .pk-opt{visibility:hidden}
+  /* 勾挂到缩略图右上角：卡片右上要留给 X，左上又会压住卡片图标（用户 2026-11-27） */
+  .pick-row .pick-card.on::after{display:none}
+  .pick-row .pick-card .pk-thumb{position:relative}
+  .pick-row .pick-card.on .pk-thumb::after{content:'✓';position:absolute;top:3px;right:3px;width:16px;height:16px;
+    border-radius:50%;background:var(--primary);color:#fff;font-size:10px;line-height:16px;text-align:center;
+    box-shadow:0 1px 4px rgba(60,40,140,.35)}
+  /* X 以前是 15px 的一点灰字，角落里很难瞄准；放大到 22px 并给圆底（用户 2026-11-27） */
+  .pk-clear{border:0;background:transparent;color:#a9a3bd;font-size:22px;line-height:1;cursor:pointer;
+    width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;
+    transition:.14s;padding:0 0 2px}
+  .pk-clear:hover{color:#fff;background:var(--err)}
   @media (max-width:860px){.pick-row{grid-template-columns:repeat(2,minmax(0,1fr))}}
   /* 参考图：拖进来高亮，缩略图按比例完整显示（裁掉边就看不出是同一张了） */
   #cardRef.drag{border-color:var(--primary);background:#f8f6ff;
@@ -1353,7 +1365,6 @@
             <span class="pk-name" id="pnameLayout">—</span>
           </span>
           <span class="pk-acts">
-            <button class="pk-change" id="chgLayout" type="button">更换</button>
             <button class="pk-clear" id="clrLayout" type="button" title="清除选择">×</button>
           </span>
         </div>
@@ -1376,7 +1387,6 @@
             <span class="pk-name" id="pnameStyle">—</span>
           </span>
           <span class="pk-acts">
-            <button class="pk-change" id="chgStyle" type="button">更换</button>
             <button class="pk-clear" id="clrStyle" type="button" title="清除选择">×</button>
           </span>
         </div>
@@ -1399,7 +1409,6 @@
             <span class="pk-name" id="pnameColor">—</span>
           </span>
           <span class="pk-acts">
-            <button class="pk-change" id="chgColor" type="button">更换</button>
             <button class="pk-clear" id="clrColor" type="button" title="清除选择">×</button>
           </span>
         </div>
@@ -1426,7 +1435,6 @@
             <span class="pk-name" id="pnameRef">—</span>
           </span>
           <span class="pk-acts">
-            <button class="pk-change" id="chgRef" type="button">更换</button>
             <button class="pk-clear" id="clrRef" type="button" title="移除参考图">×</button>
           </span>
         </div>
@@ -5572,9 +5580,26 @@ $('#copyAll').onclick = async ()=>{
 $('#docTitle').addEventListener('input', syncPreview);
 $('#docBody').addEventListener('input', syncPreview);
 CARD_KINDS.forEach(([k, sfx])=>{
-  $('#empty'+sfx).onclick = ()=> openPicker(k);
-  $('#chg'+sfx).onclick   = ()=> openPicker(k);
-  $('#clr'+sfx).onclick   = ()=>{
+  const card = $('#card'+sfx), body = $('#body'+sfx);
+  const open = ()=> openPicker(k);
+  $('#empty'+sfx).onclick = open;
+  /* 整张卡都能点：缩略图、编号、名称、旁边的空白处，不再靠那个小小的「更换」（用户 2026-11-27） */
+  if (card) card.addEventListener('click', (e)=>{
+    if (e.target.closest('.pk-clear')) return;   // X 自己处理，别点完又弹一层
+    if (e.target.closest('.pk-btn')) return;     // 空态按钮自己有绑定，避免连开两次
+    open();
+  });
+  /* 已选态不是 button，键盘也要够得着：Tab 进来，回车或空格打开 */
+  if (body){
+    body.tabIndex = 0;
+    body.setAttribute('role', 'button');
+    body.setAttribute('title', '点这里换一个');
+    body.addEventListener('keydown', (e)=>{
+      if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); open(); }
+    });
+  }
+  $('#clr'+sfx).onclick   = (e)=>{
+    if (e) e.stopPropagation();
     state.sel[k] = null;
     state.selTouched = true;
     if (k === 'style') state.styleOptOut = true;   // 明确清掉风格＝这次就是要模型自由发挥，别再自动补
@@ -6876,8 +6901,23 @@ async function resetAll(){
 
 /* ---------- 参考图：点击 / 拖入 / Ctrl+V 粘贴 ---------- */
 $('#emptyRef').onclick = ()=> $('#refFile').click();
-$('#chgRef').onclick = ()=> $('#refFile').click();
-$('#clrRef').onclick = clearRef;
+/* 参考图卡也整块可点：缩略图、名称、空白处都能换图；下拉（用法）和 X 除外（用户 2026-11-27） */
+(function(){
+  const card = $('#cardRef'), body = $('#bodyRef');
+  if (card) card.addEventListener('click', (e)=>{
+    if (e.target.closest('select, .pk-clear, .pk-btn')) return;
+    $('#refFile').click();
+  });
+  if (body){
+    body.tabIndex = 0;
+    body.setAttribute('role', 'button');
+    body.setAttribute('title', '点这里换一张参考图');
+    body.addEventListener('keydown', (e)=>{
+      if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); $('#refFile').click(); }
+    });
+  }
+})();
+$('#clrRef').onclick = (e)=>{ if (e) e.stopPropagation(); clearRef(); };
 $('#refMode').onchange = ()=> { state.refMode = $('#refMode').value; };
 $('#refFile').addEventListener('change', e=>{
   const f = e.target.files && e.target.files[0];
