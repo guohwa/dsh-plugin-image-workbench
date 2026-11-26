@@ -30,6 +30,7 @@ def ok(name, cond, detail=''):
 print('=== 1. 关键符号 ===')
 sys.path.insert(0, str(ROOT))
 import app, pool, pool_admin, pool_service, composer, history, imaging, catalog, access, drafts, novel_overlay
+import hot_facts
 for mod, names in [
     (app, ['app', 'POOL', 'HISTORY', 'DRAFTS', 'CATALOG', 'api_generate',
            'api_compose', '_finish_with_replace']),
@@ -290,7 +291,7 @@ ok('资料块带信源数与时间，减少模型编日期',
    '17 个信源' in _p_new and '首次报道 2026-10-29' in _p_new)
 ok('空综述不插入资料块',
    app.build_text_prompt(_req_hot, {'title': 'x', 'digest': ''}) == _p_old)
-ok('preview 与 generate 都接了资料取值', _src_app.count('await _text_story(req)') == 2)
+ok('preview 与 generate 都接了资料取值', _src_app.count('await _text_facts(req)') == 2)
 
 
 async def _probe_text_story():
@@ -318,6 +319,108 @@ ok('选题匹配热点才带资料', _a is _story_mock)
 ok('选题与热点不一致不带资料', _b is None)
 ok('没有 story_id 不取资料', _c is None)
 ok('出图模式不取热点资料', _d is None)
+
+# ---- 每日热榜取证：热榜一行只有标题，别让模型凭标题编日期、数字和名单 ----
+ok('取证模块提供原文抓取 / 检索 / 降级三级能力',
+   hasattr(hot_facts, 'build') and hasattr(hot_facts, 'filter_snippets')
+   and hasattr(hot_facts, 'parse_rss') and hasattr(hot_facts, 'cached'))
+
+_RSS_SAMPLE = """<?xml version="1.0"?><rss version="2.0"><channel>
+<item><title>某公司发布新模型 X2</title>
+  <description>11月26日，某公司在北京发布新模型 X2，参数规模 3200 亿，并宣布下月开放接口，同时公布了推理成本与首批合作方名单。</description>
+  <pubDate>Wed, 26 Nov 2026 09:00:00 GMT</pubDate><link>https://news.example.com/a/1</link></item>
+<item><title>百度一下，你就知道</title>
+  <description>全球领先的中文搜索引擎、致力于让网民更便捷地获取信息，找到所求。</description>
+  <link>https://www.baidu.com/</link></item>
+<item><title>太短的摘要</title><description>太短</description>
+  <link>https://short.example.org/p/1</link></item>
+<item><title>某公司新模型 X2 细节曝光</title>
+  <description>某公司新模型 X2 的细节曝光，参数规模 3200 亿，训练投入 2 万张卡，团队来自多个实验室。</description>
+  <pubDate>Tue, 25 Nov 2026 18:00:00 GMT</pubDate><link>https://tech.example.org/a/2</link></item>
+</channel></rss>"""
+_rows = hot_facts.filter_snippets(hot_facts.parse_rss(_RSS_SAMPLE), '某公司发布新模型 X2')
+ok('检索结果去掉门户首页与短摘要，同一站点只留一条',
+   len(_rows) == 2 and all('baidu.com' not in r['link'] for r in _rows)
+   and len({r['host'] for r in _rows}) == 2,
+   str([(r['host'], r['title'][:12]) for r in _rows]))
+ok('跟标题不沾边的检索结果一律丢掉，宁可没资料也不喂垃圾',
+   hot_facts.filter_snippets(hot_facts.parse_rss(_RSS_SAMPLE), '南方多地暴雨预警升级') == [])
+ok('检索结果带站点名与日期，来源看得见',
+   _rows[0]['site'] == 'example' and _rows[0]['date'] == '2026-11-26',
+   str((_rows[0]['site'], _rows[0]['date'])))
+_pack = hot_facts._pack_snippets(_rows, '某公司发布新模型 X2')
+ok('多个来源拼成带编号的资料块，并留来源清单',
+   bool(_pack) and '[1]' in _pack['digest'] and len(_pack['sources']) == 2,
+   str(_pack and _pack['chars']))
+ok('同一标题的缓存键稳定，换了站点就算另一条',
+   hot_facts.key_of('某公司发布新模型 X2', 'https://a.example.com/1')
+   == hot_facts.key_of('某公司发布新模型 X2', 'https://a.example.com/1?x=2')
+   and hot_facts.key_of('某公司发布新模型 X2', 'https://a.example.com/1')
+   != hot_facts.key_of('某公司发布新模型 X2', 'https://b.example.com/1'))
+
+_hb_story = {'title': '某公司发布新模型 X2', 'digest': _pack['digest'],
+             'kind': 'search', 'sources': _pack['sources']}
+_hb_p = app.build_text_prompt(
+    app.GenRequest(mode='text', topic='某公司发布新模型 X2', num_items=7), _hb_story)
+ok('热榜检索资料进提示词，标明多来源并列出出处',
+   '公开新闻报道摘要' in _hb_p and '资料来源：' in _hb_p and '[1]' in _hb_p)
+ok('热榜资料守同一条事实红线', '事实红线' in _hb_p)
+_deg_p = app.build_text_prompt(
+    app.GenRequest(mode='text', topic='某公司发布新模型 X2', num_items=7),
+    {'title': '某公司发布新模型 X2', 'digest': '', 'degraded': True})
+ok('一条资料都取不到时明确降级：只写框架，不许编日期和数字',
+   '没有检索到可用的公开资料' in _deg_p and '不写具体日期' in _deg_p
+   and '事实红线' in _deg_p)
+ok('降级块不会混进一份空综述', '综述：' not in _deg_p)
+
+ok('GenRequest 收热榜取证字段，默认都不带',
+   all(getattr(app.GenRequest(mode='text', topic='t'), k) is None
+       for k in ('hot_id', 'hot_title', 'hot_url', 'hot_platform')))
+ok('后端提供 /api/hot/facts，并把热榜资料接进写稿',
+   '"/api/hot/facts"' in _src_app and 'async def _hot_story' in _src_app
+   and _src_app.count('await _text_facts(req)') == 2)
+
+
+async def _probe_hot_story():
+    orig = hot_facts.build
+
+    async def _fake(title, url='', platform='', timeout=12.0):
+        return {'level': 'search', 'title': title,
+                'digest': '检索摘要', 'sources': [], 'chars': 4}
+
+    hot_facts.build = _fake
+    try:
+        hit = await app._hot_story(app.GenRequest(
+            mode='text', topic='甲事件', hot_title='甲事件', hot_url='https://a/1'))
+        mism = await app._hot_story(app.GenRequest(
+            mode='text', topic='乙事件', hot_title='甲事件', hot_url='https://a/1'))
+        bare = await app._hot_story(app.GenRequest(mode='text', topic='乙事件'))
+        img = await app._hot_story(app.GenRequest(
+            mode='image', topic='甲事件', hot_title='甲事件'))
+    finally:
+        hot_facts.build = orig
+    return hit, mism, bare, img
+
+
+_h1, _h2, _h3, _h4 = asyncio.run(_probe_hot_story())
+ok('热榜选题按标题+链接取回资料，并标成检索来源', _h1 and _h1['kind'] == 'search'
+   and _h1['digest'] == '检索摘要')
+ok('选题文字被改过就不再挂原热点的资料', _h2 is None)
+ok('没带热榜字段的普通选题不触发取证', _h3 is None)
+ok('出图模式不跑热榜取证', _h4 is None)
+
+ok('前端点热榜「用作选题」就顺手取证：按钮变「取资料…」、结果进 state.hotRef',
+   all(x in _src_html for x in ('applyHotTopic', "btn.textContent = '取资料…'",
+                                'state.hotRef = ', "'/api/hot/facts'")),
+   '漏了取证，点选题只会填一句标题')
+ok('payload 只在标题没被改过时带热榜资料，生成前等取证回来',
+   'hot_id: hotOk ? hr.id : undefined' in _src_html
+   and 'text === hr.title' in _src_html
+   and 'await hotFactsPending' in _src_html,
+   '漏了比对，改了选题还会挂原事件资料')
+ok('取证结果进会话快照，载入草稿不继承',
+   'snap.hot_ref = state.hotRef' in _src_html and 'd.hot_ref' in _src_html
+   and 'state.hotRef = null' in _src_html)
 ok('前端记住热点 storyId 并随生成请求传',
    all(x in _src_html for x in ('hotStory:null', 'story_id: story_id || undefined',
                                 'useAsTopic(hit)')),
@@ -1119,8 +1222,8 @@ ok('推荐话题卡片插在热点榜与选题框之间',
 ok('每批固定三条、翻批只走本地洗牌',
    'const PAGE = 3' in _src_html and 'function shuffle(' in _src_html
    and 'if(pool.length) render(); else load(1)' in _src_html)
-ok('点选推荐话题填进选题框并断开旧热点综述',
-   all(x in _src_html for x in ('function pick(it)', "t.value = String(it.text || '')",
+ok('点选推荐话题填进选题框、断开旧热点综述并顺手取证',
+   all(x in _src_html for x in ('function pick(it)', 'applyHotTopic({title: String(it.text',
                                 'state.hotStory = null', "bindDraft(null, '')",
                                 'saveSession()')))
 ok('来源标记已移除，卡片不再显示实时/常青来源标注',
@@ -1177,8 +1280,8 @@ ok('弹窗含八平台卡片、页签、日期、同步时间和完整榜单表�
 ok('切页签本地渲染，打开和手动抓取才打接口',
    all(x in _src_html for x in ("fetch(force ? '/api/trends/hot/refresh' : '/api/trends/hot'",
                                 'hbLoad(0)', 'hbLoad(1)', 'hbDayEl.onchange')))
-ok('点条目填进选题并复用原有 pick 逻辑',
-   'pick({text: String(r.title)})' in _src_html
+ok('热榜详情行的「用作选题」也走同一套取证',
+   'applyHotTopic({title: String(r.title)' in _src_html
    and 'if(hbDlg && hbDlg.open) hbDlg.close()' in _src_html)
 ok('热榜桥接接口已注册（读取 / 手动抓取）',
    any(getattr(r, 'path', '') == '/api/trends/hot' for r in app.app.routes)

@@ -2064,6 +2064,10 @@ const state = {styles:[], layouts:[], colors:[], sel:{style:null, layout:null, c
   /* 从「AI 热点选题」带过来的事件：{id, title}。生成文章时随请求发 story_id，
      让后端把事件综述当事实依据；选题文字一改就不再匹配，自动失效。 */
   hotStory:null,
+  /* 从「每日热榜」带过来的取证结果：{title, id, level, url, platform}。
+     热榜没有 AIHOT 那种综述，点「用作选题」时先抓原文/检索新闻拿资料，
+     生成时按 id 取回同一份事实块；id 过期后端会按 title+url 当场再抓。 */
+  hotRef:null,
   /* 「做成漫画」拆出来的固定设定：角色外貌锚点 + 场景锚点。
      每格出图都原样带上，否则逐张生成会变成同题不同人。 */
   comicBible:'',
@@ -2456,15 +2460,74 @@ function wirePickerWheel(){
   }, {passive: false});
 }
 
+/* ---------- 热榜取证 ----------
+   热榜一行只有标题，AIHOT 那种综述是没有的。点「用作选题」先填标题，同时找后端要
+   资料（先抓原文，抓不到就按标题检索新闻）。资料没回来之前把这个 promise 记下来，
+   点「AI 生成文章」时等它一会儿，别让稿子在没有事实依据的情况下先跑出去。 */
+let hotFactsPending = null;
+
+function applyHotTopic(item, btn){
+  const t = $('#topic');
+  if(!t || !item || !item.title) return Promise.resolve(null);
+  const title = String(item.title).trim();
+  const old = btn ? btn.textContent : '';
+  t.value = title;
+  state.hotStory = null;        // 和 AIHOT 的综述互斥，两条链路的资料不能混着用
+  state.hotRef = null;
+  bindDraft(null, '');
+  markContentClean();
+  t.dispatchEvent(new Event('input', {bubbles:true}));
+  saveSession();
+  t.focus();
+  try{ t.setSelectionRange(title.length, title.length); }catch(e){}
+  if(btn){ btn.disabled = true; btn.textContent = '取资料…'; }
+  // 弹窗这时已经关了，按钮状态看不见，先给一句话，别让人以为点了没反应
+  toast('正在取这条热点的资料…');
+  const p = fetch('/api/hot/facts', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({title: title, url: item.url || '', platform: item.platform || ''})
+  }).then(function(r){ return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+    .then(function(d){
+      // 等资料的时候用户可能已经换了题，这段资料就不能再挂在新选题上
+      if(t.value.trim() !== title) return null;
+      state.hotRef = {title: title, id: d.id, level: d.level,
+                      url: item.url || '', platform: item.platform || ''};
+      saveSession();
+      const n = (d.sources || []).length;
+      if(d.level === 'article') toast('已取到原文，这篇按原文写');
+      else if(d.level === 'search') toast('已取到 ' + n + ' 条新闻资料，这篇按资料写');
+      else toast('没抓到可用资料，这篇只写框架，不会编日期和数字');
+      return d;
+    })
+    .catch(function(){
+      toast('取资料失败，这篇按标题写，具体数字建议自己核一遍');
+      return null;
+    })
+    .then(function(d){
+      if(btn){ btn.disabled = false; btn.textContent = old || '用作选题'; }
+      if(hotFactsPending === p) hotFactsPending = null;
+      return d;
+    });
+  hotFactsPending = p;
+  return p;
+}
+
 function payload(mode, topic){
   const n = parseInt($('#genCount').value, 10);
   const text = (topic ?? $('#topic').value).trim();
   const hs = state.hotStory;
   // 选题框必须还是当初那条热点标题才带资料，免得拿 A 事件的综述去写 B 选题
   const story_id = (mode === 'text' && hs && hs.id && text === hs.title) ? hs.id : '';
+  // 每日热榜同一条规矩：标题被改过就不带，改过的题不该再挂着原事件的资料
+  const hr = state.hotRef;
+  const hotOk = mode === 'text' && hr && !!hr.id && text === hr.title;
   return {
     mode, topic: text,
     story_id: story_id || undefined,
+    hot_id: hotOk ? hr.id : undefined,
+    hot_title: hotOk ? hr.title : undefined,
+    hot_url: hotOk ? hr.url : undefined,
+    hot_platform: hotOk ? hr.platform : undefined,
     group: state.group || $('#docTitle').value.trim() || undefined,
     style_id: state.sel.style && state.sel.style.id,
     layout_id: state.sel.layout && state.sel.layout.id,
@@ -2491,9 +2554,15 @@ async function submitGenerate(p){
 }
 
 async function run(mode, statusEl){
+  // 刚从热榜点的题，资料可能还在路上：等一两秒拿到事实上限，别抢先发一个没依据的请求
+  if (mode === 'text' && hotFactsPending){
+    statusEl.className = 'status run';
+    statusEl.textContent = '正在取热点资料…';
+    try { await hotFactsPending; } catch(_){}
+  }
   const p = payload(mode);
   if (!p.topic){ toast('先写一个选题'); $('#topic').focus(); return; }
-  const waitTxt = (mode === 'text' && p.story_id) ? '按热点综述生成 · 排队中…' : '排队中…';
+  const waitTxt = (mode === 'text' && (p.story_id || p.hot_id)) ? '按热点资料生成 · 排队中…' : '排队中…';
   statusEl.className = 'status run'; statusEl.textContent = waitTxt;
   try{
     const {job_id} = await submitGenerate(p);
@@ -6496,6 +6565,7 @@ async function resetAll(){
 
   state.items = [];
   state.hotStory = null;          // 一键清空连热点资料一起断掉
+  state.hotRef = null;
   state.comicBible = '';          // 角色锚点也要清，否则下一批手写内容会串到上一部漫画的人物
   state.comicNovel = false;
   const cn = $('#comicNovel'); if(cn) cn.checked = false;
@@ -6609,6 +6679,11 @@ function applySnapshot(d){
   const hs = d.hot_story;
   // 草稿箱里没有这个字段：载入草稿＝换了一篇，旧热点资料不该跟着串过来
   state.hotStory = (hs && hs.id) ? {id: String(hs.id), title: String(hs.title || '')} : null;
+  const hr = d.hot_ref;
+  // 同理：热榜取证结果只在刷新恢复时跟着回来，载入草稿一律不继承
+  state.hotRef = (hr && hr.id && hr.title)
+    ? {title: String(hr.title), id: String(hr.id), level: String(hr.level || ''),
+       url: String(hr.url || ''), platform: String(hr.platform || '')} : null;
   state.comicBible = String(d.comic_bible || '');
   state.comicNovel = d.comic_novel !== false;   // 老草稿没这个字段，按默认叠字处理
   const cn = $('#comicNovel'); if(cn) cn.checked = state.comicNovel;
@@ -6669,6 +6744,7 @@ function saveSession(){
     snap.t = Date.now();
     // 热点事件只进本地会话，不进草稿箱、也不算「内容改动」的指纹
     snap.hot_story = state.hotStory || null;
+    snap.hot_ref = state.hotRef || null;
     // 预览条也一起存：刷新后右侧不该只剩文字，图得原地回来
     snap.results = state.results.map(r=>({url: r.url, preview: r.preview,
       topic: r.topic, seq: r.seq, id: r.id, account: r.account || ''}));
@@ -7417,19 +7493,11 @@ setInterval(refreshPool, 10000);
     });
   }
   function pick(it){
-    const t = document.getElementById('topic');
-    if(!t || !it) return;
-    t.value = String(it.text || '');
-    // 推荐话题不是 AIHOT 事件，断掉上一条热点的综述绑定，避免生成时张冠李戴
-    if(typeof state !== 'undefined') state.hotStory = null;
-    // 与「用作选题」一致：只填选题不立刻存草稿，等生成出标题正文才记一条
-    bindDraft(null, '');
-    markContentClean();
-    t.dispatchEvent(new Event('input', {bubbles:true}));
-    saveSession();
-    t.focus();
-    try{ t.setSelectionRange(t.value.length, t.value.length); }catch(e){}
-    toast('已填进选题，接着点「AI 生成文章」');
+    // 推荐卡和热榜详情行是同一条榜单数据，走同一套取证：填标题 + 顺手把资料取回来
+    if(!it) return;
+    applyHotTopic({title: String(it.text || it.title || ''),
+                   url: String(it.url || ''),
+                   platform: String(it.tag || '')});
   }
   async function load(fresh){
     if(busy) return;
@@ -7615,7 +7683,9 @@ setInterval(refreshPool, 10000);
       b.onclick = function(){
         const r = hbShown[Number(b.dataset.i)];
         if(!r || !r.title) return;
-        pick({text: String(r.title)});
+        // 先填题、关弹窗，再慢慢取资料：按钮上会显示「取资料…」，页面不会被卡住
+        applyHotTopic({title: String(r.title), url: String(r.url || ''),
+                       platform: String(r.platform || '')}, b);
         if(hbDlg && hbDlg.open) hbDlg.close();
       };
     });
@@ -8031,6 +8101,7 @@ setInterval(refreshPool, 10000);
     // 记住事件 id：生成文章时后端取这条热点的综述当事实依据。
     // 用户一旦改了选题文字，payload 里标题对不上就自动不带，不会张冠李戴。
     state.hotStory = sid ? {id: sid, title: title} : null;
+    state.hotRef = null;          // 换成 AIHOT 事件后，热榜那份取证结果就不再适用
     // 选题 ≠ 成文：先断开上一份草稿的绑定，并清掉待存的指纹，
     // 这样只填选题【不会】立刻存出一版草稿；等「AI 生成文章」产出标题正文，才会记一条新草稿。
     bindDraft(null, '');

@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 import access
 import catalog
 import composer
+import hot_facts
 import imaging
 import pool as pool_mod
 import pool_admin
@@ -310,6 +311,13 @@ class GenRequest(BaseModel):
     # 从「AI 热点选题」点「用作选题」带来的事件 id：有它就取事件综述当唯一事实来源，
     # 不让模型只凭一句标题脑补日期、名单和数字。前端只在选题文字没被改动时才传。
     story_id: str | None = Field(default=None, max_length=64)
+    # 「每日热榜」条目点「用作选题」带来的资料 id + 原始链接。热榜没有 AIHOT 那种综述，
+    # 由 /api/hot/facts 抓原文或检索新闻，写稿时按 id 取回事实块，避免模型只凭标题脑补。
+    hot_id: str | None = Field(default=None, max_length=32)
+    hot_title: str | None = Field(default=None, max_length=200)
+    # 今日头条的榜单链接带一串埋点参数，实测能到 850 字，别按普通链接长度限制
+    hot_url: str | None = Field(default=None, max_length=2000)
+    hot_platform: str | None = Field(default=None, max_length=40)
     # 「做成漫画」的连续设定：全组每格原样带同一份角色外貌锚点与场景锚点，
     # 否则逐张出图时人物脸型、衣服、标志物会一格一变，读起来不像同一个故事。
     comic_bible: str | None = Field(default=None, max_length=3000)
@@ -459,13 +467,30 @@ def _story_fact_block(story: dict | None) -> str:
 
     不要求「全文照抄资料」——综述常常只有四五百字，硬锁死会让 7 条文案变成复读；
     只锁住会翻车的部分：时间、人名、公司名、产品名、数字、名单。
+
+    story 有三个来源，措辞跟着变：AIHOT 事件综述（默认）、热榜条目抓到的原文
+    （kind=article）、热榜条目检索到的新闻摘要（kind=search）。三级都没抓到时
+    走 degraded，直接把「只写框架、不许编数字」写进提示词。
     """
     if not story:
         return ""
     digest = str(story.get("digest") or "").strip()[:3000]
     if not digest:
+        if story.get("degraded"):
+            return ("这条选题没有检索到可用的公开资料。\n"
+                    "事实红线：不写具体日期、金额、数字、名单和人名，不写直接引语，"
+                    "也不把推测写成事实；只写能由标题直接推出的框架、观点和做法。"
+                    "需要举例时用「有公司」「有报道提到」这种不指名的写法。\n\n")
         return ""
-    parts = ["下面是这条热点事件的资料，来自第三方热点聚合站，是本次写作唯一的事实来源。"]
+    kind = str(story.get("kind") or "")
+    if kind == "article":
+        head = "下面是这条热点的原文正文，是本次写作唯一的事实来源。"
+    elif kind == "search":
+        head = ("下面是这条热点的公开新闻报道摘要，来自多个站点，是本次写作唯一的事实来源。"
+                "几家说法不一致时用最早报道的口径，不要挑其中最大的数字。")
+    else:
+        head = "下面是这条热点事件的资料，来自第三方热点聚合站，是本次写作唯一的事实来源。"
+    parts = [head]
     title = str(story.get("title") or "").strip()[:200]
     if title:
         parts.append("事件：" + title)
@@ -482,6 +507,18 @@ def _story_fact_block(story: dict | None) -> str:
             meta.append(label + " " + val.replace("T", " "))
     if meta:
         parts.append("资料元信息：" + "，".join(meta))
+    srcs = story.get("sources") or []
+    if srcs:
+        parts.append("资料来源：")
+        for s in srcs[:5]:
+            if not isinstance(s, dict):
+                continue
+            when = " · ".join(x for x in (str(s.get("site") or "").strip(),
+                                          str(s.get("date") or "").strip()) if x)
+            line = f"{s.get('n') or ''}. {str(s.get('title') or '').strip()[:80]}"
+            if when:
+                line += f"（{when}）"
+            parts.append(line.strip())
     parts.append(
         "事实红线：时间、人名、公司名、产品名、数字和名单只能取自上面的资料；"
         "资料里没写的不要补，也不要把「据报道」「据称」改写成确定事实。"
@@ -1394,6 +1431,15 @@ async def _aihot_story_data(sid: str) -> dict | None:
     return data
 
 
+def _same_topic(a: str, b: str) -> bool:
+    """选题文字和热点标题是不是同一件事。去空白后再比，容忍前端截断或补词。"""
+    x = re.sub(r"\s+", "", str(a or ""))
+    y = re.sub(r"\s+", "", str(b or ""))
+    if not x or not y:
+        return False
+    return x == y or x in y or y in x or x[:8] == y[:8]
+
+
 async def _text_story(req: "GenRequest") -> dict | None:
     """写文章时才取热点资料，并核对选题确实就是这条热点。
 
@@ -1409,9 +1455,57 @@ async def _text_story(req: "GenRequest") -> dict | None:
     topic = (req.topic or "").strip()
     if not st or not topic:
         return None
-    if not (st == topic or st in topic or topic in st or st[:8] == topic[:8]):
+    if not _same_topic(st, topic):
         return None
     return story
+
+
+def _hot_story_pack(data: dict) -> dict:
+    """把 hot_facts 的结果翻成 _story_fact_block 认的形状。"""
+    level = str(data.get("level") or "none")
+    if level == "none":
+        return {"title": str(data.get("title") or ""), "digest": "", "degraded": True}
+    return {"title": str(data.get("title") or ""), "digest": str(data.get("digest") or ""),
+            "kind": level, "sources": data.get("sources") or []}
+
+
+async def _hot_story(req: "GenRequest") -> dict | None:
+    """每日热榜条目的资料。
+
+    热榜一行只有标题和链接，没有 AIHOT 那种综述。点「用作选题」时前端已经调
+    /api/hot/facts 抓过一次并存进缓存；写稿这里按 id 取回。缓存过期（或服务重启过）
+    就用前端带回来的标题和链接当场再抓一次，保证这篇稿子不会突然失去事实依据。
+    """
+    if req.mode != "text":
+        return None
+    topic = (req.topic or "").strip()
+    if not topic:
+        return None
+    hid = (req.hot_id or "").strip()
+    if hid:
+        hit = hot_facts.cached(hid)
+        if hit and _same_topic(str(hit.get("title") or ""), topic):
+            return _hot_story_pack(hit)
+    title = (req.hot_title or "").strip()
+    if not title:
+        # 只给了 id 但缓存没了，也没带标题：宁可当没资料，也不要猜别的热点
+        return {"title": topic, "digest": "", "degraded": True} if hid else None
+    if not _same_topic(title, topic):
+        # 用户改过选题文字，就不再挂这条热点的资料
+        return None
+    try:
+        data = await hot_facts.build(title, req.hot_url or "", req.hot_platform or "")
+    except Exception:
+        data = {"level": "none", "title": title}
+    return _hot_story_pack(data)
+
+
+async def _text_facts(req: "GenRequest") -> dict | None:
+    """写文章的资料来源：AIHOT 事件综述优先，其次热榜取证，都没有就返回 None。"""
+    story = await _text_story(req)
+    if story:
+        return story
+    return await _hot_story(req)
 
 
 @app.get("/api/aihot/story")
@@ -2337,6 +2431,41 @@ async def api_trends_hot_refresh():
     """手动抓一次最新热榜；由本插件自带的 trends.js 落盘，失败时保留旧快照。"""
     data = await _hotv_get(True)
     return JSONResponse(data, status_code=200 if data.get("ok") else 502)
+
+
+class HotFactsRequest(BaseModel):
+    title: str = Field(default="", max_length=200)
+    url: str | None = Field(default=None, max_length=2000)
+    platform: str | None = Field(default=None, max_length=40)
+
+
+@app.post("/api/hot/facts")
+async def api_hot_facts(req: HotFactsRequest):
+    """给一条热榜选题取证：先抓原文，抓不到就按标题检索新闻，都没有就明说没有。
+
+    点「用作选题」时调一次，结果缓存在进程里；写稿时按 id 取回同一份资料，
+    所以要么这篇有依据，要么提示词里明确写了「不许编数字」，不会含糊过去。
+    """
+    title = (req.title or "").strip()
+    if not title:
+        raise HTTPException(400, "缺少热点标题")
+    key = hot_facts.key_of(title, req.url or "")
+    data = hot_facts.cached(key)
+    if data is None:
+        try:
+            data = await hot_facts.build(title, req.url or "", req.platform or "")
+        except Exception as e:
+            raise HTTPException(502, ("取资料失败：" + (str(e) or "未知错误"))[:120])
+    digest = str(data.get("digest") or "")
+    return {
+        "ok": True,
+        "id": key,
+        "level": data.get("level") or "none",
+        "title": data.get("title") or title,
+        "chars": int(data.get("chars") or 0),
+        "sources": data.get("sources") or [],
+        "preview": re.sub(r"\s+", " ", digest)[:120],
+    }
 
 
 _SAMPLES_CACHE = {"at": 0.0, "data": None}
@@ -3501,7 +3630,7 @@ async def api_autoscene(req: ComposeRequest):
 
 @app.post("/api/preview")
 async def api_preview(req: GenRequest):
-    story = await _text_story(req)
+    story = await _text_facts(req)
     if req.mode == "text":
         prompt = build_text_prompt(req, story)
     elif req.mode == "polish":
@@ -3538,7 +3667,7 @@ async def api_generate(req: GenRequest):
             f"号池 {base} 已配置但暂无可用账号。请确认号池进程已启动并已导入账号；"
             "可在「接口与号池」面板点「测试」验证连通性。")
     if req.mode == "text":
-        prompt = build_text_prompt(req, await _text_story(req))
+        prompt = build_text_prompt(req, await _text_facts(req))
     elif req.mode == "polish":
         prompt = build_polish_prompt(req)
     else:
