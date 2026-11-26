@@ -1959,19 +1959,18 @@ _rj = _rp.json() if _rp.status_code == 200 else {}
 ok('推荐接口可用，返回三件套 / 题材 / 标签',
    _rp.status_code == 200 and (_rj.get('layout') or {}).get('id') in _LAY_IDS
    and isinstance(_rj.get('tags'), list))
-# 2026-11-27：入口收到顶部一个「推荐组合」，单图下方与顶部的「随机组合」都撤了
-ok('推荐组合统一到顶部工具条，单图/多图通吃，重复入口已撤',
-   'id="comboTop"' in _html and 'id="comboRecBtn"' in _html
+# 2026-11-27：推荐组合只留配图工坊那条推荐带，顶部 / 单图下方的重复入口全撤
+ok('推荐组合只剩推荐带一个入口，顶部与单图下方的重复按钮已撤',
+   'id="comboRecBtn"' in _html and 'id="comboTop"' not in _html
    and 'id="qsRec"' not in _html and 'id="randomCombo"' not in _html
-   and "comboRecommend('auto', e.currentTarget)" in _html
+   and "if ($('#comboRecBtn')) $('#comboRecBtn').onclick = ()=> comboRecommend('auto');" in _html
    and "'/api/recommend'" in _html and 'avoid_layout' in _html)
 ok('推荐前先读原始关键字，不拿九行提示词去匹配题材',
    "(_qsOptimized && _qsRawKey) ? _qsRawKey : val('#qsKey')" in _html)
-ok('推荐后同步三张卡、记住这次风格，两个入口各用各的文案',
+ok('推荐后同步三张卡、记住这次风格，按钮变「换一组」',
    'state.sel.layout = L;' in _html and 'state.sel.color  = C;' in _html
    and "_comboLast = {layout: L.id, style: S.id, color: C.id};" in _html
-   and "if (recBtn) recBtn.textContent = _comboLast ? '换一组' : '按内容推荐';" in _html
-   and "if (topBtn) topBtn.textContent = '推荐组合';" in _html)
+   and "if (btn) btn.textContent = _comboLast ? '换一组' : '按内容推荐';" in _html)
 # 2026-11-27：缩微摄影融合默认常开，只有用户自己关过才记住「关」
 ok('缩微摄影融合默认常开，用户关过才记住',
    '<input type="checkbox" id="fusion" checked>' in _html

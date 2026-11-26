@@ -1227,8 +1227,6 @@
     <button class="btn ghost mini" id="resetAll" type="button"
       title="清掉选题、标题、正文、分镜清单、补充要求和参考图；图型 / 风格 / 主题色变成不限。画幅、情绪、留白、出图模式保留">一键清空</button>
     <button class="btn" id="composeAll" type="button">生成提示词</button>
-    <button class="btn" id="comboTop" type="button"
-      title="读当前内容配一套图型 / 风格 / 主题色：单图读关键字，多图读选题、正文和分镜；配过之后再点就是换一组">推荐组合</button>
     <button class="btn primary" id="genImage" type="button">批量出图</button>
     <button class="btn stop" id="stopGen" type="button" title="停止当前正在出图与排队中的任务" disabled>停止生图</button>
     <span class="ha-sep"></span>
@@ -2288,7 +2286,7 @@ function comboNote(html){
   if (el && html != null) el.innerHTML = html;
 }
 
-async function comboRecommend(src, trigger){
+async function comboRecommend(src){
   if (_comboBusy) return;
   const picked = comboSource(src);
   const text = picked.text;
@@ -2298,12 +2296,10 @@ async function comboRecommend(src, trigger){
     toast('上面还没有内容：单图先写关键字，多图先写选题或拆好分镜', {type:'err', title:'没有可读的内容'});
     return;
   }
-  const btn = trigger || $('#comboRecBtn');
-  const recBtn = $('#comboRecBtn'), topBtn = $('#comboTop');
-  const allBtns = [recBtn, topBtn].filter(Boolean);
+  const btn = $('#comboRecBtn');
   const prevHtml = $('#comboRecNote') ? $('#comboRecNote').innerHTML : '';
   _comboBusy = true;
-  allBtns.forEach(x=>{ x.disabled = true; });
+  if (btn) btn.disabled = true;
   if (btn) btn.textContent = '正在配…';
   const bar = $('#comboRec');
   if (bar) bar.classList.add('busy');
@@ -2368,10 +2364,9 @@ async function comboRecommend(src, trigger){
     toast('推荐失败：' + e.message, {type:'err'});
   }finally{
     _comboBusy = false;
-    allBtns.forEach(x=>{ x.disabled = false; });
-    /* 推荐带里那个按钮自己会变「换一组」，顶部那个恒叫「推荐组合」 */
-    if (recBtn) recBtn.textContent = _comboLast ? '换一组' : '按内容推荐';
-    if (topBtn) topBtn.textContent = '推荐组合';
+    if (btn) btn.disabled = false;
+    /* 配过一套之后按钮变「换一组」，再点就换下一套 */
+    if (btn) btn.textContent = _comboLast ? '换一组' : '按内容推荐';
     if (bar) bar.classList.remove('busy');
   }
 }
@@ -5363,8 +5358,7 @@ $('#genImage').onclick = runImage;
 $('#qsPolish').onclick = qsPolish;
 $('#qsGen').onclick = qsGenerate;
 $('#qsRestore').onclick = qsRestoreExample;
-/* 推荐组合只留两个入口：顶部工具条（单图 / 多图通吃，按当前内容判断）和配图工坊那条推荐带 */
-if ($('#comboTop')) $('#comboTop').onclick = (e)=> comboRecommend('auto', e.currentTarget);
+/* 推荐组合只有一个入口：配图工坊那条推荐带（推荐理由也显示在那儿） */
 if ($('#comboRecBtn')) $('#comboRecBtn').onclick = ()=> comboRecommend('auto');
 if ($('#qsKey')) $('#qsKey').addEventListener('input', qsFitKey);
 /* 单图纯图 / 图文切换：只影响单图拼词，多图模式保持自己的选择 */
