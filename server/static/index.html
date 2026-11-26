@@ -224,10 +224,26 @@
   .qs-head .qs-ic svg{width:15px;height:15px}
   .qs-head b{font-size:12.5px;font-weight:600;color:var(--ink)}
   .qs-head .qs-tag{font-size:11px;color:#1f9d6b;background:#e8f6ef;border-radius:20px;padding:1px 9px}
-  .qs-head .qs-hint{font-size:11px;color:var(--ink-3);margin-left:auto}
-  .qs-head .qs-caret{width:14px;height:14px;color:#1f9d6b;flex:0 0 auto;transition:transform .18s}
+  .qs-head .qs-hint{font-size:11px;color:var(--ink-3);margin-left:auto;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* 收起后也要能看出里面有没有东西，不然收起来就像空块（用户 2026-11-27） */
+  .qs-head .qs-mini{font-size:11px;color:var(--ink-3);flex:0 0 auto}
+  .qs-head .qs-mini.on{color:#1f9d6b}
+  /* 折叠开关：以前只有一个 14px 箭头贴在最右边，一眼看不见，整块就像收不起来（用户 2026-11-27） */
+  .qs-fold{margin-left:auto;display:inline-flex;align-items:center;gap:3px;flex:0 0 auto;
+    border:1px solid #cfe6da;background:#fff;color:#1f9d6b;border-radius:20px;
+    font-size:11px;font-weight:600;padding:2px 8px 2px 9px;line-height:1.5;transition:.14s}
+  .qs-head:hover .qs-fold{background:#eaf7f0;border-color:#a9d8c2}
+  .qs-fold svg{width:12px;height:12px;transition:transform .18s}
   .quick-single.collapsed .qs-head{margin-bottom:0}
-  .quick-single.collapsed .qs-caret{transform:rotate(-90deg);margin-left:auto}
+  .quick-single.collapsed .qs-fold svg{transform:rotate(-90deg)}
+  .quick-single:not(.collapsed) .qs-mini{display:none}
+  /* 窄屏一行放不下：先让「只出一张·不拆分镜」和提示语让位，标题和开关必须留住 */
+  @media (max-width:900px){
+    .qs-head .qs-hint{display:none}
+    .qs-head .qs-mini{margin-left:auto}
+  }
+  @media (max-width:640px){.qs-head .qs-tag{display:none}}
   .quick-single.collapsed .qs-tag,
   .quick-single.collapsed .qs-hint,
   .quick-single.collapsed .qs-body{display:none}
@@ -1425,8 +1441,9 @@
         <span class="qs-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.2 6.4L21 11l-6.8 2.6L12 20l-2.2-6.4L3 11l6.8-2.6L12 2z"/><path d="M19 18l.7 2L22 20.7l-2.3.7L19 23.4l-.7-2-2.3-.7 2.3-.7L19 18z"/></svg></span>
         <b>单图快出</b>
         <span class="qs-tag">只出一张 · 不拆分镜</span>
+        <span class="qs-mini" id="qsMini">未填写关键字</span>
         <span class="qs-hint">关键字写得越具体，出图越贴合</span>
-        <svg class="qs-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        <span class="qs-fold" id="qsFold"><span id="qsFoldTxt">展开</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
       </div>
       <div class="qs-body" id="qsBody" hidden>
         <div class="qs-mode-row">
@@ -3065,6 +3082,21 @@ function qsSetOpen(open){
   box.classList.toggle('collapsed', !open);
   if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
   if (body) body.hidden = !open;
+  const t = $('#qsFoldTxt'); if (t) t.textContent = open ? '收起' : '展开';
+  qsPaintMini();
+}
+/* 收起态那行摘要：没填字 / 已填多少字 / 提示词就绪 / 出图中，收起来也看得出里面有没有东西 */
+function qsPaintMini(){
+  const el = $('#qsMini'); if (!el) return;
+  const box = $('#quickSingle');
+  const busy = !!(box && box.classList.contains('working'));
+  const v = (($('#qsKey') && $('#qsKey').value) || '').trim();
+  let txt = '未填写关键字', on = false;
+  if (busy){ txt = '出图中…'; on = true; }
+  else if (v && _qsOptimized){ txt = '提示词已就绪 · ' + v.length + ' 字'; on = true; }
+  else if (v){ txt = '已填 ' + v.length + ' 字'; }
+  el.textContent = txt;
+  el.classList.toggle('on', on);
 }
 /* 单图纯图 / 图文切换：只改自己的模式，不碰多图模式；框里已有词时靠指纹变化触发重拼 */
 function qsPaintMode(){
@@ -3138,6 +3170,7 @@ function qsFitKey(){
   const el = $('#qsKey'); if (!el) return;
   el.style.height = 'auto';
   el.style.height = Math.min(el.scrollHeight + 2, 320) + 'px';
+  qsPaintMini();                       // 程序写回提示词时不触发 input，摘要要跟着更新
 }
 function qsStatus(msg, kind){
   const el = $('#qsStatus'); if (!el) return;
@@ -3155,6 +3188,7 @@ function qsWorking(on){
   const box = $('#quickSingle'), btn = $('#qsGen'), st = $('#qsStatus');
   if (box) box.classList.toggle('working', !!on);
   if (st) st.classList.toggle('working', !!on);
+  qsPaintMini();                       // 收起态显示「出图中…」
   if (btn){
     if (on){
       if (!btn.dataset.qsOld){

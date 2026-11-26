@@ -1853,6 +1853,14 @@ ok('点标题可展开/收起单图快出，键盘也能操作，出图逻辑不
    and "head.addEventListener('keydown'" in _html
    and "qsSetOpen(false);" in _html
    and 'async function qsGenerate()' in _html)
+# 2026-11-27 反馈：只有一个 14px 小箭头，用户根本看不见能收，改成文字开关 + 收起态摘要
+ok('折叠开关是看得见文字的按钮，收起态还带内容摘要',
+   'class="qs-fold" id="qsFold"' in _html
+   and "<span id=\"qsFoldTxt\">展开</span>" in _html
+   and "t.textContent = open ? '收起' : '展开';" in _html
+   and 'function qsPaintMini()' in _html
+   and 'class="qs-mini" id="qsMini"' in _html
+   and '.quick-single:not(.collapsed) .qs-mini{display:none}' in _html)
 # 2026-11-26 八次调整：单图纯图/图文，多图纯图/图文/摄影
 ok('单图默认纯图，多图三种模式齐全且彼此独立',
    'id="qsModeSeg"' in _html
