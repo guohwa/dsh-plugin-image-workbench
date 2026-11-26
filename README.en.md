@@ -33,6 +33,7 @@ Open `http://127.0.0.1:8092/` in a browser to use the workbench; the backend als
 | Capability | Details |
 | --- | --- |
 | Two prompt modes | Illustration and photography pipelines with selectable format, style, palette and layout. `server/catalog.json` ships 368 styles, 170 layouts and 36 palettes |
+| Content-based combo picker | Reads the single-image keyword or the multi-image topic / body / storyboard and picks a layout + style + palette combination. Pure keyword scoring, no model call, with a one-click reroll |
 | Reference images | Upload or drop a reference image, submitted through `/v1/images/edits`; the capability can be disabled when the endpoint does not support edits |
 | Batch generation | Import storyboard rows in bulk and queue them. A failed image is retried with another account (up to 3 rounds) without aborting the task |
 | Aspect ratios | `1:1`, `3:4`, `2:3`, `9:16`, `4:3`, `3:2`, `16:9`, plus `2.35:1` for WeChat cover images. When no native upstream size exists, the image is generated at the widest supported size and center-cropped locally |
@@ -191,6 +192,7 @@ Principal backend routes are listed below. The complete definitions are in `serv
 | `/api/catalog` | GET | Format, style, layout and palette definitions |
 | `/api/config`, `/api/config/test` | GET / POST | Read and update configuration; connectivity test |
 | `/api/compose` | POST | Prompt composition |
+| `/api/recommend` | POST | Content-based layout / style / palette recommendation |
 | `/api/generate` | POST | Submit an image generation task |
 | `/api/generate/stop` | POST | Cancel in-flight requests, clear the queue and stop account retries |
 | `/api/tasks/{task_id}` | GET | Query task status |

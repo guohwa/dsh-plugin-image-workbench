@@ -1870,6 +1870,80 @@ ok('多图切换直接取三模式值，历史与草稿还原兼容旧记录',
    "state.omode = b.dataset.omode || 'graphic-text';" in _html
    and _html.count("['pure-image','graphic-text','photo'].includes(") == 3)
 
+print('=== 按内容推荐组合（图型 / 风格 / 主题色）===')
+import recommend as rec
+_cat = catalog.build()
+_LAY_IDS = {x['id'] for x in _cat['layouts']}
+_STY_IDS = {x['id'] for x in _cat['styles']}
+_COL_IDS = {x['id'] for x in _cat['colors']}
+HEAL = '有很多事你当时想不通，别着急，过段时间你可能就忘了。'
+MONEY = '月薪八千怎么攒下第一个十万'
+HUMOR = '周一开会被老板当众点名，我当场社死'
+
+
+def _rec(text, seed, avoid=None):
+    r = rec.recommend(text, seed=seed, avoid=avoid or {})
+    return r, (r['layout']['id'], r['style']['id'], r['color']['id'])
+
+
+_r0, _c0 = _rec(HEAL, 42)
+ok('推荐的三个 id 都真实存在于库里',
+   _c0[0] in _LAY_IDS and _c0[1] in _STY_IDS and _c0[2] in _COL_IDS, _c0)
+ok('同一段内容 + 同一 seed 结果完全可复现', _rec(HEAL, 42)[1] == _c0)
+ok('读得懂题材：治愈句命中治愈松弛，搞钱句命中理财搞钱',
+   '治愈松弛' in [t['name'] for t in _r0['tags']]
+   and '理财搞钱' in [t['name'] for t in _rec(MONEY, 3)[0]['tags']])
+_heal = [_rec(HEAL, s)[0] for s in range(10)]
+ok('治愈类内容只会配社媒卡，不会被推成信息图或分镜',
+   all(x['layout']['group'] == '社媒卡' for x in _heal),
+   {x['layout']['group'] for x in _heal})
+ok('治愈类内容不会配写实摄影（和纯色留白卡冲突）',
+   all(x['style']['group'] != '写实摄影与视觉大片' for x in _heal),
+   {x['style']['group'] for x in _heal})
+_money = [_rec(MONEY, s)[0] for s in range(10)]
+ok('搞钱/教程类内容落到信息图，而不是情感卡',
+   all(x['layout']['group'] == '信息图' for x in _money),
+   {x['layout']['group'] for x in _money})
+_humor = [_rec(HUMOR, s)[0] for s in range(10)]
+ok('吐槽类内容配幽默画风（社论幽默组）',
+   all(x['style']['group'] == '国际社论幽默' for x in _humor),
+   {x['style']['group'] for x in _humor})
+_cs = {_rec(HEAL, s)[1] for s in range(10)}
+ok('换 seed 能换出不同组合，不是固定一套', len(_cs) >= 4, f'{len(_cs)}/10 种')
+_a, _ = _rec(HEAL, 7)
+_ca = (_a['layout']['id'], _a['style']['id'], _a['color']['id'])
+_b, _cb = _rec(HEAL, 7, avoid={'layout': [_ca[0]], 'style': [_ca[1]], 'color': [_ca[2]]})
+ok('「换一组」把上一组压下去，至少换掉一件', _ca != _cb, f'{_ca} → {_cb}')
+_e, _ce = _rec('', 1)
+ok('没内容也能给一组通用搭配并说明原因',
+   _ce[0] in _LAY_IDS and _e['note'], _e['note'])
+_photo = [rec.recommend(HEAL, seed=s, mode='photo') for s in range(6)]
+ok('摄影模式只配写实那一路，并说明图型不参与',
+   all(x['style']['group'] == '写实摄影与视觉大片' for x in _photo)
+   and '摄影模式不套图型' in (_photo[0]['note'] or ''),
+   {x['style']['group'] for x in _photo})
+ok('纯图模式也说明图型不参与', '纯图模式不套图型' in rec.recommend(HEAL, seed=2, mode='pure-image')['note'])
+ok('带使用场景的画风（监控/淘宝/随手拍/航拍）不会硬塞给无关内容',
+   all(x['style']['id'] not in rec.ODD_STYLE_HINTS for x in _photo),
+   {x['style']['id'] for x in _photo})
+ok('内容真提到航拍时，航拍画风能回到候选里',
+   any(rec.recommend('周末用无人机航拍了一段海岸线', seed=s, mode='photo')['style']['id'] == 'FI-034'
+       for s in range(12)))
+_rp = client.post('/api/recommend', json={'text': HEAL, 'seed': 9})
+_rj = _rp.json() if _rp.status_code == 200 else {}
+ok('推荐接口可用，返回三件套 / 题材 / 标签',
+   _rp.status_code == 200 and (_rj.get('layout') or {}).get('id') in _LAY_IDS
+   and isinstance(_rj.get('tags'), list))
+ok('推荐带与按钮就位，单图也有入口',
+   'id="comboRec"' in _html and 'id="comboRecBtn"' in _html and 'id="qsRec"' in _html
+   and "'/api/recommend'" in _html and 'avoid_layout' in _html)
+ok('推荐前先读原始关键字，不拿九行提示词去匹配题材',
+   "(_qsOptimized && _qsRawKey) ? _qsRawKey : val('#qsKey')" in _html)
+ok('推荐后同步三张卡、记住这次风格，按钮变「换一组」',
+   'state.sel.layout = L;' in _html and 'state.sel.color  = C;' in _html
+   and "_comboLast = {layout: L.id, style: S.id, color: C.id};" in _html
+   and "btn.textContent = '换一组';" in _html)
+
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')
 sys.exit(0 if failed == 0 else 1)

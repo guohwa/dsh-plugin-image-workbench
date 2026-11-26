@@ -140,6 +140,26 @@
     box-shadow:0 2px 6px rgba(76,58,180,.35)}
   .tile img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#f6f5fb;display:block}
   .tile span{font-size:11.5px;color:var(--ink-2);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* 按内容推荐组合：一条窄带，读完内容再给三张卡配色，不改变四卡布局（用户 2026-11-27 需求） */
+  .combo-rec{display:flex;align-items:center;gap:10px;margin:12px 0 0;padding:8px 10px;
+    border:1px dashed #ded4fb;border-radius:12px;background:linear-gradient(135deg,#faf7ff,#fff9fc)}
+  .combo-rec .cr-ic{flex:none;display:flex;align-items:center;justify-content:center;width:26px;height:26px;
+    border-radius:8px;background:linear-gradient(135deg,#efe9ff,#ffe9f3);color:var(--primary)}
+  .combo-rec .cr-txt{flex:1;min-width:0;font-size:12.5px;line-height:1.6;color:var(--ink-2);letter-spacing:.2px}
+  /* 小字号不加粗：没有真粗体中文字时浏览器会「描边加粗」，字会胀出字宽压到邻居上，
+     题材改用一枚小胶囊强调，后面的组合用普通字重，读起来更稳 */
+  .combo-rec .cr-tag{display:inline-block;margin:0 7px 0 2px;padding:1px 7px;border-radius:7px;
+    background:#efe9ff;color:#5b49d6;font-weight:600;letter-spacing:.2px}
+  .combo-rec .cr-btn{flex:none;padding:7px 13px;font-size:12.5px;border-radius:9px}
+  .combo-rec .cr-btn[disabled]{opacity:.55;cursor:default}
+  .combo-rec.busy .cr-ic{animation:crspin 1s linear infinite}
+  @keyframes crspin{to{transform:rotate(360deg)}}
+  @media (max-width:860px){
+    .combo-rec{flex-wrap:wrap;gap:8px}
+    .combo-rec .cr-ic{display:none}
+    .combo-rec .cr-txt{order:1;flex:1 1 100%}
+    .combo-rec .cr-btn{order:2;flex:0 0 auto;margin-left:auto}
+  }
   /* 图型 / 风格 / 主题色 / 参考图：四张严格一行等宽对齐（用户 2026-11-26 要求参考图和上面对齐）
      之前参考图因 flex-basis 被挤到第二行铺满，视觉上跟前三张不齐；现在四张同宽同高。 */
   .pick-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:10px 0 4px;
@@ -1288,6 +1308,12 @@
   <section class="panel" id="studioPanel">
     <h2>配图工坊 <span class="pill">handraw-style</span></h2>
     <p class="hint">先定组合拿到出图指令，再逐条补说明，程序拼好提示词后一次出图。提示词可手改。</p>
+    <!-- 按内容推荐：单图读关键字，多图读选题 / 标题 / 正文 / 分镜，配好直接落到下面三张卡上 -->
+    <div class="combo-rec" id="comboRec">
+      <span class="cr-ic"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.9 5.4L19 9.3l-5.1 1.9L12 16.6l-1.9-5.4L5 9.3l5.1-1.9L12 2z"/><path d="M18.5 15l.8 2.3 2.3.8-2.3.8-.8 2.3-.8-2.3-2.3-.8 2.3-.8.8-2.3z"/></svg></span>
+      <span class="cr-txt" id="comboRecNote">读完你的内容，自动配一套图型 · 风格 · 主题色；不满意就再点一次换一组。</span>
+      <button class="btn primary cr-btn" id="comboRecBtn" type="button" title="按当前内容（单图读关键字，多图读选题/正文/分镜）推荐一套组合，直接替换上面三张卡">按内容推荐</button>
+    </div>
     <div class="demo-note" id="demoNote" hidden>
       <span id="demoNoteText"></span>
       <button class="dn-x" id="demoNoteX" type="button" title="知道了">×</button>
@@ -1414,6 +1440,7 @@
         <div class="qs-foot">
           <span class="qs-status" id="qsStatus"></span>
           <button class="qs-btn" id="qsRestore" type="button" title="一键还原示例的图型、风格、主题色和关键字">还原示例</button>
+          <button class="qs-btn" id="qsRec" type="button" title="按这个框里的内容配一套图型/风格/主题色，配好会自动切换图文或纯图">推荐组合</button>
           <button class="qs-btn" id="qsPolish" type="button" title="把关键字和上面的图型/风格/主题色/参考图拼成完整提示词，直接覆盖在这个输入框里，可继续手改">优化提示词</button>
           <button class="qs-btn primary" id="qsGen" type="button" title="按输入框里的提示词直接出一张图，不进分镜清单">直接出图</button>
         </div>
@@ -2199,6 +2226,121 @@ function ensureStyle(){
   syncPicks();
   toast(`没选风格，按${hit.name || hit.id}出图；要换风格点风格卡`, {type:'ok', title:'已自动带画风'});
   return hit;
+}
+
+/* ---------- 按内容推荐组合（图型 / 风格 / 主题色），用户 2026-11-27 需求 ----------
+   内容从「当前在用的地方」读：单图读关键字（优化过就读原始关键字），多图读选题 / 标题 / 正文 / 分镜。
+   第一次按内容配一组；再点就是「换一组」——上一组放进 avoid，同一段内容也能换到同档的其他搭配。
+   打分在后端（server/recommend.py），纯词表，不调模型，点一下就有结果。 */
+let _comboLast = null;      // 上一次推荐的三个 id，用来让「换一组」真的换
+let _comboBusy = false;
+
+function comboSource(src){
+  const val = sel => { const el = $(sel); return el ? (el.value || '') : ''; };
+  // 提示词已经覆盖了输入框时，要按原始关键字判断内容，别拿九行提示词去匹配题材
+  const singleText = () => ((_qsOptimized && _qsRawKey) ? _qsRawKey : val('#qsKey')).trim();
+  const multiText = () => {
+    const parts = [val('#topic'), val('#docTitle'), val('#docBody'), val('#novelBody')];
+    (state.items || []).forEach(it => { parts.push(it.title || '', it.body || ''); });
+    return parts.join('\n').replace(/\n{2,}/g, '\n').trim();
+  };
+  const hasItems = (state.items || []).some(it => (it.title || '').trim() || (it.body || '').trim());
+  const s = singleText(), m = multiText();
+  // 返回「文字 + 这段文字从哪来」：来源决定用单图的纯图-图文，还是多图的纯图-图文-摄影
+  if (src === 'single') return s ? {text: s, from: 'single'} : {text: m, from: 'multi'};
+  if (src === 'multi')  return m ? {text: m, from: 'multi'}  : {text: s, from: 'single'};
+  // 拆过分镜就按分镜走；没有分镜时单图框里写了什么就按单图走
+  if (hasItems && m) return {text: m, from: 'multi'};
+  if (s) return {text: s, from: 'single'};
+  return {text: m, from: 'multi'};
+}
+
+function comboNote(html){
+  const el = $('#comboRecNote');
+  if (el && html != null) el.innerHTML = html;
+}
+
+async function comboRecommend(src){
+  if (_comboBusy) return;
+  const picked = comboSource(src);
+  const text = picked.text;
+  // 内容是从单图框来的就走单图的纯图/图文；从选题/正文/分镜来就走多图的三种模式
+  const useSingle = picked.from === 'single';
+  if (!text){
+    toast('上面还没有内容：单图先写关键字，多图先写选题或拆好分镜', {type:'err', title:'没有可读的内容'});
+    return;
+  }
+  const btn = $('#comboRecBtn');
+  const prevHtml = $('#comboRecNote') ? $('#comboRecNote').innerHTML : '';
+  _comboBusy = true;
+  if (btn){ btn.disabled = true; btn.textContent = '正在配…'; }
+  const bar = $('#comboRec');
+  if (bar) bar.classList.add('busy');
+  comboNote('正在读内容，给 170 个图型、372 种风格和 36 个配色打分…');
+  try{
+    // 单图 / 多图各自有自己的模式：单图按纯图-图文，多图按纯图-图文-摄影
+    const body = {
+      text: text.slice(0, 8000),
+      // 单图推了图型就会切图文，所以直接按图文问；多图保持它自己的三种模式
+      mode: useSingle ? (state.qsMode === 'pure-image' ? 'graphic-text' : state.qsMode)
+                      : (state.omode || 'graphic-text'),
+      seed: Math.floor(Math.random() * 1e9),
+      avoid_layout: _comboLast ? [_comboLast.layout] : [],
+      avoid_style:  _comboLast ? [_comboLast.style]  : [],
+      avoid_color:  _comboLast ? [_comboLast.color]  : []
+    };
+    const r = await fetch('/api/recommend', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    const L = (state.layouts || []).find(x => x.id === (d.layout || {}).id);
+    const S = (state.styles  || []).find(x => x.id === (d.style  || {}).id);
+    const C = (state.colors  || []).find(x => x.id === (d.color  || {}).id);
+    if (!L || !S || !C) throw new Error('推荐结果没在库里找到');
+
+    state.sel.layout = L;
+    state.sel.style  = S;
+    state.sel.color  = C;
+    state.selTouched = true;
+    state.styleOptOut = false;                       // 推荐就是要画风，别留着「明确不要」
+    try{ localStorage.setItem('iw_style_last', S.id); }catch(e){}
+    _comboLast = {layout: L.id, style: S.id, color: C.id};
+    syncPicks();                                     // 三张卡、出图指令、纯图/图文模式一起刷新
+
+    // 单图这边推了图型却停在纯图，图型等于没用：明确切到图文（用户再点纯图才算手动锁定）
+    let modeTip = '';
+    if (useSingle && state.qsMode === 'pure-image'){
+      state.qsMode = 'graphic-text';
+      state.qsModeAuto = true;
+      if (window.qsPaintMode) qsPaintMode();
+      modeTip = '，已切到图文（图型要排字）';
+    }
+    const tags = (d.tags || []).map(t => t.name);
+    const tagTxt = tags.length ? tags.slice(0, 2).join(' · ') : '通用';
+    const styleName = S.ref || S.name_en || S.id;
+    if (btn) btn.textContent = '换一组';
+
+    // 单图这边：框里已经是提示词，就按新组合顺手重拼，别让画面和框里的字对不上
+    if (useSingle && _qsOptimized){
+      try{
+        const p = await qsCompose(qsCurrentKeyword());
+        if (p){ $('#qsKey').value = p; qsFitKey(); _qsFingerprint = qsCardFingerprint(); }
+      }catch(e){ /* 重拼失败不影响选型，出图时还会再拼一次 */ }
+    }
+
+    comboNote('<i class="cr-tag">' + esc(tagTxt) + '</i>' +
+      esc(L.id + ' ' + L.title) + ' · ' + esc(styleName) + ' · ' + esc(C.name) +
+      (d.note ? '　（' + esc(d.note) + '）' : ''));
+    toast('图型 ' + L.title + ' · ' + styleName + ' · ' + C.name + modeTip,
+      {type:'ok', title: '按内容配好了：' + tagTxt});
+  }catch(e){
+    comboNote(prevHtml || '推荐失败，可以直接手选三张卡');
+    toast('推荐失败：' + e.message, {type:'err'});
+  }finally{
+    _comboBusy = false;
+    if (btn){ btn.disabled = false; if (!_comboLast) btn.textContent = '按内容推荐'; }
+    if (bar) bar.classList.remove('busy');
+  }
 }
 
 /* ---------- 参考图（可选）：上传 / 拖入 / 粘贴 ---------- */
@@ -5171,6 +5313,8 @@ $('#genImage').onclick = runImage;
 $('#qsPolish').onclick = qsPolish;
 $('#qsGen').onclick = qsGenerate;
 $('#qsRestore').onclick = qsRestoreExample;
+if ($('#comboRecBtn')) $('#comboRecBtn').onclick = ()=> comboRecommend('auto');
+if ($('#qsRec')) $('#qsRec').onclick = ()=> comboRecommend('single');
 if ($('#qsKey')) $('#qsKey').addEventListener('input', qsFitKey);
 /* 单图纯图 / 图文切换：只影响单图拼词，多图模式保持自己的选择 */
 document.querySelectorAll('#qsModeSeg button').forEach(b=>{

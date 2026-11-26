@@ -38,6 +38,7 @@ import imaging
 import pool as pool_mod
 import pool_admin
 import pool_service
+import recommend as recommend_mod
 from starlette.concurrency import run_in_threadpool
 from drafts import Drafts
 from history import History
@@ -368,6 +369,17 @@ class ComposeRequest(BaseModel):
     instruction: str | None = None
     allow_blank: bool = False
     items: list[ComposeItem] = Field(default_factory=list)
+
+
+class RecommendRequest(BaseModel):
+    # 内容可以是一句话（单图），也可以是选题 / 标题 / 正文 / 分镜拼起来的长文本（多图）
+    text: str = ""
+    mode: str = "graphic-text"
+    # 同 seed 结果固定；前端每次「换一组」换一个 seed，并把上一组放进 avoid
+    seed: int | None = None
+    avoid_layout: list[str] = Field(default_factory=list)
+    avoid_style: list[str] = Field(default_factory=list)
+    avoid_color: list[str] = Field(default_factory=list)
 
 
 class ComicStoryboardRequest(BaseModel):
@@ -3614,6 +3626,21 @@ async def api_compose(req: ComposeRequest):
                    "visual": it.visual} for it in req.items],
     }
     return JSONResponse(await composer.compose(payload, CATALOG["styles"], CATALOG["layouts"], CATALOG["colors"]))
+
+
+@app.post("/api/recommend")
+async def api_recommend(req: RecommendRequest):
+    """按内容推荐一组「图型 + 风格 + 主题色」。
+
+    纯词表打分，不调模型：同一段文字、同一个 seed 结果固定；换 seed 从同档候选里另抽一个，
+    avoid 把上一组压下去，所以连点「换一组」不会原地打转。
+    """
+    seed = req.seed if req.seed is not None else secrets.randbelow(1_000_000)
+    out = recommend_mod.recommend(
+        (req.text or "")[:8000], seed=seed, mode=req.mode,
+        avoid={"layout": req.avoid_layout, "style": req.avoid_style, "color": req.avoid_color},
+    )
+    return JSONResponse(out)
 
 
 @app.post("/api/autoscene")
