@@ -2328,7 +2328,7 @@ async function comboRecommend(src){
       }catch(e){ /* 重拼失败不影响选型，出图时还会再拼一次 */ }
     }
 
-    comboNote('<i class="cr-tag">' + esc(tagTxt) + '</i>' +
+    comboNote('<i class="cr-tag">' + esc(tagTxt) + '</i> ' +
       esc(L.id + ' ' + L.title) + ' · ' + esc(styleName) + ' · ' + esc(C.name) +
       (d.note ? '　（' + esc(d.note) + '）' : ''));
     toast('图型 ' + L.title + ' · ' + styleName + ' · ' + C.name + modeTip,
