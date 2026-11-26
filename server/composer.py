@@ -663,9 +663,15 @@ def build_prompt(item: dict, sel: dict, ratio: str, moods: list[str],
         blocks.append(_ids_to_names(instr, sel))
 
     if image_mode in ("photo", "pure-image"):
-        head = style_line(style) + color_line(color)
-        if head:
-            blocks.append(head)
+        # 纯图也按官方那套字段顺序写（风格名称 / 参考作者 / 主题色 / 画幅 / 核心特征 / 情绪），
+        # 只是不写「排版要求」、不加图文后缀。以前它单独走 style_line 把三者揉进一个括号，
+        # 同一句主题在纯图下拼出来的文本和官方差一整段（用户 2026-11-26 截图）。
+        if image_mode == "pure-image":
+            blocks += graphic_head(style, color, ratio, None, moods)
+        else:
+            head = style_line(style) + color_line(color)
+            if head:
+                blocks.append(head)
 
     # 缩微摄影融合在纯图 / 图文 / 摄影三种模式下都生效（用户 2026-11-05 定）
     # 但线稿类画风不能用写实摄影那套措辞，否则画风被改掉（用户 2026-11-26 反馈小林漫画出成暖调摄影）
@@ -690,29 +696,39 @@ def build_prompt(item: dict, sel: dict, ratio: str, moods: list[str],
             if shoot:
                 blocks.append(f"拍摄类型：{shoot}。")
             blocks.append(PHOTO_KEYWORDS)
-        else:
-            blocks.append(PURE_LEAD)
-            blocks.append(PURE_NO_TEXT)
+        # 纯图：「纯图模式。」这种系统术语模型读不懂，直接由下面那条「不要出现任何文字」说话
         subject = re.sub(r"^0*\d{1,3}[\s.．、,，:：｜|\-—]+", "", title).strip() or title
         # 分镜标题/正文/小辅助图都当画面内容；各自收掉句末标点，避免「。。」
-        scene_bits = [re.sub(r"[。！？\.!?，,；;]+$", "", x).strip() for x in (subject, body, scene)]
+        scene_bits = [re.sub(r"[。！？\.!?，,；;]+$", "", x).strip() for x in (body, scene)]
         scene_bits = [x for x in scene_bits if x]
-        if scene_bits:
-            blocks.append("画面：" + "。".join(scene_bits) + "。")
-        elif ref:
-            # 只传了参考图、没写任何文案：不给主体的话模型只能照抄原图
-            blocks.append("画面：沿用参考图里的主体与场景，重新组织构图，"
-                          "画一张完整的画面，画面里不排文字。")
-        tail = []
-        if moods:
-            tail.append("情绪：" + "、".join(moods))
-        if color:
-            tail.append(f"{color.get('name') or ''}作统一色调点缀")
-        if ratio:
-            tail.append(f"画幅比例 {ratio}")
-        tail = [t for t in tail if t and t.strip("：")]
-        if tail:
-            blocks.append("。".join(tail) + "。")
+        if image_mode == "pure-image":
+            # 纯图不排字，没有「主题 / 正文」之分，标题和正文都是画面内容，合成一条才完整
+            bits = [x for x in [subject] + scene_bits if x]
+            paint = "。".join(dict.fromkeys(bits))
+            if paint:
+                blocks.append("画面：" + paint + "。")
+            elif ref:
+                blocks.append("画面：沿用参考图里的主体与场景，重新组织构图，"
+                              "画一张完整的画面，画面里不排文字。")
+            blocks.append(PURE_NO_TEXT)
+        else:
+            paint = "。".join(scene_bits)
+            if paint:
+                blocks.append("画面：" + paint + "。")
+            elif ref:
+                # 只传了参考图、没写任何文案：不给主体的话模型只能照抄原图
+                blocks.append("画面：沿用参考图里的主体与场景，重新组织构图，"
+                              "画一张完整的画面，画面里不排文字。")
+            tail = []
+            if moods:
+                tail.append("情绪：" + "、".join(moods))
+            if color:
+                tail.append(f"{color.get('name') or ''}作统一色调点缀")
+            if ratio:
+                tail.append(f"画幅比例 {ratio}")
+            tail = [t for t in tail if t and t.strip("：")]
+            if tail:
+                blocks.append("。".join(tail) + "。")
         if str(ratio or "").strip() == WIDE_CROP_RATIO:
             blocks.append(WIDE_CROP_HINT)
         if whitespace in WHITESPACE:

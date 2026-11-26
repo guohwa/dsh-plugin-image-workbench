@@ -634,6 +634,19 @@ ok('纯图模式不套图型版式，也不进文字槽位',
    all(x not in _pure for x in ('三层版式', '主标题文字', '正文文字', '文字清晰可读', '上层主标题')))
 ok('纯图模式明令不出字，标题正文只当画面内容',
    composer.PURE_NO_TEXT in _pure and '画面：一只橘猫' in _pure and '趴在窗台晒太阳' in _pure)
+# 纯图也要官方字段结构（用户 2026-11-26：选了 SC-008 点优化提示词，拿到一段没头没尾的纯图文本）
+_pure_real = composer.build_prompt(
+    {'title': '', 'body': '有很多事你当时想不通，别着急，过段时间你可能就忘了。', 'scene': ''},
+    {'style': next((s for s in catalog.build()['styles'] if s['id'] == 'FE-060'), None),
+     'layout': _cat_layouts.get('SC-008'),
+     'color': next((c for c in catalog.build()['colors'] if c['id'] == 'C-34'), None)},
+    '3:4', ['治愈'], False, 'normal', ref=False, image_mode='pure-image')
+ok('纯图提示词同样是官方字段结构，不再把风格名和特征揉进括号',
+   all(x in _pure_real for x in ('风格名称：', '参考作者/风格名称：', '主题色：', '画幅比例：3:4。',
+                                 '核心风格特征：', '情绪基调：')),
+   '纯图提示词：' + _pure_real[:60])
+ok('纯图不再出现「纯图模式。」这种模型读不懂的系统术语，也不写排版要求',
+   '纯图模式' not in _pure_real and '排版要求' not in _pure_real)
 ok('纯图/图文/摄影三种模式指令各自独立',
    '纯图模式' in composer.build_instruction({'layout': _L[0]}, '3:4', [], False, 'normal', False, 'pure-image', '')
    and '图型：SC-002' not in composer.build_instruction({'layout': _L[0]}, '3:4', [], False, 'normal', False, 'pure-image', '')

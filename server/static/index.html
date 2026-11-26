@@ -2155,6 +2155,7 @@ function syncPicks(){
     $('#note').placeholder = '主题色：' + state.sel.color.name + '（可在下方写补充要求）';
   }
   syncInstr();
+  qsAutoMode();                // 图型换了，单图快出的纯图/图文跟着切（手动切过则不动）
   noteContentChanged();        // 换图型 / 风格 / 主题色也算内容改动
 }
 
@@ -2691,8 +2692,9 @@ state.group = '';
 state.mode = 'image';
 /* 出图模式：pure-image 纯图（只出画面不排字）/ graphic-text 图文（默认，行为与以前一致）/ photo 摄影 */
 state.omode = 'graphic-text';
-/* 单图快出自己的模式：默认纯图，和多图模式互不干扰 */
+/* 单图快出自己的模式：初值纯图，选了图型会自动切图文（qsAutoMode），手动切过就不再自动跟随 */
 state.qsMode = 'pure-image';
+state.qsModeAuto = true;
 /* 记住当前正在编辑哪份草稿，以及它的「身份键」（选题，空则用标题）。
    暂存时比对身份键：同一篇继续改就更新那份，换了选题就另存新的，
    避免把上一篇草稿悄悄覆盖掉（选题变了还写回旧 id 是最坑的一种）。 */
@@ -2882,14 +2884,27 @@ function qsSetOpen(open){
   if (body) body.hidden = !open;
 }
 /* 单图纯图 / 图文切换：只改自己的模式，不碰多图模式；框里已有词时靠指纹变化触发重拼 */
-function qsSetMode(mode){
-  state.qsMode = mode === 'graphic-text' ? 'graphic-text' : 'pure-image';
+function qsPaintMode(){
   document.querySelectorAll('#qsModeSeg button').forEach(b=>{
     b.classList.toggle('on', b.dataset.qsmode === state.qsMode);
   });
   const hint = $('#qsModeHint');
   if (hint) hint.textContent = state.qsMode === 'pure-image'
     ? '只出画面，不排任何文字' : '图里排标题和正文文字';
+}
+/* 模式默认跟着图型走：图型库里的版式全都带文字（图上文下 / 文案主导 / 三宫格…），
+   选了图型就该是图文；只有没选图型时才落回纯图。以前默认写死纯图，用户选了 SC-008
+   点「优化提示词」，拿到的是一段没有排版要求的纯图文本（用户 2026-11-26 反馈）。 */
+function qsAutoMode(){
+  if (!state.qsModeAuto) return;          // 用户手动切过就以手动为准
+  const want = state.sel && state.sel.layout ? 'graphic-text' : 'pure-image';
+  if (state.qsMode !== want) state.qsMode = want;
+  qsPaintMode();
+}
+function qsSetMode(mode){
+  state.qsMode = mode === 'graphic-text' ? 'graphic-text' : 'pure-image';
+  state.qsModeAuto = false;               // 手动选择后不再被图型改动覆盖
+  qsPaintMode();
 }
 let _qsOptimized = false;   // 输入框里现在是不是提示词（点过「优化提示词」或拼过词）；false=还是原始关键字
 let _qsRawKey = '';          // 用户原始关键字：优化后框里变成提示词，原始关键字留在这里，选型变了要靠它重拼
@@ -2934,6 +2949,12 @@ function qsCurrentKeyword(){
   const t = ($('#qsKey').value || '').trim();
   _qsRawKey = t;
   return t;
+}
+/* 拼出来的提示词有八九行，3 行高的输入框看不全：按内容撑开，最多 320px，再多就用滚动 */
+function qsFitKey(){
+  const el = $('#qsKey'); if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight + 2, 320) + 'px';
 }
 function qsStatus(msg, kind){
   const el = $('#qsStatus'); if (!el) return;
@@ -2988,6 +3009,7 @@ async function qsPolish(){
     if (!prompt) throw new Error('拼词返回为空');
     // 优化结果原地覆盖关键字，不碰下方「出图指令」
     $('#qsKey').value = prompt;
+    qsFitKey();                             // 九行提示词撑开输入框，不用在小框里滚
     _qsOptimized = true;
     _qsFingerprint = qsCardFingerprint();   // 记住这次是按哪套选型拼的
     qsStatus('提示词已优化，可在这个框里继续手改', 'ok');
@@ -5105,6 +5127,7 @@ $('#genImage').onclick = runImage;
 $('#qsPolish').onclick = qsPolish;
 $('#qsGen').onclick = qsGenerate;
 $('#qsRestore').onclick = qsRestoreExample;
+if ($('#qsKey')) $('#qsKey').addEventListener('input', qsFitKey);
 /* 单图纯图 / 图文切换：只影响单图拼词，多图模式保持自己的选择 */
 document.querySelectorAll('#qsModeSeg button').forEach(b=>{
   b.onclick = ()=>{
