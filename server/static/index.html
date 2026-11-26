@@ -1459,7 +1459,7 @@
     <div class="chips" id="moodChips"></div>
     <label class="cbx" style="margin-top:9px" id="fusionRow">
       <input type="checkbox" id="fusion">
-      <span>缩微摄影融合 · 角色小、场景真，同光源同空间（实景/摄影类图用；纯色留白卡勾了会把人缩得很小）</span>
+      <span>缩微摄影融合 · 角色小、场景真，同光源同空间（已按图型自动判断：漫画分镜 / 插图默认勾上，纯色留白卡默认不勾，勾了会把角色缩成小人）</span>
     </label>
 
     <div class="stepbar">
@@ -2132,8 +2132,7 @@ function pickMeta(kind, it){
   return {id: it.id, name: it.name || ''};
 }
 
-function syncPicks(){
-  CARD_KINDS.forEach(([k, sfx])=>{
+function syncPicks(){  CARD_KINDS.forEach(([k, sfx])=>{
     const it = state.sel[k];
     const m = pickMeta(k, it);
     $('#card'+sfx).classList.toggle('on', !!it);
@@ -2156,7 +2155,30 @@ function syncPicks(){
   }
   syncInstr();
   qsAutoMode();                // 图型换了，单图快出的纯图/图文跟着切（手动切过则不动）
+  syncFusionDefault();         // 融合默认也跟着图型走，别再一刀切
   noteContentChanged();        // 换图型 / 风格 / 主题色也算内容改动
+}
+
+/* ---------- 缩微摄影融合的默认值（用户 2026-11-26 问「为什么默认没勾上」） ----------
+   这个勾不是固定开或固定关：纯色留白的社媒卡勾上会把角色缩成小人，和「高度概括的角色图」
+   打架，所以留白卡默认不勾；漫画分镜、插图、摄影这些有场景的版式默认勾上，有场景才有故事感。
+   同一张图型下用户自己动过勾，就按他的来（记在 sessionStorage，按图型分别记）。 */
+const FLAT_LAYOUT_HINTS = ['纯色背景', '纯白背景', '纯黑背景', '纯色底', '留白背景',
+                           '大面积留白', '较多留白', '大量留白'];
+function isFlatLayout(layout){
+  const t = (layout && layout.prompt) || '';
+  return FLAT_LAYOUT_HINTS.some(k => t.indexOf(k) >= 0);
+}
+function _fusionMap(){
+  try{ return JSON.parse(sessionStorage.getItem('iw_fusion_by_layout') || '{}') || {}; }
+  catch(e){ return {}; }
+}
+function syncFusionDefault(){
+  const box = $('#fusion'); if (!box) return;
+  const id = (state.sel.layout && state.sel.layout.id) || '';
+  const map = _fusionMap();
+  if (Object.prototype.hasOwnProperty.call(map, id)){ box.checked = !!map[id]; return; }
+  box.checked = !isFlatLayout(state.sel.layout);
 }
 
 /* ---------- 没选风格时的护栏（用户 2026-11-26） ----------
@@ -2675,16 +2697,9 @@ async function polishText(){
 
 /* ---------- 分镜清单 & 提示词组装 ---------- */
 const MOOD_PRESETS = ['治愈','童趣','松弛','幽默','诗意','浪漫','活力','微丧','孤独','紧张','庄严','荒诞','神秘','激烈'];
-/* 默认组合：情绪「治愈、松弛、幽默」，缩微摄影融合在图文 / 摄影两种模式下都勾上。
-   HTML 上的 value / checked 就是默认值，专门防忘记；复选框始终可取消。
-   用户手动动过融合复选框后，用 sessionStorage 在当前标签页记住他的选择：
-   刷新不再强制勾回去，关掉标签页重新打开才回到默认勾上。 */
+/* 默认情绪。缩微摄影融合不再固定勾/不勾，改由 syncFusionDefault 按图型决定：
+   纯色留白卡不勾（勾了角色会被缩成小人），漫画分镜 / 插图 / 摄影这类有场景的勾上。 */
 const DEFAULT_MOOD = '治愈、松弛、幽默';
-function applyDefaults(){
-  $('#mood').value = DEFAULT_MOOD;
-  $('#fusion').checked = true;
-  try{ sessionStorage.removeItem('wb_fusion_user'); }catch(e){}
-}
 /* 拍摄类型：照搬 handraw-style/gallery/tutorials.html 摄影模式的 10 个预设，不另写 */
 const SHOOT_PRESETS = ['情侣','婚纱','个人写真','亲子全家福','古风汉服','新中式','复古港风','Cosplay','旅行抓拍','职场肖像'];
 /* 封面条识别：优先看对象上的 cover 标记；老记录没有标记，
@@ -5265,7 +5280,10 @@ $('#composeAll').onclick = composeAll;
 $('#mood').addEventListener('input', ()=>{ renderMoodChips(); syncInstr(); });
 $('#ratio').addEventListener('change', ()=>{ syncInstr(); syncRatioUi(); });
 $('#fusion').addEventListener('change', ()=>{
-  try{ sessionStorage.setItem('wb_fusion_user', $('#fusion').checked ? '1' : '0'); }catch(e){}
+  // 手动勾选按「当前图型」记下来，换别的图型仍按那张卡的默认走
+  const _fid = (state.sel.layout && state.sel.layout.id) || '';
+  const _fmap = _fusionMap(); _fmap[_fid] = $('#fusion').checked;
+  try{ sessionStorage.setItem('iw_fusion_by_layout', JSON.stringify(_fmap)); }catch(e){}
   syncInstr();
   if (state.items.some(x=>(x.prompt||'').trim())) toast('组合已变，请重新点「生成提示词」或单条「重拼」');
 });
@@ -7173,11 +7191,8 @@ $('#monCheck').onclick = async ()=>{
   await refreshMonitor();
 };
 
-/* 本标签页手动取消过勾选就尊重它，别刷新一下又勾回去 */
-try{
-  const _fu = sessionStorage.getItem('wb_fusion_user');
-  if (_fu !== null) $('#fusion').checked = (_fu === '1');
-}catch(e){}
+/* 融合勾选的默认值由 syncFusionDefault 按图型决定（留白卡不勾、有场景的勾），
+   用户在同一张图型下动过就按他的记，这里不再兜底。 */
 renderRedoBar();
 renderMoodChips();
 syncOmode();
