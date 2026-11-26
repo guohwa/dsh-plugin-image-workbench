@@ -1542,9 +1542,20 @@ class PoolManager:
                 with Image.open(io.BytesIO(raw)) as im:
                     w, h = im.size
                     im.convert("RGB").save(final, "PNG")
-                return {"image": final.name, "bytes": final.stat().st_size,
-                        "width": w, "height": h, "via": via,
-                        "saved_to": str(save_to)}
+                result = {"image": final.name, "bytes": final.stat().st_size,
+                          "width": w, "height": h, "via": via,
+                          "saved_to": str(save_to)}
+                # 小说推文漫画：旁白不交给模型画，出图完成后用 Pillow 叠到顶部。
+                # 叠字失败不能毁掉一张已经出好的图，记日志后按原图继续。
+                if job.get("novel_overlay") and job.get("overlay_text"):
+                    try:
+                        import novel_overlay
+                        ov = novel_overlay.apply(final, job["overlay_text"])
+                        result["overlay"] = ov
+                        result["bytes"] = final.stat().st_size
+                    except Exception as e:
+                        log(f"job {job_id}: overlay failed: {e}")
+                return result
 
             payload = {
                 "model": p["model_text"],

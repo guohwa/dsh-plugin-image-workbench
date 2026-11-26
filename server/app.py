@@ -19,6 +19,7 @@ import tempfile
 import time
 import uuid
 import zipfile
+from datetime import datetime
 from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -158,6 +159,11 @@ async def lifespan(app: FastAPI):
 
     pool_service.start_watchdog()
     asyncio.create_task(_patch_running_pool())
+    # 启动时把公众号网关/Token 从本机备份回填一次（只在缺失时写）
+    try:
+        _wx_cfg()
+    except Exception:
+        pass
     await POOL.start()
     yield
     await POOL.stop()
@@ -294,6 +300,7 @@ class GenRequest(BaseModel):
     # 参考图用法：style=只借画风/光影（默认，严禁 1:1 复刻）| full=尽量一比一还原参考图
     ref_mode: str = "style"
     # 出图模式与拍摄类型，只用于历史回看/载入还原，不参与拼提示词（提示词前端已拼好）
+    # 模式取值：pure-image 纯图 | graphic-text 图文 | photo 摄影
     image_mode: str | None = Field(default=None, max_length=16)
     shoot_type: str | None = Field(default=None, max_length=40)
     # 单张重做：新图成功后删掉这条旧记录，实现同一任务内原位替换
@@ -303,6 +310,15 @@ class GenRequest(BaseModel):
     # 从「AI 热点选题」点「用作选题」带来的事件 id：有它就取事件综述当唯一事实来源，
     # 不让模型只凭一句标题脑补日期、名单和数字。前端只在选题文字没被改动时才传。
     story_id: str | None = Field(default=None, max_length=64)
+    # 「做成漫画」的连续设定：全组每格原样带同一份角色外貌锚点与场景锚点，
+    # 否则逐张出图时人物脸型、衣服、标志物会一格一变，读起来不像同一个故事。
+    comic_bible: str | None = Field(default=None, max_length=3000)
+    # 本格与上一格的衔接（"上一格停在…这一格接…"），只作用于当前这一格
+    comic_link: str | None = Field(default=None, max_length=300)
+    # 小说推文漫画：出图后用 Pillow 把旁白叠到画面顶部，引号里的对话标红。
+    # 文字不交给生图模型画，避免中文字形和位置不可控。
+    novel_overlay: bool = False
+    overlay_text: str | None = Field(default=None, max_length=1200)
 
 
 class ZipRequest(BaseModel):
@@ -337,7 +353,7 @@ class ComposeRequest(BaseModel):
     ref: bool = False
     # 参考图用法：style=只借画风（默认）| full=完整复刻
     ref_mode: str = "style"
-    # 出图模式：graphic-text（默认，图文）| photo（摄影）；摄影可带拍摄类型
+    # 出图模式：pure-image（纯图，不出字）| graphic-text（默认，图文）| photo（摄影）；摄影可带拍摄类型
     image_mode: str | None = None
     shoot_type: str | None = None
     # 手改过的出图指令：给了就用它，不再自动拼；allow_blank：允许空标题/正文纯指令出图
@@ -346,10 +362,43 @@ class ComposeRequest(BaseModel):
     items: list[ComposeItem] = Field(default_factory=list)
 
 
+class ComicStoryboardRequest(BaseModel):
+    topic: str = ""
+    story_id: str | None = None
+    # 没有 storyId 的频道（精选 / 全部动态 / 日报明细）把条目的摘要直接带过来
+    digest: str | None = None
+    n: int | None = Field(default=None, ge=3, le=20)
+
+
 def _find(items: list[dict], item_id: str | None) -> dict | None:
     if not item_id:
         return None
     return next((x for x in items if x["id"] == item_id), None)
+
+
+def _comic_block(req: "GenRequest") -> str:
+    """连续漫画的锚点块：全组固定设定 + 本格承接，原样拼到每张图的提示词最前。
+
+    用户手改提示词也照加，因为这是「同一组图」的硬约束，不是可改的文案。
+    """
+    bible = "\n".join(
+        re.sub(r"[ \t]+", " ", x).strip()
+        for x in str(req.comic_bible or "").splitlines() if x.strip())
+    link = re.sub(r"\s+", " ", str(req.comic_link or "")).strip()
+    parts = []
+    if bible:
+        parts.append("【这组连续漫画的固定设定，每格都必须照此保持一致，不要重新设计人物】\n" + bible)
+    if link:
+        parts.append("【与上一格的衔接，画面要接得上】\n" + link)
+    return ("\n".join(parts) + "\n") if parts else ""
+
+
+def _novel_no_text(prompt: str) -> str:
+    """叠字模式下把提示词里的「气泡文字」剥掉，并明令画面里不要出现文字。"""
+    p = re.sub(r"\s*气泡文字：[^\n]{1,120}", "", str(prompt or ""))
+    return (p.strip() + "\n"
+            "画面里不要出现任何文字、字幕、标语或对白气泡，顶部留出干净的画面；"
+            "旁白会在出图后另行叠加。").strip()
 
 
 def build_image_prompt(req: GenRequest) -> str:
@@ -359,16 +408,21 @@ def build_image_prompt(req: GenRequest) -> str:
     if req.ref_id:
         # style=只借画风（默认，严禁 1:1 复刻）；full=尽量一比一还原参考图
         ref_instr = composer.REF_FUSION if (req.ref_mode or "style") != "full" else composer.REF_FUSION_FULL
+    comic = _comic_block(req)
     if req.prompt and req.prompt.strip():
-        # 已有文案（来自「生成提示词」或手改）：把参考约束拼在最前，绝不丢掉
-        return (ref_instr + "\n" + req.prompt.strip()) if ref_instr else req.prompt.strip()
+        # 已有文案（来自「生成提示词」或手改）：把参考约束和连续设定拼在最前，绝不丢掉
+        body = req.prompt.strip()
+        if req.novel_overlay:
+            body = _novel_no_text(body)
+        return ref_instr + comic + body
     style = _find(CATALOG["styles"], req.style_id)
     layout = _find(CATALOG["layouts"], req.layout_id)
     color = _find(CATALOG["colors"], req.color_id)
     parts: list[str] = []
     if ref_instr:
         parts.append(ref_instr)
-    if layout:
+    # 纯图模式没有现成 prompt 时走这条兜底：不套图型版式，也不让模型画字
+    if layout and (req.image_mode or "graphic-text") != "pure-image":
         parts.append(f"排版图型：{layout['prompt']}")
     if color:
         parts.append(color["prompt"])
@@ -384,8 +438,13 @@ def build_image_prompt(req: GenRequest) -> str:
     if req.note:
         parts.append(f"补充要求：{req.note.strip()}")
     parts.append(composer.NO_CUP_RULE)
+    if (req.image_mode or "") == "pure-image":
+        parts.append(composer.PURE_NO_TEXT)
+    if req.novel_overlay:
+        parts.append("画面里不要出现任何文字、字幕、标语或对白气泡，顶部留出干净的画面；"
+                     "旁白会在出图后另行叠加。")
     parts.append("请立即生成图片，不要反问，不要输出任何解释文字。")
-    return "\n".join(parts)
+    return comic + "\n".join(parts)
 
 
 _LIST_INTENT_RE = re.compile(
@@ -982,15 +1041,25 @@ def _aihot_scrape_real() -> dict | None:
         return None
     uuid_re = _re.compile(
         r'href="/story/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"')
-    # 热度数字：mono + font-semibold + leading-none（排名数字用 leading-[24px]，会被排除）
+    # 热度数字：mono + font-semibold + leading-none 的 span。
+    # 2026-11-22 起 class 从 text-[16px] 改成 text-ui-subheading-sm，写死像素会整页失配，
+    # 导致抓取全空、一路回退到派生 0（表现就是「全部持平」）。放宽为任意 class token。
+    # 排名数字 class 是 leading-[24px] 且无 font-semibold，仍会被排除。
     heat_re = _re.compile(
-        r'class="mono text-\[\d+px\] font-semibold[^>]*leading-none[^>]*>(\d+)</(?:span|div)>')
-    change_re = _re.compile(
-        r'title="较 ([^"]*)"[^>]*>(↑|↓)<!-- -->\s*<!-- -->(\d+)<!-- -->%')
+        r'class="mono [^"]*font-semibold[^"]*leading-none[^"]*">(\d+)</(?:span|div)>')
+    # 涨跌徽章：title="较 X 小时前" 的 span，内容是「持平」或「↑ 47%」/「↓ 16%」。
+    # 新版把箭头和数字用 HTML 注释 + 空格拆开（↑<!-- --> <!-- -->47<!-- -->%），
+    # 旧版是紧挨着的，所以整段 strip 掉注释/标签后再判断。
+    badge_re = _re.compile(r'title="较 ([^"]*)"[^>]*>(.*?)</span>', _re.S)
     # hero 卡用 <article>，列表卡用 aria-label="热度排名第 N 位" 作容器起点，合并排序即 10 段
     markers = [m.start() for m in _re.finditer(r'<article|aria-label="热度排名第', html)]
     markers.sort()
     out = {}
+    # 第一条 hero 卡新版不显示热度数字，单独从「N 位参与者」兜一个 heat，
+    # 否则它会因为 heat=None 被整条丢掉，前端就少一条。
+    hero_fallback = {}
+    for m in _re.finditer(r'aria-label="(\d+) 位参与者，查看名单"', html):
+        hero_fallback.setdefault("participants", int(m.group(1)))
     for i, m in enumerate(markers):
         seg = html[m: (markers[i + 1] if i + 1 < len(markers) else len(html))]
         um = uuid_re.search(seg)
@@ -999,9 +1068,22 @@ def _aihot_scrape_real() -> dict | None:
         sid = um.group(1)
         hm = heat_re.search(seg)
         heat = int(hm.group(1)) if hm else None
-        cm = change_re.search(seg)
-        d = (int(cm.group(3)) if cm.group(2) == "↑" else -int(cm.group(3))) if cm else None
+        bm = badge_re.search(seg)
+        d = None
+        if bm:
+            badge = _re.sub(r"<!--.*?-->", "", bm.group(2), flags=_re.S)
+            badge = _re.sub(r"<[^>]+>", "", badge).strip()
+            if "持平" in badge:
+                d = 0
+            else:
+                nums = _re.findall(r"(\d+)", badge)
+                if nums:
+                    d = int(nums[0]) * (1 if "↑" in badge else -1)
         ferment = "讨论仍在增加" in seg
+        if heat is None:
+            # 先试本卡自己的参与者数，最后用全页第一个（就是 hero 卡）
+            local = _re.search(r'aria-label="(\d+) 位参与者，查看名单"', seg)
+            heat = int(local.group(1)) if local else hero_fallback.get("participants")
         if heat is None:
             continue
         out[sid] = {"heat": heat, "deltaPct": d, "isFermenting": ferment}
@@ -1351,14 +1433,246 @@ async def api_aihot_story(id: str = ""):
     return JSONResponse(data)
 
 
+# ---------------- 热点漫画：事件 → 连续分镜 ----------------
+# 每格单独出一张图，连贯性全靠两样东西：全组固定的角色/场景锚点（bible），
+# 以及每格对上一格的承接。没有这两样，逐张出图会变成「同题不同人」的插画集。
+
+def _comic_clean(s, limit: int) -> str:
+    s = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", str(s or "")).strip()
+    s = s.replace("**", "").replace("`", "")
+    s = s.replace("“", "「").replace("”", "」").replace("‘", "「").replace("’", "」")
+    s = s.replace("——", "，").replace("—", "，").replace("–", "，")
+    return re.sub(r"\s+", " ", s).strip().strip('"\'')[:limit]
+
+
+def _comic_panels_to_doc(panels: list[dict]) -> str:
+    """分镜写成正文框格式，01｜ 编号能被前端 splitDoc 直接拆成分镜卡。"""
+    out = []
+    for p in panels:
+        line = p["body"]
+        if p.get("dialog"):
+            line += " 气泡文字：" + p["dialog"]
+        out.append("%02d｜%s\n%s" % (p["no"], p["title"], line))
+    return "\n\n".join(out)
+
+
+def _comic_bible_text(d: dict) -> str:
+    lines = ["角色固定设定：每格原样保持脸型、发型、发色、衣服、颜色和标志物，不要重新设计人物。"]
+    for c in d.get("chars") or []:
+        lines.append("- " + c["name"] + "：" + c["anchor"])
+    lines.append("场景与光线：" + (d.get("scene_anchor")
+                             or "与事件现场一致，全组光线与色调统一。"))
+    lines.append("画面形式：每格是一张独立的单格漫画，不要在一张图里画多格、不要分页。")
+    return "\n".join(lines)
+
+
+def _comic_parse_storyboard(raw: str, limit: int) -> dict:
+    raw = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", (raw or "").strip())
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw).strip()
+    d = None
+    try:
+        d = json.loads(raw)
+    except Exception:
+        m = re.search(r"\{[\s\S]*\}", raw)
+        if m:
+            try:
+                d = json.loads(m.group(0))
+            except Exception:
+                d = None
+    if not isinstance(d, dict):
+        raise ValueError("分镜脚本不是 JSON 对象")
+
+    chars = []
+    for c in d.get("chars") or []:
+        if not isinstance(c, dict):
+            continue
+        name = _comic_clean(c.get("name"), 12)
+        anchor = _comic_clean(c.get("anchor"), 100)
+        if name and anchor:
+            chars.append({"name": name, "anchor": anchor})
+        if len(chars) >= 4:
+            break
+
+    panels = []
+    for p in d.get("panels") or []:
+        if not isinstance(p, dict):
+            continue
+        body = _comic_clean(p.get("body"), 150)
+        if not body:
+            continue
+        no = len(panels) + 1
+        panels.append({
+            "no": no,
+            "title": _comic_clean(p.get("title"), 14) or ("第%d格" % no),
+            "body": body,
+            "dialog": _comic_clean(p.get("dialog"), 45),
+            # 旁白：出图后叠在画面顶部的那句话，必须来自资料，不能是画面描述
+            "caption": _comic_clean(p.get("caption"), 200) or _comic_clean(p.get("dialog"), 45),
+            "link": _comic_clean(p.get("link"), 80),
+        })
+        if len(panels) >= limit:
+            break
+    if len(panels) < 3:
+        raise ValueError("分镜少于 3 格")
+
+    return {
+        "title": _comic_clean(d.get("title"), 64),
+        "background": _comic_clean(d.get("background"), 200),
+        "chars": chars,
+        "scene_anchor": _comic_clean(d.get("scene_anchor"), 120),
+        "panels": panels,
+    }
+
+
+async def _comic_storyboard_ai(fact: str, topic: str, limit: int) -> dict:
+    prompt = (
+        "你是漫画分镜编辑。把下面这条热点事件改写成一组连续的单格漫画分镜。\n"
+        "事实只能来自下面的资料，人物、时间、地点、数字和结果都不许编造；"
+        "资料没写的细节只能用不涉及事实的画面动作补齐。\n\n"
+        "要求：\n"
+        "- 格数自己判断：以把这件事讲清楚为准，最少 5 格、最多 %d 格，"
+        "用户另给了格数就严格按那个数\n"
+        "- 第一格交代时间和现场，最后一格交代结果或影响；中间按事件发生顺序推进，"
+        "关键数字、各方反应和转折都要有着落\n"
+        "- 每格 body 写画面：谁在哪里做什么、什么表情、什么镜头（远景/中景/特写），"
+        "35 到 70 字，不要写成新闻概述\n"
+        "- dialog 是画面里的气泡文字或旁白，20 字以内，可以是原话的转述；没有就留空字符串\n"
+        "- caption 是要叠在画面顶部的那段旁白，30 到 90 字，必须整句取自资料或资料的"
+        "紧凑转述，别写画面描述；有原话时用「」把原话括起来，出图后会标红\n"
+        "- link 写这一格怎么接上一格，例如「上一格众人还在等，这一格屏幕亮了」，"
+        "20 到 40 字，第一格留空字符串\n"
+        "- chars 是 2 到 4 个出场角色，每个 anchor 用 40 到 70 字固定外貌："
+        "性别、大致年龄、发型发色、衣服颜色、眼镜帽子等标志物，之后每格都不能变\n"
+        "- scene_anchor 固定场景、光线和色调，40 字以内\n"
+        "- background 用一句话说明这件事的背景，40 字以内\n"
+        "- 禁止空词大词：坚持、努力、重要、重视、关键、认知、思维、突破、赋能、打造、助力、旨在\n"
+        "- 不要破折号、不要弯引号（用「」）、不要 markdown、不要 emoji\n"
+        "- 只输出一个 JSON 对象，不要解释，不要代码块，格式：\n"
+        '{"title":"整组标题","background":"背景","chars":[{"name":"角色名","anchor":"外貌固定描述"}],'
+        '"scene_anchor":"场景光线色调","panels":[{"title":"8字内小标题","body":"画面描述",'
+        '"dialog":"气泡文字","caption":"叠在图顶的旁白，原话用「」括起来",'
+        '"link":"与上一格的衔接"}]}\n\n'
+        "事件标题：%s\n资料：\n%s" % (limit, topic[:120], fact[:4000])
+    )
+    # 号池聊天通道常常要几十秒才吐第一个字，60s 超时会让弹窗干等近一分钟。
+    # 20s 内拿不到就走兜底：宁可这版分镜平一点，也要让用户立刻看到结果、
+    # 还能点「重新拆分」再试 AI。真正耗时的调用单独包一层 wait_for，
+    # 防止 chat_once 内部忽略 timeout 时把整条请求拖死。
+    async def _ask():
+        return await pool_mod.chat_once(prompt, max_tokens=4000, temperature=0.5, timeout=20)
+
+    try:
+        raw = await asyncio.wait_for(_ask(), timeout=22)
+    except asyncio.TimeoutError:
+        raise RuntimeError("AI 拆分镜超时")
+    return _comic_parse_storyboard(raw, limit)
+
+
+def _comic_fallback_title(sent: str, idx: int) -> str:
+    """兜底分镜也要有小标题，不能一律「第N格」。标题词必须来自原句，不另编。"""
+    def clip(s: str, n: int = 18) -> str:
+        if len(s) <= n:
+            return s
+        cut = s[:n]
+        if " " in cut:           # 中英混排时别把英文型号砍一半
+            cut = cut[:cut.rfind(" ")]
+        return cut or s[:n]
+
+    s = str(sent or "").strip()
+    # 动作词后面就是这件事的要点：发布 XX、采用 XX、回应 XX
+    m = re.search(r"(?:发布|推出|上线|开源|采用|回应|宣布|表示|称|获批|完成|击败|突破|支持)"
+                  r"\s*(.{2,40}?)(?:[，,：:；;。！？!?]|$)", s)
+    if m:
+        tail = m.group(1).strip(" 的了着")
+        if tail:
+            return clip(tail)
+    first = re.split(r"[，,：:；;。！？!?]", s)[0].strip()
+    if first:
+        return clip(first)
+    return "第%d格" % idx
+
+
+def _comic_storyboard_fallback(fact: str, topic: str, limit: int) -> dict:
+    """AI 不可用时按句号拆资料，不编角色、不编对白，宁可平淡也不造假。"""
+    fact = str(fact or "").replace("“", "「").replace("”", "」")
+    sents = [x.strip() for x in re.split(r"(?<=[。！？!?])", fact) if len(x.strip()) >= 8]
+    if not sents:
+        sents = [topic.strip() or "这条热点暂时没有更多资料。"]
+    # 「是的。」这种引语被句号切开，收尾引号会甩到下一句开头；叠字时不标红还多个孤零零的 」
+    for j in range(len(sents) - 1):
+        if sents[j].count("「") > sents[j].count("」") and sents[j + 1].startswith("」"):
+            sents[j] += "」"
+            sents[j + 1] = sents[j + 1][1:].strip()
+    panels = []
+    for i, sent in enumerate(sents[:limit]):
+        panels.append({
+            "no": i + 1,
+            "title": _comic_fallback_title(sent, i + 1),
+            "body": _comic_clean(sent, 150),
+            "dialog": "",
+            # 兜底没有 AI 旁白，直接拿原句当叠字文案，保证每格顶部都有话
+            "caption": _comic_clean(sent, 150),
+            "link": "承接上一格，时间线继续往前。" if i else "",
+        })
+    # 标题别再截到 40 字：46 字的英文型号标题会只剩 "Inking "，和选题对不上
+    return {"title": _comic_clean(topic, 64), "background": "", "chars": [],
+            "scene_anchor": "", "panels": panels}
+
+
+@app.post("/api/comic/storyboard")
+async def api_comic_storyboard(req: ComicStoryboardRequest):
+    """热点事件 → 连续漫画分镜脚本。事实只取事件综述或条目摘要，不让模型凭标题脑补。"""
+    topic = (req.topic or "").strip()
+    fact = (req.digest or "").strip()
+    source = "digest" if fact else "topic"
+
+    if req.story_id:
+        sid = _aihot_story_clean(req.story_id)
+        candidate = await _aihot_story_data(sid) if sid else None
+        st = str((candidate or {}).get("title") or "").strip()
+        # 和 _text_story 同一套校验：标题对不上就不把 A 事件的资料塞给 B 选题
+        if candidate and st and (not topic or st == topic or st in topic
+                                 or topic in st or st[:8] == topic[:8]):
+            parts = [str(candidate.get("digest") or "").strip(),
+                     str(candidate.get("latest") or "").strip()]
+            merged = "\n".join(dict.fromkeys(x for x in parts if x))
+            if merged:
+                fact = merged
+                source = "story"
+                topic = topic or st
+
+    if not fact:
+        raise HTTPException(400, "这条热点没有可用摘要，先点「站内看」看完原文再做漫画")
+    if not topic:
+        topic = fact[:40]
+
+    limit = req.n or 20
+    fallback = False
+    try:
+        data = await _comic_storyboard_ai(fact, topic, limit)
+    except Exception as e:
+        print("comic storyboard AI failed:", e)
+        data = _comic_storyboard_fallback(fact, topic, limit)
+        fallback = True
+
+    data["bible"] = _comic_bible_text(data)
+    data["doc_body"] = _comic_panels_to_doc(data["panels"])
+    data["count"] = len(data["panels"])
+    data["fallback"] = fallback
+    data["source"] = source
+    # 前端按 !r.ok || !d.ok 判失败：HTTP 200 但缺这个字段会被报成「拆分镜失败：HTTP 200」。
+    data["ok"] = True
+    return JSONResponse(data)
+
+
 # ---------------- 推荐话题 ----------------
-# 目标：给「选题」框喂能引起讨论、带判断依据的题，不要空问「你怎么看」，也不要鸡汤。
-# 数据分三层，任一层拿不到都不会让这块变空白：
-#   1. 实时知乎热榜（公开聚合接口，匿名只读；可用 TOPIC_HOT_API 换成自己的源）
-#   2. 本进程缓存的 AIHOT 热点（真事件，不额外发请求）
-#   3. 内置常青讨论题库（逐条挑过：具体数字 / 工具 / 动作 + 一个能站队的两难点）
-# 界面会标明这批来自哪一层，兜底不冒充实时热榜。加工只做「把事件变成可讨论的
-# 切口」，不替用户写结论，也不给热点补编事实。
+# 用户 2026-11-26 定：这块只从「每日热榜」详情里随机抽，必须是那份榜单上真实存在的条目。
+# 所以池子由 hot.json 快照生成（_rec_from_hotv），不再混知乎热榜 / AIHOT / 内置题库，
+# 也不再为这一栏单独联网——点开热榜能看到什么，这里就只能抽到什么。
+# 下面几个 _topics_from_titles / _rec_interleave / _evergreen_topics 只留给旧的
+# /api/topics/platforms 与缺源平台兜底用，不要再接回推荐话题。
 _REC_TTL = 1800
 _REC_CACHE: dict = {"at": 0.0, "items": [], "source": "", "live": False}
 # 公开聚合站对非浏览器 UA 直接 403（实测 403 / 200 只差这一行），
@@ -1385,8 +1699,8 @@ _HOT_ANGLES = (
     ("{t}：这类变化要不要直接写进团队 SOP？先摆清 3 个前提再站队", "明确两难，正反两边都有话说"),
 )
 
-# 常青题库：按知乎 / 小红书上长期有人讨论的方向写，全部带可验证的细节。
-# 这些不是「今日热榜」，source 会如实标成「常青选题库」。
+# 兜底题库：按知乎 / 小红书上长期有人讨论的方向写，全部带可验证的细节。
+# 这些不是「今日热榜」，也不是从任何平台抓的，所以对外不挂来源标签（用户 2026-11-26）。
 _EVERGREEN_TOPICS = (
     ("用 AI 写了 3 周会议纪要，我把出错分成 4 类：最麻烦的不是错别字，是把待办派给了没参会的人", "知乎向", "有出错分类，同行能补自己的第 5 类"),
     ("同一份 200 页 PDF，先标页码再问 AI 和整本直接丢进去，答案能不能翻回原文核对，差在哪", "知乎向", "两步做法可照着复现"),
@@ -1468,11 +1782,17 @@ def _topics_from_titles(titles: list, tag: str) -> list:
 
 
 def _evergreen_topics() -> list:
+    """兜底题库里的题，不带任何来源标签（用户 2026-11-26 要求）。
+
+    这些题不是从任何平台抓的，标「常青题」或「小红书向」都会让人误以为有出处；
+    唯一的真实来源是 left 栏自己攒的选题方向。所以对外只有 text / why，
+    调性留在 kind 里，只给缺源平台挑题用（_hb_curated）。
+    """
     out = []
-    for i, (text, tag, why) in enumerate(_EVERGREEN_TOPICS):
+    for i, (text, kind, why) in enumerate(_EVERGREEN_TOPICS):
         if not _topic_ok(text):
             continue
-        out.append({"id": "e%02d" % i, "text": text, "tag": tag, "why": why})
+        out.append({"id": "e%02d" % i, "text": text, "kind": kind, "why": why})
     return out
 
 
@@ -1572,29 +1892,62 @@ async def _ensure_aihot_hot():
         pass
 
 
+def _rec_from_hotv(rows: list) -> list:
+    """把每日热榜的详情条目转成推荐话题（用户 2026-11-26 定）。
+
+    推荐池只有这一个来源：每日热榜弹窗里那份榜单。不掺知乎、不掺 AIHOT、
+    不掺内置题库——列表里出现的每一条，打开「每日热榜」都能在同一天榜单里找到。
+    标题原样用（只压空白、剥掉「你怎么看」这类空问句），不套讨论角度模板，
+    否则点了填进选题框的句子和详情页看到的对不上。
+    """
+    out, seen = [], set()
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        text = re.sub(r"\s+", " ", str(r.get("title") or "")).strip()
+        text = _TOPIC_FILLER.sub("", text).strip().rstrip("，,、：:？? ")
+        if len(text) < 6 or text in seen or _TOPIC_BAD.search(text):
+            continue
+        seen.add(text)
+        platform = str(r.get("platform") or "").strip()
+        hot = str(r.get("hot") or "").strip()
+        rank = r.get("rank") or 0
+        bits = [x for x in (platform,
+                            ("第 %s 位" % rank) if rank else "",
+                            ("热度 " + hot) if hot else "") if x]
+        out.append({
+            "id": "t" + hashlib.md5((platform + text).encode("utf-8", "replace")).hexdigest()[:10],
+            "text": text[:80],
+            "tag": platform,
+            "why": " · ".join(bits) or "每日热榜",
+            "url": str(r.get("url") or ""),
+        })
+    return out
+
+
 @app.get("/api/topics/recommend")
 async def api_topics_recommend(fresh: int = 0):
-    """一批可点选的推荐话题。前端每次露 3 条，点「下一批」在本地翻池子。"""
-    now = time.time()
-    if (not fresh and _REC_CACHE["items"]
-            and now - _REC_CACHE["at"] < _REC_TTL):
-        return JSONResponse({"ok": True, "stale": False, **{
-            k: _REC_CACHE[k] for k in ("at", "items", "source", "live")}})
+    """推荐话题：只从每日热榜里随机抽，前端每次露 3 条、点「下一批」本地翻。
 
-    # 两路并行：外部热榜最多 9 秒，自家热点通常 1 秒内回来，不互相拖
-    live, _ = await asyncio.gather(_fetch_zhihu_titles(), _ensure_aihot_hot())
-    aihot = [str(x.get("title") or "") for x in (_AIHOT_HOT.get("items") or [])[:8]]
-    g_live = _topics_from_titles(live, "知乎热榜")[:9]
-    g_ai = _topics_from_titles(aihot, "AIHOT")[:6]
-    items = _rec_interleave([g_live, g_ai, _evergreen_topics()])
-    if not items:
-        items = _evergreen_topics()
-    # 池子里掺了常青题就照实说，别让徽标看起来像整批都是实时热点
-    source = ("知乎热榜 + 常青题库" if g_live
-              else ("AIHOT 热点 + 常青题库" if g_ai else "常青选题库"))
-    _REC_CACHE.update({"at": now, "items": items, "source": source, "live": bool(g_live)})
-    return JSONResponse({"ok": True, "stale": False, "at": now, "items": items,
-                         "source": source, "live": bool(g_live)})
+    只读本地热榜快照，不为这一栏单独联网；快照一条都没有时才由 _hotv_get
+    兜底抓一次（首次安装），或者用户点「下一批」重试时带 fresh=1 才真去抓。
+    """
+    view = await _hotv_get(bool(fresh))
+    rows = (view.get("byDate") or {}).get(view.get("today") or "") or []
+    stamp = "%s|%s" % (view.get("today") or "", view.get("fetchedAt") or "")
+    now = time.time()
+    if (not fresh and _REC_CACHE["items"] and _REC_CACHE.get("stamp") == stamp
+            and now - _REC_CACHE["at"] < _REC_TTL):
+        return JSONResponse({"ok": True, "stale": view.get("stale"), "at": _REC_CACHE["at"],
+                             "items": _REC_CACHE["items"], "source": "每日热榜",
+                             "live": False, "fetchedAt": view.get("fetchedAt") or ""})
+    items = _rec_from_hotv(rows)
+    _REC_CACHE.update({"at": now, "items": items, "source": "每日热榜",
+                       "stamp": stamp, "live": False})
+    return JSONResponse({"ok": True, "stale": view.get("stale"), "at": now, "items": items,
+                         "source": "每日热榜", "live": False,
+                         "fetchedAt": view.get("fetchedAt") or "",
+                         "error": view.get("error") or ""})
 
 
 # ---------------- 多平台热点榜（1.1.37）----------------
@@ -1614,7 +1967,7 @@ _HB_PLATFORMS = (
     ("bilibili", "B 站",     ("https://newsnow.busiyi.world/api/s?id=bilibili",)),
 )
 _HB_NOTE = ("实时榜来自公开聚合站，缓存 10 分钟。带黄点的平台没有稳定公开热榜源，"
-            "显示按该平台调性加工的常青讨论题，不冒充实时；"
+            "显示按该平台调性加工的讨论题，不冒充实时；"
             "可用 TOPIC_HOT_API_<平台 KEY> 环境变量接自己的源。")
 
 # 弹窗里的热榜什么题材都有：油价、球赛、辟谣、社会新闻。
@@ -1737,7 +2090,9 @@ def _hb_curated(key: str, name: str) -> list:
     if not pool:
         ev = _evergreen_topics()
         want = "小红书向" if key == "xhs" else "知乎向"
-        ev = [x for x in ev if x["tag"] == want] + [x for x in ev if x["tag"] != want]
+        # 调性看 kind；对外不带任何来源标签（见 _evergreen_topics）
+        ev = ([x for x in ev if x.get("kind") == want]
+              + [x for x in ev if x.get("kind") != want])
         pool = [(x["text"], x["why"]) for x in ev[:8]]
     return [{"rank": i + 1, "title": t, "text": t, "why": w, "angle": True,
              "status": "curated", "hot": "", "url": ""}
@@ -1847,6 +2202,141 @@ async def api_topics_platforms(fresh: int = 0):
                              "note": _HB_NOTE, "platforms": _HB_CACHE["data"]})
     return JSONResponse({"ok": True, "stale": False, "at": now,
                          "note": _HB_NOTE, "platforms": platforms})
+
+
+# ---------------- 每日热榜（2026-11-26）----------------
+# 用户要求「全平台热点」换成成稿台第一个「热榜」的同款数据，同时强调两个工作台独立：
+# 所以把成稿台自建的抓取脚本复制进本插件（server/trends/），运行时不读、不依赖
+# dsh-wechat-studio 的安装状态；快照写自己的 <DSH_HOME>/image-workbench/trends/hot.json。
+# 榜单口径（8 个平台、热度、信源、摘要、7 天）与成稿台一致，但两边数据各存各的。
+_DSH_HOME = Path(os.environ.get("DSH_HOME") or str(Path.home() / ".dsh"))
+_HOTV_ROOT = _DSH_HOME / "image-workbench"
+_HOTV_FILE = _HOTV_ROOT / "trends" / "hot.json"
+_HOTV_JS = Path(__file__).resolve().parent / "trends" / "trends.js"
+_HOTV_TTL = 6 * 3600          # 只用来提示「快照偏旧」，不再触发自动抓取
+_HOTV_LOCK = asyncio.Lock()
+_HOTV_PLATFORMS = ("今日头条", "百度", "抖音", "微博", "知乎", "B站", "AI 热点", "AI 资讯")
+# 进程内缓存：按 (mtime, size) 失效。打开弹窗只读快照，不再每次读盘 + 解析 200 条。
+_HOTV_CACHE = {"key": None, "data": None}
+
+
+def _hotv_read():
+    try:
+        st = _HOTV_FILE.stat()
+        key = (st.st_mtime_ns, st.st_size)
+        if _HOTV_CACHE["key"] == key and _HOTV_CACHE["data"] is not None:
+            return _HOTV_CACHE["data"]
+        data = json.loads(_HOTV_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return None
+        _HOTV_CACHE["key"] = key
+        _HOTV_CACHE["data"] = data
+        return data
+    except Exception:
+        return None
+
+
+def _hotv_age(stamp):
+    """快照距现在多少秒；时间戳解析不了返回 -1（前端显示「时间未知」）。"""
+    try:
+        at = datetime.strptime(str(stamp or ""), "%Y-%m-%d %H:%M")
+        return int(max(0.0, time.time() - at.timestamp()))
+    except Exception:
+        return -1
+
+
+def _hotv_view(snap):
+    """和成稿台 hotView() 同形：前端拿到的字段与它自己画热榜时一致。"""
+    by_date = (snap or {}).get("byDate") or {}
+    dates = sorted(by_date)
+    today = datetime.now().strftime("%Y-%m-%d")
+    latest = today if today in by_date else (dates[-1] if dates else "")
+    fetched = (snap or {}).get("updatedAt") or ""
+    age = _hotv_age(fetched)
+    return {"ok": True, "today": latest, "dates": dates,
+            "platforms": list(_HOTV_PLATFORMS),
+            "fetchedAt": fetched, "ageSeconds": age,
+            "old": age < 0 or age > _HOTV_TTL,
+            "byDate": by_date, "sources": (snap or {}).get("sources") or []}
+
+
+def _hotv_empty(view):
+    """本地连一条快照都没有（首次安装 / 文件被删）才需要兜底抓一次。"""
+    if not view or not view.get("today"):
+        return True
+    return not ((view.get("byDate") or {}).get(view["today"]) or [])
+
+
+async def _hotv_refresh(force: bool):
+    """调用本插件自带的数据层抓热榜；脚本自己写 hot.json，这里只读返回的视图。"""
+    async with _HOTV_LOCK:
+        if not _HOTV_JS.exists():
+            raise RuntimeError("找不到自带热榜数据层：" + str(_HOTV_JS))
+        node = shutil.which("node")
+        if not node:
+            raise RuntimeError("本机找不到 node，无法抓取热榜")
+        call = "m.refreshHotFor(root)" if force else "m.hotViewFor(root)"
+        script = (
+            "import { pathToFileURL } from 'node:url';\n"
+            "const m = await import(pathToFileURL(" + json.dumps(_HOTV_JS.as_posix()) + ").href);\n"
+            "const root = " + json.dumps(_HOTV_ROOT.as_posix()) + ";\n"
+            "await " + call + ";\n"
+        )
+        try:
+            proc = await asyncio.to_thread(
+                lambda: subprocess.run([node, "--input-type=module", "-e", script],
+                                       capture_output=True, text=True, timeout=90,
+                                       env=os.environ.copy(), cwd=str(_DSH_HOME)))
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("抓取超时（超过 90 秒）")
+        if proc.returncode != 0:
+            raise RuntimeError((proc.stderr or proc.stdout or "抓取脚本退出失败").strip()[:180])
+        # 脚本已经把最新快照原子写进 hot.json；以落盘结果为准，不依赖 stdout 回传。
+        _HOTV_CACHE["key"] = None      # 文件刚被重写，强制下一次重新读
+        _HOTV_CACHE["data"] = None
+        snap = _hotv_read()
+        if not snap:
+            raise RuntimeError("抓取完成后没读到热榜快照")
+        return _hotv_view(snap)
+
+
+async def _hotv_get(refresh: bool = False):
+    """读每日热榜。
+
+    只有 refresh=True（手动点「抓一次热榜」）才联网。打开弹窗、重启插件、
+    超过 6 小时，一律只读本地快照——用户明确要求不要每次启动拉一次。
+    唯一的例外：本地一条快照都没有（首次安装 / 文件被删），这时抓一次兜底，
+    否则界面全空没法用；之后就一直用缓存，除非用户自己点抓取。
+    """
+    snap = _hotv_read()
+    cached = _hotv_view(snap) if snap else None
+    if refresh or not cached or _hotv_empty(cached):
+        try:
+            view = await _hotv_refresh(True)
+            view.update({"ok": True, "stale": False, "refreshed": True, "cached": False})
+            return view
+        except Exception as exc:
+            if cached and cached.get("today"):
+                cached.update({"ok": True, "stale": True, "refreshed": False,
+                               "cached": True, "error": str(exc)[:200]})
+                return cached
+            return {"ok": False, "error": str(exc)[:200], "stale": True, "cached": False}
+    cached.update({"ok": True, "stale": False, "refreshed": False, "cached": True})
+    return cached
+
+
+@app.get("/api/trends/hot")
+async def api_trends_hot(refresh: int = 0):
+    """每日热榜：默认只读本地快照（不联网），?refresh=1 才顺带抓一次。"""
+    data = await _hotv_get(bool(refresh))
+    return JSONResponse(data, status_code=200 if data.get("ok") else 502)
+
+
+@app.post("/api/trends/hot/refresh")
+async def api_trends_hot_refresh():
+    """手动抓一次最新热榜；由本插件自带的 trends.js 落盘，失败时保留旧快照。"""
+    data = await _hotv_get(True)
+    return JSONResponse(data, status_code=200 if data.get("ok") else 502)
 
 
 _SAMPLES_CACHE = {"at": 0.0, "data": None}
@@ -2119,6 +2609,11 @@ async def api_pool_use_builtin():
     cfg["pool_dir"] = str(home)
     cfg["monitor_mode"] = "auto"
     cfg.setdefault("port", 8092)
+    try:
+        if POOL_CONFIG_FILE.exists():
+            shutil.copy2(POOL_CONFIG_FILE, POOL_CONFIG_FILE.with_suffix(".json.bak"))
+    except Exception:
+        pass
     POOL_CONFIG_FILE.write_text(
         json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     # 清掉手动停止标记，让内置池能被启动 / 守护自动拉起
@@ -2295,6 +2790,12 @@ def _read_cfg_file() -> dict:
 
 
 def _write_cfg_file(cfg: dict) -> None:
+    # 覆盖前留一份 .bak：接口档案、推送网关这类配置被误覆盖还能捞回来
+    try:
+        if POOL_CONFIG_FILE.exists():
+            shutil.copy2(POOL_CONFIG_FILE, POOL_CONFIG_FILE.with_suffix(".json.bak"))
+    except Exception:
+        pass
     POOL_CONFIG_FILE.write_text(
         json.dumps(cfg, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -2334,10 +2835,11 @@ def _cfg_view() -> dict:
         "auto_purge_dead": (lambda v: v is not False and str(v).lower() not in ("0", "false", "no", "off"))(
             load_config().get("auto_purge_dead", True)),
         # 微信公众号推送：网关地址可明文回显；Token 只回脱敏，绝不回传完整值
-        "wx_gateway": load_config().get("wx_gateway") or "",
+        # 走 _wx_cfg：配置被覆盖时从本机凭据备份取回，并自动写回 config.local.json
+        "wx_gateway": _wx_cfg()[0],
         "wx_push_mode": (load_config().get("wx_push_mode") or "news").strip().lower(),
-        "wx_token_set": bool(load_config().get("wx_token")),
-        "wx_token_masked": (lambda t: (t[:3] + "***" + t[-3:]) if len(t) > 8 else "***")(load_config().get("wx_token") or ""),
+        "wx_token_set": bool(_wx_cfg()[1]),
+        "wx_token_masked": (lambda t: (t[:3] + "***" + t[-3:]) if len(t) > 8 else "***")(_wx_cfg()[1]),
     }
 
 
@@ -2412,6 +2914,8 @@ async def api_config_save(body: dict):
         put("wx_gateway", str(body["wx_gateway"]).strip())
     if body.get("wx_token"):
         put("wx_token", str(body["wx_token"]).strip())
+    # 保存即落第二份：凭据不再只活在工作台目录里
+    _persist_wx_secrets(cfg.get("wx_gateway"), cfg.get("wx_token"))
     if "wx_push_mode" in body:
         m = str(body["wx_push_mode"]).strip().lower()
         put("wx_push_mode", m if m in ("news", "newspic") else "news")
@@ -3066,6 +3570,9 @@ async def api_generate(req: GenRequest):
         "ref_id": (req.ref_id or "") if ref_path else "",
         "ref_path": ref_path,
         "ref_mode": (req.ref_mode or "style") if ref_path else "",
+        # 小说推文叠字：worker 出完图调 novel_overlay 把旁白压到顶部，再落历史
+        "novel_overlay": bool(req.novel_overlay),
+        "overlay_text": (req.overlay_text or "").strip() if req.novel_overlay else "",
         "image_mode": (req.image_mode or "graphic-text"),
         "shoot_type": (req.shoot_type or ""),
         "replace_id": rid,
@@ -3551,6 +4058,34 @@ async def static_page(path: str):
 # 避免凭据随插件包（GitHub/npm）公开，导致他人装了也能往你的公众号草稿箱推。
 WX_GATEWAY = ""
 WX_TOKEN = ""
+# 凭据留一份在插件目录之外：插件升级 / 重装 / config.local.json 被覆盖时，
+# 网关和 Token 不会跟着一起消失。这里只存本机自己的值，绝不随插件包分发。
+WX_SECRETS_FILE = Path.home() / ".dsh" / "image-workbench" / "credentials.json"
+
+
+def _wx_secrets() -> dict:
+    try:
+        d = json.loads(WX_SECRETS_FILE.read_text(encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def _persist_wx_secrets(gw: str, token: str) -> None:
+    """配置页保存时同步写备份；空值表示「留空沿用」，不覆盖已存的值。"""
+    cur = _wx_secrets()
+    for k, v in (("wx_gateway", gw), ("wx_token", token)):
+        v = str(v or "").strip()
+        if v:
+            cur[k] = v
+    try:
+        WX_SECRETS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = WX_SECRETS_FILE.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(cur, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        tmp.replace(WX_SECRETS_FILE)
+    except Exception as e:
+        print("wx secrets save failed:", e)
+
 
 class PushDraftItem(BaseModel):
     job_id: str
@@ -3564,10 +4099,22 @@ class PushDraftRequest(BaseModel):
 
 def _wx_cfg() -> tuple[str, str]:
     cfg = load_config()
-    gw = str(cfg.get("wx_gateway") or "").strip()
+    raw_gw = str(cfg.get("wx_gateway") or "").strip()
+    raw_token = str(cfg.get("wx_token") or "").strip()
+    backup = _wx_secrets()
+    gw = raw_gw or str(backup.get("wx_gateway") or "").strip()
+    token = raw_token or str(backup.get("wx_token") or "").strip()
     if gw and "://" not in gw:        # 配置页可能只填了域名，自动补 https://
         gw = "https://" + gw
-    return (gw, str(cfg.get("wx_token") or "").strip())
+    # 配置被别的流程覆盖时自动回填，界面和推送都不再受影响
+    heal = {}
+    if gw and gw != raw_gw:
+        heal["wx_gateway"] = gw
+    if token and token != raw_token:
+        heal["wx_token"] = token
+    if heal:
+        pool_mod.save_config(heal)
+    return (gw, token)
 
 def _wx_title(s: str, limit: int = 64) -> str:
     """微信草稿标题：上限 64 字，超了往回找标点收尾，别把最后一个词切一半。
@@ -3937,8 +4484,12 @@ async def _wx_lead_summary(topic: str, screens: list[dict],
         f"本期标题：{(topic or '').strip() or '（无）'}\n"
         "本期内容：\n" + "\n".join(lines)
     )
+    # 推送是同步等结果的：号池聊天通道动辄 20s+，再叠加内部 3 次重试会把
+    # 「推送中」拖到几分钟。这里硬限时 8s，超时立刻用本地兜底，不让润色拖垮推送。
+    async def _ask():
+        return await pool_mod.chat_once(prompt, max_tokens=400, temperature=0.4, timeout=8)
     try:
-        raw = await pool_mod.chat_once(prompt, max_tokens=400, temperature=0.4, timeout=25)
+        raw = await asyncio.wait_for(_ask(), timeout=9)
         pts = _wx_parse_points(raw)
         if pts:
             return _wx_timed_first(pts, screens, lead)
@@ -4050,8 +4601,11 @@ async def _wx_footer_content(topic: str, screens: list[dict]) -> dict:
         f"本期标题：{(topic or '').strip() or '（无）'}\n"
         "本期分镜：\n" + "\n".join(lines)
     )
+    # 同上：结尾文案是润色项，硬限时 8s，超时用本地兜底，别让推送卡在这里
+    async def _ask():
+        return await pool_mod.chat_once(prompt, max_tokens=500, temperature=0.7, timeout=8)
     try:
-        raw = await pool_mod.chat_once(prompt, max_tokens=500, temperature=0.7, timeout=25)
+        raw = await asyncio.wait_for(_ask(), timeout=9)
         return _wx_parse_footer(raw)
     except Exception as e:
         print("wx footer AI failed:", e)
@@ -4180,12 +4734,16 @@ async def api_push_wechat_draft(req: PushDraftRequest):
             lead_hint = _wx_doc_lead(rec.get("doc_body") or "")
         if lead_hint:
             break
-    lead_points = await _wx_lead_summary(req.title, screens, lead_hint)
+    # 要点和结尾两处润色彼此独立，并发跑：原本串行 20s+20s，现在只等最慢那一个。
+    # 各自内部已有 8s 硬超时 + 本地兜底，推送不会再被号池聊天通道拖住。
+    lead_points, footer_data = await asyncio.gather(
+        _wx_lead_summary(req.title, screens, lead_hint),
+        _wx_footer_content(req.title, screens),
+    )
     sections = []
     for i, sc in enumerate(screens):
         tail = _wx_lead_block(lead_points) if (i == 0 and lead_points) else ""
         sections.append(_wx_news_section(sc["title"], sc["caption"], sc["url"], tail_html=tail, first=(i == 0)))
-    footer_data = await _wx_footer_content(req.title, screens)
     parts = sections + [_wx_news_footer(footer_data)]
     content_html = (
         '<div style="font-size:16px;line-height:1.85;color:#3a3a3a;letter-spacing:.2px;'

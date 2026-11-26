@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio, json, pathlib, sys, time
+from datetime import datetime
 import httpx
 
 BASE = 'http://127.0.0.1:8092'
@@ -28,7 +29,7 @@ def ok(name, cond, detail=''):
 # ---- 1) 离线符号断言：抓「语法合法但符号丢失」 ----
 print('=== 1. 关键符号 ===')
 sys.path.insert(0, str(ROOT))
-import app, pool, pool_admin, pool_service, composer, history, imaging, catalog, access, drafts
+import app, pool, pool_admin, pool_service, composer, history, imaging, catalog, access, drafts, novel_overlay
 for mod, names in [
     (app, ['app', 'POOL', 'HISTORY', 'DRAFTS', 'CATALOG', 'api_generate',
            'api_compose', '_finish_with_replace']),
@@ -187,6 +188,12 @@ _src_app = (ROOT / 'app.py').read_text(encoding='utf-8')
 ok('已停止状态不落盘', 'not in ("done", "error", "cancelled")' in _src_pool)
 ok('取消后不再换号重试', 'if job.get("status") == "cancelled":' in _src_pool)
 ok('前端两个停止按钮齐全', 'id="stopGen"' in _src_html and 'id="monStop"' in _src_html)
+# 界面上不再出现平台名（用户 2026-11-26：内容工坊产出的是图文笔记，不绑定渠道）
+ok('内容工坊与预览条不再标小红书',
+   'id="modePill">图文笔记' in _src_html
+   and '小红书笔记' not in _src_html
+   and '小红书 · 预览' not in _src_html
+   and "'图文 · 预览'" in _src_html)
 ok('前端停止链路完整',
    all(x in _src_html for x in ('async function stopAllJobs', '/api/generate/stop',
                                 'clearBatch();', "d.status === 'cancelled'")))
@@ -397,6 +404,24 @@ _c2 = asyncio.run(composer.compose({'ratio': '3:4', 'mood': ['治愈'], 'fusion'
 ok('元素库自动选：用户手填 scene 不被覆盖',
    _c2['items'][0]['scene'] == '我手填的：小人举着一杯奶茶',
    '手填被覆盖：' + _c2['items'][0]['scene'])
+
+# 纯图模式（用户 2026-11-26）：只出画面、不排文字，也不套图型版式
+_pure = composer.build_prompt({'title': '一只橘猫', 'body': '趴在窗台晒太阳'},
+                              {'layout': _L[0]}, '3:4', [], False, 'normal', '', False, 'pure-image', '')
+ok('纯图模式不套图型版式，也不进文字槽位',
+   all(x not in _pure for x in ('三层版式', '主标题文字', '正文文字', '文字清晰可读', '上层主标题')))
+ok('纯图模式明令不出字，标题正文只当画面内容',
+   composer.PURE_NO_TEXT in _pure and '画面：一只橘猫' in _pure and '趴在窗台晒太阳' in _pure)
+ok('纯图/图文/摄影三种模式指令各自独立',
+   '纯图模式' in composer.build_instruction({'layout': _L[0]}, '3:4', [], False, 'normal', False, 'pure-image', '')
+   and '图型：SC-002' not in composer.build_instruction({'layout': _L[0]}, '3:4', [], False, 'normal', False, 'pure-image', '')
+   and '图文模式' in composer.build_instruction({}, '3:4', [], False, 'normal', False, 'graphic-text', '')
+   and '摄影写真模式' in composer.build_instruction({}, '3:4', [], False, 'normal', False, 'photo', ''))
+_pure_c = asyncio.run(composer.compose({'image_mode': 'pure-image', 'ratio': '3:4',
+                                        'items': [{'title': '猫', 'body': '窗台'}]}, [], _L, []))
+ok('拼词接口接受 pure-image，模式集合齐全',
+   composer.IMAGE_MODES == ('pure-image', 'graphic-text', 'photo')
+   and composer.PURE_NO_TEXT in _pure_c['items'][0]['prompt'])
 
 # _parse_props 健壮性：直接覆盖 LLM 返回变异形态（live 实测踩过的坑）
 _pp = composer._parse_props
@@ -1032,9 +1057,24 @@ _rd = _rt.json() if _rt.status_code == 200 else {}
 _ritems = _rd.get('items') or []
 ok('推荐话题接口返回成批可用选题',
    _rt.status_code == 200 and len(_ritems) >= 24
-   and all(x.get('text') and x.get('tag') and x.get('why') for x in _ritems),
+   and all(x.get('text') and x.get('why') for x in _ritems),
    '共 %d 条，来源 %s' % (len(_ritems), _rd.get('source')))
-ok('话题池每条都过干货闸门', all(app._topic_ok(x['text']) for x in _ritems))
+ok('推荐话题只来自每日热榜，徽标只可能是榜单平台名',
+   _rd.get('source') == '每日热榜'
+   and all(x.get('tag') in app._HOTV_PLATFORMS for x in _ritems)
+   and not any(k in str(x.get('tag') or '') for x in _ritems
+               for k in ('常青', '知乎热榜', 'AIHOT', '兜底')))
+_hv = app._hotv_read() or {}
+_hv_rows = (_hv.get('byDate') or {}).get(
+    sorted(_hv.get('byDate') or {})[-1] if _hv.get('byDate') else '') or []
+_hv_titles = set()
+for _r in _hv_rows:
+    _t = ' '.join(str(_r.get('title') or '').split())
+    _t = app._TOPIC_FILLER.sub('', _t).strip().rstrip('，,、：:？? ')
+    _hv_titles.add(_t[:80])
+ok('推荐池每一条都能在热榜详情里找到（不掺外部来源）',
+   bool(_hv_rows) and all(x['text'] in _hv_titles for x in _ritems),
+   '热榜 %d 条 / 推荐 %d 条' % (len(_hv_rows), len(_ritems)))
 ok('话题池不含毒鸡汤空词',
    not any(app._TOPIC_BAD.search(x['text']) for x in _ritems))
 ok('话题池不出现「你怎么看」式空问句',
@@ -1063,8 +1103,15 @@ _mix = app._rec_interleave([
     [{'text': 'c1'}, {'text': 'c2'}]])
 ok('三层话题交错，前三条来自不同层',
    [x['text'] for x in _mix[:3]] == ['a1', 'b1', 'c1'])
-ok('常青题库够翻十批以上', len(app._evergreen_topics()) >= 24,
+ok('兜底题库够翻十批以上', len(app._evergreen_topics()) >= 24,
    len(app._evergreen_topics()))
+ok('兜底题不带任何来源标签（用户 2026-11-26 明确：不要出现常青题这种东西）',
+   all('tag' not in x for x in app._evergreen_topics())
+   and app._evergreen_topics()[0].get('kind') in ('知乎向', '小红书向'))
+ok('缺源平台仍能按调性挑兜底题（小红书优先小红书向）',
+   len(app._hb_curated('xhs', '小红书')) > 0
+   and all('小红书' not in str(x.get('title') or '') + str(x.get('tag') or '')
+           for x in app._hb_curated('xhs', '小红书')))
 ok('推荐话题卡片插在热点榜与选题框之间',
    all(x in _src_html for x in ('id="recTopics"', 'id="recList"', 'id="recNext"'))
    and 0 < _src_html.find('id="aihotList"') < _src_html.find('id="recTopics"')
@@ -1120,19 +1167,68 @@ ok('情绪化热榜标题只展示原题不加工',
    app._hb_angle('震惊！一定要看完的 3 个秘密') is None)
 ok('可接自定义热榜源',
    'TOPIC_HOT_API_' in _src_app and 'custom' in _src_app)
-ok('底部入口能打开多平台热点弹窗',
-   all(x in _src_html for x in ('id="recOpen"', 'recOpen.onclick = hbOpen')))
-ok('弹窗含平台页签、状态说明与两列卡片',
+ok('底部入口能打开每日热榜弹窗',
+   all(x in _src_html for x in ('id="recOpen"', 'recOpen.onclick = hbOpen', '每日热榜 ↗')))
+ok('弹窗含八平台卡片、页签、日期、同步时间和完整榜单表格',
    all(x in _src_html for x in ('id="hotBoardDlg"', 'id="hbTabs"', 'id="hbNote"',
-                                'id="hbList"', 'hb-grid', '.hb-dot.off')))
-ok('切页签本地渲染，只有打开和刷新才打接口',
-   all(x in _src_html for x in ("fetch('/api/topics/platforms'", 'hbLoad(0)',
-                                'hbLoad(1)', 'if(!hbData) hbLoad(0)')))
+                                'id="hbList"', 'id="hbDay"', 'id="hbSynced"',
+                                'id="hbRows"', 'hb-grid', '.hb-dot.off',
+                                'hb-table', '抓一次热榜')))
+ok('切页签本地渲染，打开和手动抓取才打接口',
+   all(x in _src_html for x in ("fetch(force ? '/api/trends/hot/refresh' : '/api/trends/hot'",
+                                'hbLoad(0)', 'hbLoad(1)', 'hbDayEl.onchange')))
 ok('点条目填进选题并复用原有 pick 逻辑',
-   'pick({text: val})' in _src_html
+   'pick({text: String(r.title)})' in _src_html
    and 'if(hbDlg && hbDlg.open) hbDlg.close()' in _src_html)
-ok('界面把加工题和实时榜区分开',
-   '平台向 · 加工题' in _src_html and '不冒充实时' in _src_app)
+ok('热榜桥接接口已注册（读取 / 手动抓取）',
+   any(getattr(r, 'path', '') == '/api/trends/hot' for r in app.app.routes)
+   and any(getattr(r, 'path', '') == '/api/trends/hot/refresh'
+           and 'POST' in getattr(r, 'methods', set()) for r in app.app.routes))
+ok('热榜数据层自带且写到本插件目录，不依赖成稿台插件',
+   app._HOTV_JS.exists()
+   and 'dsh-wechat-studio' not in str(app._HOTV_JS)
+   and app._HOTV_ROOT.name == 'image-workbench'
+   and app._HOTV_FILE.name == 'hot.json'
+   and all((app._HOTV_JS.parent / f).exists()
+           for f in ('trends.js', 'fs-json.js', 'wechat-article.js')))
+_pkg_json = json.loads((pathlib.Path(app.__file__).resolve().parent.parent / 'package.json').read_text(encoding='utf-8'))
+ok('发布白名单包含自带热榜脚本', 'server/trends' in (_pkg_json.get('files') or []))
+ok('热榜视图保留同步时间、八个平台、按日快照和来源状态',
+   all(k in app._hotv_view({'v': 2, 'updatedAt': '2026-11-26 10:00',
+                            'byDate': {'2026-11-26': []}, 'sources': []})
+       for k in ('fetchedAt', 'today', 'dates', 'platforms', 'byDate', 'sources'))
+   and len(app._hotv_view({})['platforms']) == 8)
+ok('热榜视图带快照年龄，供前端判断是否偏旧',
+   all(k in app._hotv_view({'updatedAt': '2026-11-26 10:00',
+                            'byDate': {'2026-11-26': [{'platform': p} for p in app._HOTV_PLATFORMS]}})
+       for k in ('fetchedAt', 'ageSeconds', 'old'))
+   and app._hotv_view({})['old'] is True
+   and not hasattr(app, '_hotv_need_refresh'))
+
+_hotv_calls = {'n': 0}
+_orig_hotv_refresh = app._hotv_refresh
+async def _fake_hotv_refresh(force):
+    _hotv_calls['n'] += 1
+    return app._hotv_view({'updatedAt': datetime.now().strftime('%Y-%m-%d %H:%M'),
+                           'byDate': {datetime.now().strftime('%Y-%m-%d'):
+                                      [{'platform': p} for p in app._HOTV_PLATFORMS]}})
+app._hotv_refresh = _fake_hotv_refresh
+try:
+    _snap0 = app._hotv_read()
+    _usable = bool(_snap0) and not app._hotv_empty(app._hotv_view(_snap0))
+    _hv = asyncio.run(app._hotv_get(False))
+finally:
+    app._hotv_refresh = _orig_hotv_refresh
+ok('打开弹窗只读本地快照不联网；仅本地完全没快照时兜底抓一次',
+   (_hotv_calls['n'] == 0 and _hv.get('cached') is True) if _usable
+   else (_hotv_calls['n'] == 1),
+   'usable=%s calls=%s cached=%s' % (_usable, _hotv_calls['n'], _hv.get('cached')))
+ok('热榜快照按文件 mtime 缓存，不重复读盘解析',
+   _usable and app._HOTV_CACHE['key'] is not None and app._HOTV_CACHE['data'] is not None)
+ok('前端复用已读榜单，再次打开弹窗不再请求接口',
+   'if(hbData){ hbRender(); return; }' in _src_html
+   and '正在读取本地快照…' in _src_html
+   and '要最新榜单点「抓一次热榜」' in _src_html)
 
 # ---- 图文首图下的「内容要点」----
 print('=== 图文首图内容要点 ===')
@@ -1246,6 +1342,261 @@ _keep = app._wx_timed_first(
 ok('同公司不同产品的要点不被误删', len(_keep) == 3 and 'GPT-5' in ''.join(_keep), _keep)
 ok('推送时正文首句是热点 lead 的兜底',
    "_wx_doc_lead(rec.get('doc_body')" in _app_src.replace('"', "'"))
+
+# ---- 热点漫画：拆镜 + 逐格连续性约束 ----
+print('=== 热点漫画 ===')
+ok('出图请求带连续设定字段',
+   'comic_bible' in app.GenRequest.model_fields and 'comic_link' in app.GenRequest.model_fields)
+_cb = app.GenRequest(mode='image', topic='x', prompt='画面：小明看手机。',
+                     comic_bible='角色：小明 短发蓝外套。', comic_link='上一格屏幕亮起')
+_cb_prompt = app.build_image_prompt(_cb)
+ok('固定设定拼在提示词最前', _cb_prompt.startswith('【这组连续漫画的固定设定'), _cb_prompt[:40])
+ok('本格承接原样带上', '上一格屏幕亮起' in _cb_prompt)
+ok('原来的提示词没丢', '画面：小明看手机。' in _cb_prompt)
+ok('没有设定时提示词逐字不变',
+   app.build_image_prompt(app.GenRequest(mode='image', topic='x', prompt='画面：只有一句。'))
+   == '画面：只有一句。')
+_sb_raw = json.dumps({
+    'title': '测试热点漫画', 'background': '背景一句话',
+    'chars': [{'name': '小明', 'anchor': '短发—戴眼镜——蓝外套“固定”'}],
+    'scene_anchor': '傍晚室内暖光',
+    'panels': [
+        {'title': '开场', 'body': '小明站在门口看手机。', 'dialog': '来了', 'link': ''},
+        {'title': '转折', 'body': '屏幕亮起。', 'dialog': '', 'link': '上一格还在等'},
+        {'title': '结果', 'body': '众人围过来看。', 'dialog': '真的', 'link': '上一格屏幕亮了'},
+    ]}, ensure_ascii=False)
+_sb = app._comic_parse_storyboard(_sb_raw, 20)
+ok('分镜脚本解析出角色与逐格内容',
+   len(_sb['chars']) == 1 and len(_sb['panels']) == 3, str(len(_sb['panels'])))
+ok('分镜里破折号与弯引号被清掉',
+   '—' not in _sb['chars'][0]['anchor'] and '“' not in _sb['chars'][0]['anchor'],
+   _sb['chars'][0]['anchor'])
+_doc = app._comic_panels_to_doc(_sb['panels'])
+ok('分镜正文是 01｜ 编号格式，可以直接拆分镜卡',
+   _doc.startswith('01｜开场') and '气泡文字：来了' in _doc, _doc[:30])
+_bible = app._comic_bible_text(_sb)
+ok('视觉设定含角色锚点与单格约束',
+   '小明' in _bible and '单格漫画' in _bible and '不要重新设计人物' in _bible)
+try:
+    app._comic_parse_storyboard(json.dumps({'panels': [{'body': '只有一格'}]}), 20)
+except ValueError:
+    ok('分镜少于 3 格直接拒绝', True)
+else:
+    ok('分镜少于 3 格直接拒绝', False)
+_fb = app._comic_storyboard_fallback('第一句事实。第二句事实。第三句事实。', '测试', 20)
+ok('AI 不可用时兜底不编角色和对白',
+   _fb['chars'] == [] and all(not p['dialog'] for p in _fb['panels']), str(len(_fb['panels'])))
+ok('分镜接口已注册', '/api/comic/storyboard' in _app_src)
+ok('热点条目出现「做成漫画」按钮',
+   '<button class="btn ghost mini ai-comic"' in _html)
+ok('分镜预览弹窗与格数输入存在',
+   'id="comicDlg"' in _html and 'id="comicN"' in _html)
+ok('批量出图与单张重做都携带连续设定',
+   _html.count('comic_bible: state.comicBible') >= 2
+   and _html.count('comic_link: it.link') == 2,
+   str(_html.count('comic_link: it.link')))
+ok('点击做成漫画先弹等待态，不让界面看起来没反应',
+   'showComicLoading();' in _html and '正在拆分镜' in _html
+   and _html.index('showComicLoading();') < _html.index("fetch('/api/comic/storyboard'"))
+ok('等待态禁用出图按钮，返回后再恢复',
+   "use.disabled = true" in _html and "use.disabled = false" in _html
+   and 'cb-spin' in _html)
+ok('拆镜 AI 超时压到 20 秒内，不再干等近一分钟',
+   'timeout=20' in _app_src and 'asyncio.wait_for(_ask(), timeout=22)' in _app_src)
+ok('分镜接口返回 ok:true，避免 HTTP 200 被前端判失败',
+   'data["ok"] = True' in _app_src and '!r.ok || !d.ok' in _html)
+ok('漫画模式下拆成分镜按钮被拦，不重建清单不丢承接',
+   'state.comicBible && state.items.length' in _html
+   and '漫画分镜已拆好 ' in _html)
+ok('一键清空连漫画角色锚点一起清',
+   "state.comicBible = '';          // 角色锚点也要清" in _html)
+ok('分镜写入后状态栏给出下一步指引',
+   '不用再点「拆成分镜」，直接点右上「批量出图」' in _html)
+ok('兜底分镜抽小标题，不再一律第N格',
+   '_comic_fallback_title(sent, i + 1)' in _app_src
+   and 'def _comic_fallback_title' in _app_src)
+_fb2 = app._comic_storyboard_fallback(
+    'Thinking Machines Lab 发布开源权重模型 Inking 2 Mini，回应部分用户认为参数过大。'
+    '模型采用循环 Transformer 架构：24 层对每个 token 运行三次。', '测试', 20)
+ok('兜底标题取自原句且有信息量',
+   all('第%d格' % (i + 1) != p['title'] for i, p in enumerate(_fb2['panels'])),
+   str([p['title'] for p in _fb2['panels']]))
+ok('分镜写入与批量出图两处都回填中层小道具',
+   _html.count('x.scene = d.items[k].scene') >= 1
+   and _html.count('fillScenes();') >= 3,
+   str(_html.count('fillScenes();')))
+_long_title = 'Thinking Machines 开源 26.48 亿参数模型 Inking 2 Mini'
+ok('兜底分镜标题不再截成 40 字',
+   'topic[:40]' not in _app_src
+   and app._comic_storyboard_fallback('这条热点正文足够长可以作为一格内容。',
+                                       _long_title, 5)['title'] == _long_title,
+   app._comic_storyboard_fallback('这条热点正文足够长可以作为一格内容。',
+                                  _long_title, 5)['title'])
+ok('AI 分镜标题上限放宽到 64 字',
+   '_comic_clean(d.get("title"), 64)' in _app_src.replace("'", '"'))
+ok('标题框换成自增高多行，长标题不再横向截断',
+   '<textarea id="docTitle" rows="2"' in _html
+   and '<input id="docTitle"' not in _html
+   and 'field-sizing:content' in _html)
+
+# ---- 小说推文叠字漫画 ----
+_pool_src = pathlib.Path(pool.__file__).read_text(encoding='utf-8')
+ok('出图请求支持叠字字段',
+   'novel_overlay: bool = False' in _app_src and 'overlay_text: str' in _app_src
+   and '"novel_overlay": bool(req.novel_overlay)' in _app_src)
+ok('worker 出完图再叠字，且叠字失败不影响出图',
+   'novel_overlay.apply(final, job["overlay_text"])' in _pool_src
+   and 'overlay failed:' in _pool_src)
+ok('叠字模式剥掉气泡文字并禁止模型画字',
+   '气泡文字：' not in app._novel_no_text('画面描述 气泡文字：你好，世界')
+   and '不要出现任何文字' in app._novel_no_text('画面描述'))
+_fb3 = app._comic_storyboard_fallback('工作人员点头：“是的，我们会尽力满足。”她轻声说：好的。',
+                                      '标题', 5)
+ok('兜底分镜也带旁白，叠字不缺文案',
+   all(p['caption'] for p in _fb3['panels']),
+   str([p['caption'] for p in _fb3['panels']]))
+ok('引号内对话会被标红解析',
+   [r[0] for r in novel_overlay._colored_chars('他说：「初次见面，姐姐好。」后离开')
+    if r[1]] == list('「初次见面，姐姐好。」'))
+ok('前端提供叠字开关、旁白栏与 9:16 画幅',
+   'id="comicNovel"' in _html and 'class="it-caption"' in _html
+   and "$('#ratio').value = '9:16'" in _html)
+ok('批量出图与单张出图都带叠字参数',
+   _html.count('novel_overlay: true, overlay_text: it.caption.trim()') == 2,
+   str(_html.count('novel_overlay: true, overlay_text: it.caption.trim()')))
+ok('草稿快照保存旁白与叠字开关',
+   'comic_novel: !!state.comicNovel' in _html
+   and "caption: it.caption || ''" in _html)
+
+# ---- 公众号推送网关持久化 ----
+_secrets = pathlib.Path.home() / '.dsh' / 'image-workbench' / 'credentials.json'
+ok('本机凭据备份存在且含网关地址',
+   _secrets.exists() and 'wx.hyiplist.biz/api' in _secrets.read_text(encoding='utf-8'))
+_saved_load = app.load_config
+try:
+    app.load_config = lambda: {'wx_gateway': '', 'wx_token': ''}
+    _gw_back, _tk_back = app._wx_cfg()
+finally:
+    app.load_config = _saved_load
+ok('网关配置被清空时仍能从备份取回',
+   _gw_back == 'https://wx.hyiplist.biz/api' and bool(_tk_back),
+   str((_gw_back, bool(_tk_back))))
+ok('配置接口从 _wx_cfg 取网关值，不再只读可能被覆盖的字段',
+   '\"wx_gateway\": _wx_cfg()[0]' in _app_src)
+ok('保存配置时同步写本机凭据备份',
+   '_persist_wx_secrets(cfg.get(\"wx_gateway\"), cfg.get(\"wx_token\"))' in _app_src)
+
+# ---- 推送不再被号池 AI 润色拖死 ----
+ok('推送要点/结尾润色各带硬超时，号池慢也不卡推送',
+   _app_src.count('await asyncio.wait_for(_ask(), timeout=9)') == 2
+   and 'timeout=8)' in _app_src)
+ok('两处润色并发执行，不再串行叠加等待',
+   'lead_points, footer_data = await asyncio.gather(' in _app_src)
+ok('两处推送按钮都有 120s 硬超时兜底，不会永久停在推送中',
+   _html.count('setTimeout(()=> ctrl.abort(), 120000)') == 2
+   and _html.count('signal:ctrl.signal') == 2)
+
+# 单图快出：参考图与前三张卡同排 + 关键字区（用户 2026-11-26）
+ok('参考图卡与图型/风格/主题色四张同一行对齐（grid 4 列）',
+   'grid-template-columns:repeat(4,minmax(0,1fr))' in _html
+   and '#cardRef{max-width:none}' in _html)
+ok('单图快出区存在：关键字框 + 优化提示词 / 直接出图按钮',
+   all(x in _html for x in ('id="quickSingle"', 'id="qsKey"', 'id="qsPolish"', 'id="qsGen"')))
+ok('单图快出不拆分镜：直接调 /api/generate 且带上 prompt，不写 state.items',
+   'async function qsGenerate()' in _html
+   and 'submitGenerate(p)' in _html
+   and 'if (!_qsOptimized)' in _html)
+ok('单图快出重拼时清空旧手改指令，以关键字为准',
+   'body.instruction = \'\';' in _html and 'body.topic = keyword;' in _html)
+# 2026-11-26 二次调整：优化结果原地覆盖输入框，不写下方出图指令；出图模式改名多图模式
+ok('优化提示词原地覆盖关键字框，不占用下方出图指令',
+   "$('#qsKey').value = prompt;" in _html
+   and 'state.instrCustom = prompt; syncInstr();' not in _html
+   and "$('#qsKey').addEventListener('input'" in _html)
+ok('下方出图模式改名为「多图模式」，与单图快出成系列',
+   'class="plabel mode-head"' in _html
+   and '多图模式</span>' in _html
+   and '<b>单图快出</b>' in _html)
+_mh_css = _html.split('.mode-head{')[1].split('}')[0] if '.mode-head{' in _html else ''
+ok('多图模式标题加粗、字号与单图快出一致，且带绿色图标',
+   all(s in _mh_css for s in ('font-size:12.5px', 'font-weight:600', 'color:var(--ink)'))
+   and '.mode-head svg{width:15px;height:15px;color:#1f9d6b}' in _html
+   and 'class="plabel mode-head"><svg' in _html)
+# 2026-11-26 三次调整：单图快出与上方四张卡关联，选型变了重拼；不碰多图模式
+ok('单图快出用选型指纹和原始关键字保证与上方四张卡关联',
+   'function qsCardFingerprint()' in _html
+   and 'function qsCurrentKeyword()' in _html
+   and '_qsFingerprint !== nowFp' in _html
+   and 'qsCompose(qsCurrentKeyword())' in _html)
+ok('清空框才重置关键字态，非空手改保留不重拼',
+   "if (!v){ _qsOptimized = false; _qsFingerprint = ''; }" in _html
+   and 'if (!_qsOptimized) _qsRawKey = v;' in _html)
+# 2026-11-26 四次调整：直接出图给工作动效，持续到出图完成
+ok('直接出图有完整工作动效：按钮转圈 + 卡片扫光 + 状态脉冲',
+   '@keyframes qsSpin' in _html and '@keyframes qsSweep' in _html and '@keyframes qsPulse' in _html
+   and '.qs-btn.loading' in _html and '.quick-single.working' in _html
+   and '.qs-status.working' in _html and 'function qsWorking(on)' in _html
+   and 'qsBusy(true); qsWorking(true)' in _html)
+ok('出图动效持续到图片生成完成，poll 三种终态都回调收尾',
+   'async function poll(id, statusEl, mode, waitTxt, onFinish)' in _html
+   and _html.count('if (onFinish) onFinish(') == 3
+   and "'单图排队中…', (result, d)=>{" in _html
+   and 'qsWorking(false); qsBusy(false);' in _html)
+ok('状态文字更新不冲掉工作动效类',
+   "el.classList.contains('working') ? ' working' : ''" in _html)
+# 2026-11-26 五次调整：内置示例，一键还原图型/风格/主题色和关键字
+# 八次调整：示例换成纯图无字的真实记录，示例效果按钮整体去掉
+ok('内置示例可一键还原图型/风格/主题色和关键字，且示例 prompt 是纯图无字版',
+   'const QS_EXAMPLE = {' in _html
+   and "layout:'IG-030', style:'FE-061', color:'C-27'" in _html
+   and '93b2899443b2' in _html
+   and '不要文字，不要水印' in _html
+   and '小红书信息图' not in _html
+   and 'function qsRestoreExample()' in _html
+   and "$('#qsRestore').onclick = qsRestoreExample;" in _html)
+ok('示例效果入口已去掉，只留还原示例按钮',
+   'id="qsSample"' not in _html
+   and 'qs-sample' not in _html
+   and "$('#qsSample').onclick" not in _html
+   and 'id="qsRestore"' in _html)
+ok('还原示例记住原始关键字与选型指纹，换卡后仍能按新组合重拼',
+   '_qsRawKey = QS_EXAMPLE.rawKey; _qsOptimized = true;' in _html
+   and '_qsFingerprint = qsCardFingerprint();' in _html)
+# 2026-11-26 六次调整：单图快出成品登记进结果列表，修复右侧预览点不开
+ok('单图出完登记进结果列表，右侧预览可点击',
+   "if (onFinish) onFinish('done', d);" in _html
+   and 'topic:text.slice(0, 60), seq:state.results.length,' in _html
+   and "qsStatus('出图完成，点右侧预览图可放大', 'ok')" in _html)
+# 2026-11-26 七次调整：单图快出默认折叠，只留标题；多图模式照常显示
+ok('单图快出默认折叠，只留标题，下方多图模式正常显示',
+   'class="quick-single collapsed" id="quickSingle"' in _html
+   and 'id="qsHead"' in _html
+   and 'id="qsBody" hidden' in _html
+   and '.quick-single.collapsed .qs-tag,' in _html
+   and '.quick-single.collapsed .qs-body{display:none}' in _html
+   and 'class="params" id="omodeRow"' in _html)
+ok('点标题可展开/收起单图快出，键盘也能操作，出图逻辑不受影响',
+   'function qsSetOpen(open)' in _html
+   and "head.addEventListener('click', toggle);" in _html
+   and "head.addEventListener('keydown'" in _html
+   and "qsSetOpen(false);" in _html
+   and 'async function qsGenerate()' in _html)
+# 2026-11-26 八次调整：单图纯图/图文，多图纯图/图文/摄影
+ok('单图默认纯图，多图三种模式齐全且彼此独立',
+   'id="qsModeSeg"' in _html
+   and 'data-qsmode="pure-image" class="on"' in _html
+   and "state.qsMode = 'pure-image';" in _html
+   and 'data-omode="pure-image"' in _html
+   and 'data-omode="graphic-text" class="on"' in _html
+   and 'data-omode="photo"' in _html)
+ok('单图拼词用自己的模式，切换模式计入指纹自动重拼',
+   'body.image_mode = state.qsMode;' in _html
+   and 'b.image_mode = state.qsMode;' in _html
+   and 'function qsSetMode(mode)' in _html
+   and 'qsSetMode(b.dataset.qsmode);' in _html)
+ok('多图切换直接取三模式值，历史与草稿还原兼容旧记录',
+   "state.omode = b.dataset.omode || 'graphic-text';" in _html
+   and _html.count("['pure-image','graphic-text','photo'].includes(") == 3)
 
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')

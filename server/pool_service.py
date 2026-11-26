@@ -23,6 +23,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -211,12 +212,16 @@ def probe(port: int, timeout: float = 0.5) -> bool:
 
 
 def health(port: int) -> dict:
+    # 探活本机回环：用 urllib 显式禁用代理。httpx 在本机某些代理环境下打
+    # 127.0.0.1 会绕代理，实测要 5~7s，会把 DSH host 的 2.5s 状态轮询拖到超时，
+    # 面板就一直显示「内置号池读取中」。urllib 直连同地址 <1s。
     try:
-        r = httpx.get(f"http://127.0.0.1:{port}/health?format=json",
-                      timeout=httpx.Timeout(2.5), trust_env=False)
-        if r.status_code != 200:
-            return {"online": False, "message": f"号池返回 HTTP {r.status_code}"}
-        a = r.json().get("accounts") or {}
+        _opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with _opener.open(f"http://127.0.0.1:{port}/health?format=json", timeout=3) as r:
+            if r.status != 200:
+                return {"online": False, "message": f"号池返回 HTTP {r.status}"}
+            payload = json.loads(r.read().decode("utf-8", "replace"))
+        a = payload.get("accounts") or {}
         return {"online": True, "message": "",
                 "total": int(a.get("total") or 0), "active": int(a.get("active") or 0),
                 "limited": int(a.get("limited") or 0), "quota": int(a.get("total_quota") or 0)}

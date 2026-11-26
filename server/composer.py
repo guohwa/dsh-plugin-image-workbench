@@ -48,11 +48,16 @@ WIDE_CROP_HINT = (
 # 所以这里只取模式标识本身。
 PHOTO_LEAD = "摄影写真模式。"
 PHOTO_KEYWORDS = "通用摄影关键词：高级摄影师风格，创意构图，强烈的戏剧张力。"
-PHOTO_MODES = ("graphic-text", "photo")
+# 纯图模式：只出画面，不排任何文字，也不套图型里的标题/标签版式（用户 2026-11-26）
+PURE_LEAD = "纯图模式。"
+PURE_NO_TEXT = "画面里不要出现任何文字、标题、标签、标语、水印或对白气泡。"
+# 合法模式按「纯图 / 图文 / 摄影」排列；PHOTO_MODES 保留旧名给老调用方，语义等于全部模式
+IMAGE_MODES = ("pure-image", "graphic-text", "photo")
+PHOTO_MODES = IMAGE_MODES
 
 # 主图（hero / 首图）的硬约束：scene 层有黑名单拦截，但主图提示词里没有禁杯规则，
 # 模型自由发挥时把杯子画进了主图（截图里就出现过 NVIDIA 马克杯）。这条补在主图尾部，
-# 图文 / 摄影两种模式都生效，和 BANNED_PROP_TOKENS 形成双层保险。
+# 纯图 / 图文 / 摄影三种模式都生效，和 BANNED_PROP_TOKENS 形成双层保险。
 NO_CUP_RULE = (
     "画面里禁止出现任何饮用容器：杯子、马克杯、水杯、茶杯、咖啡杯、玻璃杯、酒杯、"
     "保温杯、纸杯都不要画；若需要手持道具，改用与主题相关的其它实物。"
@@ -421,14 +426,15 @@ def parse_moods(raw) -> list[str]:
 def build_instruction(sel: dict, ratio: str, moods: list[str], fusion: bool, whitespace: str,
                       ref: bool = False, image_mode: str = "graphic-text", shoot: str = "") -> str:
     """一行短指令，形如：图文模式，图型：SC-002，风格：FB-001，主题色：C-26，画幅比例：3:4，情绪：治愈、幽默"""
-    bits = ["摄影写真模式" if image_mode == "photo" else "图文模式"]
+    mode_name = {"photo": "摄影写真模式", "pure-image": "纯图模式"}.get(image_mode, "图文模式")
+    bits = [mode_name]
     if ref:
         bits.append("参考图：已上传")
     layout = sel.get("layout")
     style = sel.get("style")
     color = sel.get("color")
-    # 摄影模式不套图型版式：图型模板写的是「主标题/小辅助图/副标题」的位置，和写真不排字冲突
-    if layout and image_mode != "photo":
+    # 摄影 / 纯图都不套图型版式：图型模板写的是「主标题/小辅助图/副标题」的位置，和不出字冲突
+    if layout and image_mode not in ("photo", "pure-image"):
         bits.append(f"图型：{layout['id']}")
     if style:
         bits.append(f"风格：{style['id']}")
@@ -493,23 +499,28 @@ def build_prompt(item: dict, sel: dict, ratio: str, moods: list[str],
     if head:
         blocks.append(head)
 
-    layout_text = "" if image_mode == "photo" else layout_line(layout)
+    # 纯图 / 摄影都不套图型版式：图型 prompt 写的是标题与标签的位置，会逼模型出字
+    layout_text = "" if image_mode in ("photo", "pure-image") else layout_line(layout)
     if layout_text:
         blocks.append(layout_text)
 
-    # 缩微摄影融合在图文 / 摄影两种模式下都生效（用户 2026-11-05 定）
+    # 缩微摄影融合在纯图 / 图文 / 摄影三种模式下都生效（用户 2026-11-05 定）
     if fusion:
         blocks.append(MICRO_FUSION)
 
     if note.strip():
         blocks.append(f"补充要求：{note.strip()}。")
 
-    if image_mode == "photo":
-        # 摄影模式：上游提示词里没有文字槽位，分镜的标题/正文只当画面内容
-        blocks.append(PHOTO_LEAD)
-        if shoot:
-            blocks.append(f"拍摄类型：{shoot}。")
-        blocks.append(PHOTO_KEYWORDS)
+    if image_mode in ("photo", "pure-image"):
+        # 摄影 / 纯图：上游提示词里没有文字槽位，分镜的标题/正文只当画面内容
+        if image_mode == "photo":
+            blocks.append(PHOTO_LEAD)
+            if shoot:
+                blocks.append(f"拍摄类型：{shoot}。")
+            blocks.append(PHOTO_KEYWORDS)
+        else:
+            blocks.append(PURE_LEAD)
+            blocks.append(PURE_NO_TEXT)
         subject = re.sub(r"^0*\d{1,3}[\s.．、,，:：｜|\-—]+", "", title).strip() or title
         # 分镜标题/正文/小辅助图都当画面内容；各自收掉句末标点，避免「。。」
         scene_bits = [re.sub(r"[。！？\.!?，,；;]+$", "", x).strip() for x in (subject, body, scene)]
@@ -518,7 +529,8 @@ def build_prompt(item: dict, sel: dict, ratio: str, moods: list[str],
             blocks.append("画面：" + "。".join(scene_bits) + "。")
         elif ref:
             # 只传了参考图、没写任何文案：不给主体的话模型只能照抄原图
-            blocks.append("画面：沿用参考图里的主体与场景，重新组织构图拍一张。")
+            blocks.append("画面：沿用参考图里的主体与场景，重新组织构图，"
+                          "画一张完整的画面，画面里不排文字。")
     else:
         slots = build_slots(title, body, scene, layout)
         if slots:
@@ -584,9 +596,9 @@ async def compose(payload: dict, styles: list[dict], layouts: list[dict], colors
     note = (payload.get("note") or "").strip()
     ref = bool(payload.get("ref"))
     ref_mode = (payload.get("ref_mode") or "style").strip()  # style=只借画风 | full=完整复刻
-    # 出图模式：默认图文，和以前完全一样；只有显式传 photo 才走摄影分支
+    # 出图模式：默认图文，和以前完全一样；显式传 pure-image / photo 才走对应分支
     image_mode = (payload.get("image_mode") or "graphic-text").strip()
-    if image_mode not in PHOTO_MODES:
+    if image_mode not in IMAGE_MODES:
         image_mode = "graphic-text"
     shoot = (payload.get("shoot_type") or "").strip()[:40] if image_mode == "photo" else ""
     # allow_blank：左侧没写标题/正文时也允许出提示词（纯指令出图）；instruction：手改指令
