@@ -537,6 +537,12 @@ _ZEROWIDTH_RE = re.compile(
 )
 
 
+# ESC 控制符被个别上游渲染成字面标签：<escape> / </escape> / <esc> / 带属性或大写
+_ESC_TAG_RE = re.compile(r"</?\s*esc(?:ape)?\b[^<>]{0,40}>", re.I)
+# 同一种残片的 HTML 转义形态
+_ESC_ENT_RE = re.compile(r"&lt;\s*/?\s*esc(?:ape)?\b[^&<>]{0,40}&gt;", re.I)
+
+
 def _sanitize_text(text: str) -> str:
     s = str(text or "")
     s = _GARBAGE_RE.sub("", s)              # 清掉 turn/5u8495ea07e7 这类协议碎片
@@ -544,7 +550,10 @@ def _sanitize_text(text: str) -> str:
     # 清掉 ESC(\x1b) 等终端控制字符：模型偶发把这类不可见字符带进 JSON，
     # 会污染 json.loads 造成解析错位（如把数组前缀变成垃圾元素）
     s = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", s)
-    s = s.replace("<escape>", "")           # 个别接口把 ESC 渲染成字面 <escape>
+    # 个别接口把 ESC 渲染成字面标签：有 <escape> 也有 </escape>，偶尔带属性或大写，
+    # 还会被 HTML 转义成 &lt;escape&gt;。只删开标签会留下 </escape> 混进正文。
+    s = _ESC_TAG_RE.sub("", s)
+    s = _ESC_ENT_RE.sub("", s)
     s = re.sub(r"[ \t]{2,}", " ", s)        # 清掉删词后留下的多余空格
     s = re.sub(r"\n{3,}", "\n\n", s)        # 连续空行压成两段
     return s.strip()

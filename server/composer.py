@@ -19,12 +19,94 @@ import re
 
 NEG_MARKERS = ("避免", "不要", "不准", "禁止")
 
+# 官方技能包（handdraw-painter/SKILL.md「Prompt modes」）的图文固定后缀，一个字都不许改。
+# 它同时规定了三件事：文案可以由模型升华、概念主题要模型自己设计画面隐喻、文字必须参与构图。
+# 工作台以前用自己的「文字清晰可读，不要出现多余文字」代替它，结果画面退化成图示卡片
+# （用户 2026-11-26：同一句主题、同一个图型，官方技能出的图明显更像小林漫画）。
+GRAPHIC_SUFFIX = (
+    "【如果主题直白包含画面元素那就按主题出图，文案由你来升华，但是不要直接描述画面。 "
+    "如果主题比较概念化，那么文案和主题尽量保持一致，如果文案较长由你提炼，"
+    "由你先设计画面隐喻（人类和非人类都行）再出图   。    文字参与构图，图文一体】"
+)
+
 # 缩微摄影跨媒介融合：角色小、场景真、同光源同空间
 MICRO_FUSION = (
     "缩微摄影跨媒介融合：角色尺寸异常小、场景正常尺寸。"
     "场景视觉语言＝暖调写实生活摄影（真实材质、可信光影）。"
     "角色与场景同空间同光源，有可信接触、投影、遮挡，角色真正活在场景里而不是贴纸。"
 )
+
+# 线稿 / 白底 / 单色类画风（小林漫画、社论漫画、极简线描这一批）跟上面那条直接冲突：
+# 它要求「暖调写实生活摄影」，模型就照做，线稿被改成带光影的暖色插画，用户选了风格却出成另一种画风。
+# 同一套融合只保留「微缩比例 + 同光同源」这两件事，画风以所选风格为准。
+MICRO_FUSION_INK = (
+    "缩微比例融合：角色尺寸异常小、场景正常尺寸。"
+    "画风以所选风格为准，保持它的白底、线稿、单色与大面积留白，"
+    "不要改成写实摄影，不要加摄影质感、暖色滤镜和环境光渲染。"
+    "角色与场景同空间同光源，有可信接触与遮挡，线条与场景是同一支笔画的。"
+)
+
+# 图型自己要求「纯色背景 / 大面积留白」时，上面那条「暖调写实生活摄影」就自相矛盾了：
+# 版式要留白卡片，融合句却要求真实场景与实景光影，模型只能二选一，结果出成一张实拍照片
+# （用户 2026-11-26：小红书图文卡变成桌面笔记本实拍）。这类图型只保留微缩比例与同光同源。
+MICRO_FUSION_FLAT = (
+    "缩微比例融合：角色尺寸异常小、道具正常尺寸。"
+    "背景严格按图型要求保持纯色或留白，不铺实景环境，不要摄影质感与暖色滤镜。"
+    "角色与道具同光源、有可信接触与投影，真正处在同一个空间里，而不是贴上去的贴纸。"
+)
+
+# 判定线稿类画风：features/name 里出现了线稿特征词，且不是摄影/胶片那一挂
+_INK_HINTS = ("线稿", "白底", "黑白", "单色", "水墨", "毛笔", "简笔", "墨线",
+              "勾线", "素描", "版画", "剪影", "线描")
+_INK_EXCLUDE = ("摄影", "写真", "实拍", "照片", "胶片", "镜头")
+
+# 图型文案里出现这些词，说明这张卡要的是干净的纯色留白底，不能套实景摄影
+_FLAT_LAYOUT_HINTS = ("纯色背景", "纯白背景", "纯黑背景", "纯色底", "留白背景",
+                      "大面积留白", "较多留白", "大量留白")
+
+
+def is_flat_layout(layout: dict | None) -> bool:
+    """这张图型是不是要求纯色 / 留白底。"""
+    text = str((layout or {}).get("prompt") or "")
+    return any(k in text for k in _FLAT_LAYOUT_HINTS)
+
+
+def is_three_layer(layout: dict | None) -> bool:
+    """三层版式（上层主标题 / 中层小辅助图 / 下层副标题）单独走自己的槽位写法。"""
+    return bool(layout) and "三层" in str((layout or {}).get("prompt") or "")
+
+
+def is_ink_style(style: dict | None) -> bool:
+    """这条风格是不是「白底线稿」那一类，需要把融合从写实摄影改成同笔触。"""
+    if not style:
+        return False
+    # 摄影组的「黑白」是黑白照片，不是黑白线稿（如 FI-015 黑白肖像杂志）
+    group = str(style.get("group_name") or "")
+    if "摄影" in group or "写实" in group:
+        return False
+    text = (str(style.get("features") or "") + " " + str(style.get("name_en") or "")).lower()
+    return any(k in text for k in _INK_HINTS) and not any(k in text for k in _INK_EXCLUDE)
+
+
+# 纸白类主题色：白底线稿画风要的是「旧纸的暖白」，不是印刷白
+_PAPER_COLORS = ("奶油白", "象牙白", "米驼色")
+
+
+def default_color(style: dict | None, layout: dict | None, colors: list[dict],
+                  image_mode: str = "graphic-text") -> dict | None:
+    """没选主题色时的兜底推荐，只救一种场面：白底线稿 + 纯色留白卡。
+
+    图型写着「使用纯色背景」，画风又要求「白底」，但没给颜色时模型只能自己挑，
+    一句治愈文案被铺成蓝底（用户 2026-11-26）。这里补一个同调的纸白，
+    其余组合一律不擅自替用户选色。
+    """
+    if image_mode != "graphic-text" or not is_ink_style(style) or not is_flat_layout(layout):
+        return None
+    for want in _PAPER_COLORS:
+        for c in colors or []:
+            if want in str(c.get("name") or ""):
+                return c
+    return None
 
 WHITESPACE = {
     "moderate": "【大量留白】",
@@ -83,7 +165,7 @@ REF_FUSION_FULL = (
 )
 
 # 中层小辅助图没填时的兜底描述，保证三层版式不会空一层
-SCENE_FALLBACK = "一个涂鸦小人和一件具体实物道具，动作直接对应上层标题的意思，造型简单、线条少"
+SCENE_FALLBACK = "一个涂鸦小人和一件具体实物道具，动作直接对应文案的意思，造型简单、线条少"
 
 # 元素库：按文案关键词匹配「一件具体实物道具」，解决"具体实物道具"被生图模型
 # 一律脑补成杯子的问题。命中类别里挑一个，且单次出图内相邻分镜不重复。
@@ -156,6 +238,35 @@ BANNED_PROP_TOKENS = ("杯子", "马克杯", "水杯", "茶杯", "咖啡杯", "�
 
 
 
+# 上游偶发把 ESC 键渲染成字面标签（<escape> / </escape>），JSON 解析失败走按行兜底时，
+# 这些残片会连着被切断的引号、方括号一起当成道具名，最后原样印进用户能看到的提示词。
+# 拼词这一层再兜一次：不管字段从哪儿来，进提示词前都不许带标签。
+_MARKUP_TAG_RE = re.compile(r"</?\s*esc(?:ape)?\b[^<>]{0,40}>", re.I)
+_MARKUP_ENT_RE = re.compile(r"&lt;\s*/?\s*esc(?:ape)?\b[^&<>]{0,40}&gt;", re.I)
+# 首尾孤立的分隔符：多半是被切断的 JSON（如 `["一本旧书" ]`）
+_STRAY_EDGE_RE = re.compile(
+    r"^[\s\"'“”‘’\[\]{}<>，,、；;：:]+|[\s\"'“”‘’\[\]{}<>，,、；;：:]+$")
+
+
+def clean_markup(text: str) -> str:
+    """去掉 ESC 残片标签与终端控制字符，保留文字本身。"""
+    s = str(text or "")
+    s = _MARKUP_TAG_RE.sub("", s)
+    s = _MARKUP_ENT_RE.sub("", s)
+    s = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", "", s)
+    return s.strip()
+
+
+def tidy_phrase(text: str) -> str:
+    """道具名 / 画面描述收尾：剥掉标签残片，再反复削掉两边的引号和方括号。"""
+    s = clean_markup(text)
+    prev = None
+    while s and s != prev:
+        prev = s
+        s = _STRAY_EDGE_RE.sub("", s).strip()
+    return s
+
+
 def _prop_is_banned(prop: str) -> bool:
     """元素里出现饮用容器字样就判为违规，绝不进画面。
 
@@ -187,7 +298,10 @@ def _pick_prop(title: str, body: str, used: list) -> str:
 def _wrap_scene(prop: str, fusion: bool) -> str:
     """把「具体道具」包成中层小辅助图描述，区分微缩融合 / 涂鸦两种小人。"""
     who = "一个微缩尺寸的小人" if fusion else "一个涂鸦小人"
-    return f"{who}和{prop}，小人的动作直接呼应上层标题的意思，造型简单、线条少"
+    prop = tidy_phrase(prop)
+    if not prop:
+        prop = "一件具体实物道具"
+    return f"{who}和{prop}，小人的动作直接呼应文案的意思，造型简单、线条少"
 
 
 def _auto_scene(title: str, body: str, used: list, fusion: bool) -> str:
@@ -224,7 +338,7 @@ def _parse_props(raw: str, n: int) -> list[str]:
         raise RuntimeError("AI 返回的道具清单无法解析")
     clean = []
     for x in arr:
-        c = str(x).strip().strip("[]\"'，, \t").strip()
+        c = tidy_phrase(str(x))
         if c and re.search(r"[一-鿿]", c):   # 必须含至少一个汉字，否则视为垃圾
             clean.append(c)
     if len(clean) != n:
@@ -277,7 +391,7 @@ async def fill_scenes(items: list[dict], fusion: bool) -> list[str]:
     ai_idx = 0
     out: list[str] = []
     for it in items:
-        scene = (it.get("scene") or "").strip()
+        scene = tidy_phrase(it.get("scene") or "")
         if not scene:
             # scene 留空：先用大模型挑的道具，挑不到或 LLM 没覆盖这一条时回退关键词规则
             prop = None
@@ -296,8 +410,13 @@ async def fill_scenes(items: list[dict], fusion: bool) -> list[str]:
     return out
 
 
-def clean_traits(features: str, limit: int = 110) -> str:
-    """只留正向特征，砍掉含否定词的分句，过长截断。"""
+def clean_traits(features: str, limit: int | None = None) -> str:
+    """只留正向特征，砍掉含否定词的分句；limit 为空表示不截断。
+
+    以前默认截到 110 字，小林漫画那种排在后面的「脸颊、衣服或小道具加入少量红黄绿局部平涂」
+    和「中国写意人物画与老式讽刺漫画的味道」正好被砍掉，风格辨识度就没了（用户 2026-11-26）。
+    官方技能包是整段照用的，这里也默认整段保留。
+    """
     segs = re.split(r"[；;。]", features or "")
     keep = []
     for seg in segs:
@@ -305,6 +424,8 @@ def clean_traits(features: str, limit: int = 110) -> str:
         if not seg or any(m in seg for m in NEG_MARKERS):
             continue
         keep.append(seg)
+    if limit is None:
+        return "；".join(keep)
     # 按分句累加，超长就整句舍弃，不留半句、不加省略号
     out: list[str] = []
     total = 0
@@ -355,6 +476,47 @@ def layout_line(layout: dict | None) -> str:
     return text
 
 
+def _as_label(value: str) -> str:
+    """标签值收尾：去掉自带的句号，避免拼出「。。」。"""
+    return tidy_phrase(str(value or "")).rstrip("。．.；;，, ")
+
+
+def graphic_head(style: dict | None, color: dict | None, ratio: str,
+                 layout: dict | None, moods: list[str] | None = None) -> list[str]:
+    """图文模式的固定开头，字段与顺序照官方技能包逐项对齐：
+
+    风格名称 → 参考作者/风格名称 → 主题色 → 画幅比例 → 排版要求 → 核心风格特征 → 情绪基调
+
+    顺序不是随便排的。官方那套提示词按这个顺序喂给模型，同一图型、同一句主题，
+    工作台以前把风格名和特征揉进一个括号、把画幅和情绪挤到最后一行、特征还被截到 110 字，
+    出来的图就和官方差一截（用户 2026-11-26 对比截图）。
+    """
+    out: list[str] = []
+    traits = ""
+    if style:
+        name_en = _as_label(style.get("name_en") or style.get("name") or "")
+        ref = _as_label(style.get("ref") or "")
+        traits = clean_traits(style.get("features", ""))
+        if name_en:
+            out.append(f"风格名称：{name_en}。")
+        if ref:
+            out.append(f"参考作者/风格名称：{ref}。")
+    if color:
+        line = color_line(color)
+        if line:
+            out.append(line)
+    if str(ratio or "").strip():
+        out.append(f"画幅比例：{str(ratio).strip()}。")
+    lay = layout_line(layout)
+    if lay:
+        out.append(f"排版要求：{lay}")
+    if traits:
+        out.append(f"核心风格特征：{traits}。")
+    if moods:
+        out.append("情绪基调：" + "、".join(moods) + "。")
+    return out
+
+
 def clean_title(raw: str) -> str:
     """01｜先存后花 / **01｜先存后花** / 【01｜先存后花】 → 01 先存后花"""
     t = (raw or "").strip()
@@ -383,13 +545,13 @@ def short_body(body: str, limit: int = 62) -> str:
 def build_slots(title: str, body: str, scene: str, layout: dict | None) -> str:
     """文字槽位。三层版式按「上层主标题 / 中层小辅助图 / 下层副标题」写，
     其他图型退回「主标题 / 正文」，免得槽位和图型打架。"""
-    three = bool(layout) and "三层" in (layout.get("prompt") or "")
+    three = is_three_layer(layout)
     sub = short_body(body)
     bits = []
     if three:
         if title:
             bits.append(f"上层主标题文字：「{title}」")
-        bits.append("中层小辅助图：" + (scene.strip() or SCENE_FALLBACK))
+        bits.append("中层小辅助图：" + (tidy_phrase(scene) or SCENE_FALLBACK))
         if sub:
             bits.append(f"下层副标题文字：「{sub}」")
     else:
@@ -476,14 +638,19 @@ def _ids_to_names(instr: str, sel: dict) -> str:
 def build_prompt(item: dict, sel: dict, ratio: str, moods: list[str],
                  fusion: bool, whitespace: str, note: str = "", ref: bool = False,
                  image_mode: str = "graphic-text", shoot: str = "", instr: str = "",
-                 ref_mode: str = "style", visual: str = "") -> str:
-    """单条完整提示词。item = {title, body}"""
+                 ref_mode: str = "style", visual: str = "", scene_manual: bool = True) -> str:
+    """单条完整提示词。item = {title, body, scene}
+
+    scene_manual=False 表示画面描述不是用户填的，而是系统按文案自动挑的道具。
+    纯色留白的社媒卡上，这种自动道具会把画面钉死在道具上，所以不写进提示词。
+    """
     style = sel.get("style")
     layout = sel.get("layout")
     color = sel.get("color")
-    title = clean_title(item.get("title") or "")
-    body = (item.get("body") or "").strip()
-    scene = (item.get("scene") or "").strip()
+    title = clean_title(clean_markup(item.get("title") or ""))
+    body = clean_markup(item.get("body") or "").strip()
+    # 画面描述可能来自 AI 挑道具、用户手填或旧草稿，进去前统一清掉标签残片
+    scene = tidy_phrase(item.get("scene") or "")
 
     blocks: list[str] = []
 
@@ -495,23 +662,28 @@ def build_prompt(item: dict, sel: dict, ratio: str, moods: list[str],
     if instr:
         blocks.append(_ids_to_names(instr, sel))
 
-    head = style_line(style) + color_line(color)
-    if head:
-        blocks.append(head)
-
-    # 纯图 / 摄影都不套图型版式：图型 prompt 写的是标题与标签的位置，会逼模型出字
-    layout_text = "" if image_mode in ("photo", "pure-image") else layout_line(layout)
-    if layout_text:
-        blocks.append(layout_text)
+    if image_mode in ("photo", "pure-image"):
+        head = style_line(style) + color_line(color)
+        if head:
+            blocks.append(head)
 
     # 缩微摄影融合在纯图 / 图文 / 摄影三种模式下都生效（用户 2026-11-05 定）
+    # 但线稿类画风不能用写实摄影那套措辞，否则画风被改掉（用户 2026-11-26 反馈小林漫画出成暖调摄影）
+    # 图文模式把它放到「主题」之后，先让风格与版式立住，再补融合，别一上来就顶掉画风
+    fusion_block = ""
     if fusion:
-        blocks.append(MICRO_FUSION)
-
-    if note.strip():
-        blocks.append(f"补充要求：{note.strip()}。")
+        if is_ink_style(style):
+            fusion_block = MICRO_FUSION_INK
+        elif is_flat_layout(layout):
+            fusion_block = MICRO_FUSION_FLAT
+        else:
+            fusion_block = MICRO_FUSION
 
     if image_mode in ("photo", "pure-image"):
+        if fusion_block:
+            blocks.append(fusion_block)
+        if note.strip():
+            blocks.append(f"补充要求：{note.strip()}。")
         # 摄影 / 纯图：上游提示词里没有文字槽位，分镜的标题/正文只当画面内容
         if image_mode == "photo":
             blocks.append(PHOTO_LEAD)
@@ -531,35 +703,71 @@ def build_prompt(item: dict, sel: dict, ratio: str, moods: list[str],
             # 只传了参考图、没写任何文案：不给主体的话模型只能照抄原图
             blocks.append("画面：沿用参考图里的主体与场景，重新组织构图，"
                           "画一张完整的画面，画面里不排文字。")
-    else:
+        tail = []
+        if moods:
+            tail.append("情绪：" + "、".join(moods))
+        if color:
+            tail.append(f"{color.get('name') or ''}作统一色调点缀")
+        if ratio:
+            tail.append(f"画幅比例 {ratio}")
+        tail = [t for t in tail if t and t.strip("：")]
+        if tail:
+            blocks.append("。".join(tail) + "。")
+        if str(ratio or "").strip() == WIDE_CROP_RATIO:
+            blocks.append(WIDE_CROP_HINT)
+        if whitespace in WHITESPACE:
+            blocks.append(WHITESPACE[whitespace])
+        # 实拍里道具穿帮最扎眼（出现过 NVIDIA 马克杯），只在摄影模式兜这一条
+        if image_mode == "photo":
+            blocks.append(NO_CUP_RULE)
+        blocks.append(TAIL_INSTRUCTION)
+        return "\n".join(b for b in blocks if b)
+
+    # ---- 图文：字段与顺序和官方技能包逐项对齐 ----
+    blocks += graphic_head(style, color, ratio, layout, moods)
+
+    three = is_three_layer(layout)
+    subject = re.sub(r"^0*\d{1,3}[\s.．、,，:：｜|\-—]+", "", title).strip()
+    if three:
+        # 三层版式要精确控制三行字，仍走槽位写法，不再加「文案由你升华」的后缀
+        if scene:
+            pass        # 中层小辅助图已经在槽位里，不重复加画面行
         slots = build_slots(title, body, scene, layout)
         if slots:
             blocks.append(slots)
             blocks.append("文字清晰可读，文字参与构图，不要出现多余文字。")
         elif ref:
-            # 只上传参考图、不选图型风格主题色（用户 2026-11-08 要求）：没有文案可排，
-            # 就让参考图当唯一依据，重新组织构图出一张完整画面，别把原图原样复刻
             blocks.append(
                 "没有文案：画面主体与画风都取自参考图，重新组织构图、环境与动作，"
-                "画一张完整的插画，画面里不排文字。"
-            )
+                "画一张完整的插画，画面里不排文字。")
+    else:
+        # 主题：官方写法是「主题：」+ 用户原话，文案的取舍交给固定后缀
+        theme = subject or body
+        if theme and body and subject and body != subject:
+            blocks.append(f"主题：{theme.rstrip('。')}。正文文字：{body.rstrip('。')}。")
+        elif theme:
+            blocks.append(f"主题：{theme.rstrip('。')}。")
+        # 纯色留白的社媒卡不硬塞「画面：一个小人和一件道具」——
+        # 那句话会把模型钉在道具上（一句关于忘记的话被画成一页日历），
+        # 隐喻交给固定后缀里的「由你先设计画面隐喻」来处理（用户 2026-11-26 对比官方效果）。
+        # 用户自己填的画面描述仍然照用，那是明确指令。
+        inject_scene = bool(scene) and (scene_manual or not is_flat_layout(layout))
+        if inject_scene:
+            blocks.append("画面：" + scene.rstrip("。") + "。")
+        if not theme and not scene and ref:
+            blocks.append(
+                "没有文案：画面主体与画风都取自参考图，重新组织构图、环境与动作，"
+                "画一张完整的插画，画面里不排文字。")
+
+    if fusion_block:
+        blocks.append(fusion_block)
+    if note.strip():
+        blocks.append(f"补充要求：{note.strip()}。")
 
     # 小说拆分给出的画面表演要点：只描述画面，不进文字槽位。
-    # 老链路不带 visual，这一块不会出现，提示词逐字保持原样。
     v = str(visual or "").strip()
     if v:
         blocks.append("画面表演（只描述画面，不要排成文字）：" + v.rstrip("。！？.!?") + "。")
-
-    tail = []
-    if moods:
-        tail.append("情绪：" + "、".join(moods))
-    if color:
-        tail.append(f"{color.get('name') or ''}作统一色调点缀")
-    if ratio:
-        tail.append(f"画幅比例 {ratio}")
-    tail = [t for t in tail if t and t.strip("：")]
-    if tail:
-        blocks.append("。".join(tail) + "。")
 
     if str(ratio or "").strip() == WIDE_CROP_RATIO:
         blocks.append(WIDE_CROP_HINT)
@@ -567,7 +775,8 @@ def build_prompt(item: dict, sel: dict, ratio: str, moods: list[str],
     if whitespace in WHITESPACE:
         blocks.append(WHITESPACE[whitespace])
 
-    blocks.append(NO_CUP_RULE)
+    if not three:
+        blocks.append(GRAPHIC_SUFFIX)
     blocks.append(TAIL_INSTRUCTION)
     return "\n".join(b for b in blocks if b)
 
@@ -612,24 +821,50 @@ async def compose(payload: dict, styles: list[dict], layouts: list[dict], colors
             continue
         title = (raw.get("title") or "").strip()
         body = (raw.get("body") or "").strip()
-        scene = (raw.get("scene") or "").strip()
+        scene = tidy_phrase(raw.get("scene") or "")
         visual = (raw.get("visual") or "").strip()
         if not title and not body and not allow_blank:
             continue
-        items.append({"title": title, "body": body, "scene": scene, "visual": visual})
+        items.append({"title": title, "body": body, "scene": scene,
+                      "scene_manual": bool(scene), "visual": visual})
 
     if not items:
         topic = (payload.get("topic") or "").strip()
         if topic:
             lines = topic.split("\n", 1)
-            items.append({"title": lines[0].strip(), "body": lines[1].strip() if len(lines) > 1 else "", "scene": ""})
+            items.append({"title": lines[0].strip(), "body": lines[1].strip() if len(lines) > 1 else "",
+                          "scene": "", "scene_manual": False})
+
+    # 没选主题色时，纯色留白的线稿卡补一个同调的纸白。
+    # 不补的话「纯色背景」这一条只能让模型自己挑颜色，一句治愈文案被铺成蓝底（用户 2026-11-26）。
+    auto_color = False
+    if not sel["color"]:
+        guess = default_color(sel["style"], sel["layout"], colors, image_mode)
+        if guess:
+            sel["color"] = guess
+            auto_color = True
 
     instruction = custom_instr or build_instruction(
         sel, ratio, moods, fusion, whitespace, ref, image_mode, shoot)
     out_items = []
-    # scene 留空的条目统一交给 fill_scenes：大模型批量挑道具，失败静默回退关键词规则，
-    # 保证永远有元素、绝不像以前那样一律画杯子。拆分镜 / 生成提示词都复用同一份逻辑。
-    scenes = await fill_scenes(items, fusion)
+    # 纯色留白的社媒卡不给自动道具：那张卡要的是「一个小人和大片空白」，
+    # 塞一件实物反而把模型钉在道具上（一句关于忘记的话被画成一页日历）。
+    # 单图快出（只有一条）也一样，一句主题本来就该由模型自己设计画面，
+    # 既然用不上，就别再花十几秒调大模型挑道具（用户 2026-11-26 反馈优化提示词等太久）。
+    single = len(items) == 1
+    if image_mode == "photo":
+        want_scene = True
+    elif image_mode == "pure-image":
+        # 多图贴图才需要逐条配道具；单图只给一句主题时交给模型自由发挥
+        want_scene = (not single) or not (items[0]["title"] or items[0]["body"])
+    else:
+        want_scene = is_three_layer(sel["layout"]) or not is_flat_layout(sel["layout"])
+    if want_scene:
+        # scene 留空的条目统一交给 fill_scenes：大模型批量挑道具，失败静默回退关键词规则，
+        # 保证永远有元素、绝不像以前那样一律画杯子。拆分镜 / 生成提示词都复用同一份逻辑。
+        scenes = await fill_scenes(items, fusion)
+    else:
+        scenes = [tidy_phrase(it.get("scene") or "") for it in items]
     for idx, item in enumerate(items, 1):
         scene = scenes[idx - 1]
         item["scene"] = scene
@@ -642,11 +877,12 @@ async def compose(payload: dict, styles: list[dict], layouts: list[dict], colors
             "instruction": instruction,
             "prompt": build_prompt(item, sel, ratio, moods, fusion, whitespace, note, ref,
                                    image_mode, shoot, instr=custom_instr, ref_mode=ref_mode,
-                                   visual=item["visual"]),
+                                   visual=item["visual"], scene_manual=item["scene_manual"]),
         })
     return {
         "instruction": instruction,
         "items": out_items,
+        "auto_color": auto_color,
         "selection": {
             "style": sel["style"]["id"] if sel["style"] else None,
             "layout": sel["layout"]["id"] if sel["layout"] else None,

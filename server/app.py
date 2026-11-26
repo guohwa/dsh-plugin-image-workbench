@@ -426,28 +426,46 @@ def build_image_prompt(req: GenRequest) -> str:
     style = _find(CATALOG["styles"], req.style_id)
     layout = _find(CATALOG["layouts"], req.layout_id)
     color = _find(CATALOG["colors"], req.color_id)
+    mode = req.image_mode or "graphic-text"
+    # 没选主题色时，白底线稿 + 纯色留白卡补纸白（和 composer.compose 同一条规则）
+    if not color:
+        color = composer.default_color(style, layout, CATALOG["colors"], mode)
     parts: list[str] = []
     if ref_instr:
         parts.append(ref_instr)
-    # 纯图模式没有现成 prompt 时走这条兜底：不套图型版式，也不让模型画字
-    if layout and (req.image_mode or "graphic-text") != "pure-image":
-        parts.append(f"排版图型：{layout['prompt']}")
-    if color:
-        parts.append(color["prompt"])
-    if style:
-        parts.append(f"画风：{style['name_en']}。核心视觉特征：{style['features']}")
-    parts.append(f"主题：{req.topic.strip()}")
+    if mode == "pure-image":
+        # 纯图：只交代画风和画面，不套图型版式，也不让模型画字
+        if style:
+            parts.append(composer.style_line(style))
+        if color:
+            parts.append(color["prompt"])
+        parts.append(f"主题：{req.topic.strip()}")
+    elif mode == "photo":
+        # 摄影：不套图型版式（图型写的是标题与标签的位置，会逼模型出字）
+        if style:
+            parts.append(composer.style_line(style))
+        if color:
+            parts.append(color["prompt"])
+        parts.append(composer.PHOTO_LEAD)
+        if (req.shoot_type or "").strip():
+            parts.append(f"拍摄类型：{req.shoot_type.strip()}。")
+        parts.append(composer.PHOTO_KEYWORDS)
+        parts.append(f"主题：{req.topic.strip()}")
+    else:
+        # 图文：字段顺序与官方技能包一致（风格名称 / 参考作者 / 主题色 / 画幅 / 排版 / 核心特征）
+        parts += composer.graphic_head(style, color, req.ratio, layout, None)
+        parts.append(f"主题：{req.topic.strip().rstrip('。')}。")
     # 2.35:1 是微信公众号首图（900×383），不是小红书图文的口径，单独说清楚
     if (req.ratio or "").strip() == "2.35:1":
-        parts.append("画面比例：2.35:1 公众号首图横幅，主体与标题压在居中横向安全区内，"
-                     "上下各留一段可裁的次要背景。")
-    else:
-        parts.append(f"画面比例：{req.ratio}，适合小红书图文排版。")
+        parts.append(composer.WIDE_CROP_HINT)
     if req.note:
         parts.append(f"补充要求：{req.note.strip()}")
-    parts.append(composer.NO_CUP_RULE)
-    if (req.image_mode or "") == "pure-image":
+    if mode == "pure-image":
         parts.append(composer.PURE_NO_TEXT)
+    elif mode == "photo":
+        parts.append(composer.NO_CUP_RULE)
+    else:
+        parts.append(composer.GRAPHIC_SUFFIX)
     if req.novel_overlay:
         parts.append("画面里不要出现任何文字、字幕、标语或对白气泡，顶部留出干净的画面；"
                      "旁白会在出图后另行叠加。")

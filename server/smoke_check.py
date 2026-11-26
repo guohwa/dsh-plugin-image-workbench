@@ -508,6 +508,125 @@ ok('元素库自动选：用户手填 scene 不被覆盖',
    _c2['items'][0]['scene'] == '我手填的：小人举着一杯奶茶',
    '手填被覆盖：' + _c2['items'][0]['scene'])
 
+# 线稿类画风不能套「暖调写实生活摄影」的融合措辞：用户选了小林漫画，出的却是暖调写实插画
+_cat_styles = {s['id']: s for s in catalog.build()['styles']}
+_ink_style = _cat_styles.get('FE-060')      # 小林漫画：白底、毛笔线稿、大面积留白
+_photo_style = _cat_styles.get('FI-015')    # 黑白肖像摄影：features 里有「黑白」但不是线稿
+ok('线稿类画风被识别出来（小林漫画 / 极简线描）',
+   composer.is_ink_style(_ink_style) is True
+   and composer.is_ink_style(_cat_styles.get('FA-002')) is True
+   and composer.is_ink_style(None) is False)
+ok('摄影组的「黑白」不会被误判成线稿（FI-015 是黑白照片）',
+   composer.is_ink_style(_photo_style) is False
+   and composer.is_ink_style(_cat_styles.get('FE-001')) is False)
+_ink_prompt = composer.build_prompt(
+    {'title': '有很多事当时你想不通', 'body': '', 'scene': '一个微缩尺寸的小人和一本旧书'},
+    {'style': _ink_style, 'layout': _L[0], 'color': None},
+    '3:4', ['治愈'], True, 'normal', '', False, 'graphic-text', '')
+ok('线稿风格 + 缩微融合：不把场景改写成暖调写实摄影',
+   composer.MICRO_FUSION_INK in _ink_prompt
+   and '暖调写实生活摄影' not in _ink_prompt
+   and '画风以所选风格为准' in _ink_prompt)
+ok('摄影 / 无风格时仍走原来的写实摄影融合',
+   composer.MICRO_FUSION in composer.build_prompt(
+       {'title': 't', 'body': '', 'scene': '小人和旧书'},
+       {'style': _photo_style}, '3:4', [], True, 'normal', '', False, 'graphic-text', '')
+   and composer.MICRO_FUSION in composer.build_prompt(
+       {'title': 't', 'body': '', 'scene': '小人和旧书'},
+       {'style': None}, '3:4', [], True, 'normal', '', False, 'graphic-text', ''))
+
+# 图文卡的另一半毛病（用户 2026-11-26）：图型写着「纯色背景、留白」，融合句却要求暖调实景摄影，
+# 两条要求打架，出来的不是卡片而是一张桌面实拍；而且「上方是角色或场景图」只说了位置、没说画什么，
+# 挑好的画面内容被丢掉，模型只能自己编。
+_cat_layouts = {l['id']: l for l in catalog.build()['layouts']}
+_flat_layout = _cat_layouts['SC-008']      # 图上文下留白卡
+_three_layout = _cat_layouts['SC-006']     # 三层标题辅助图卡
+_flat_prompt = composer.build_prompt(
+    {'title': '', 'body': '有很多事你当时想不通，别着急，过段时间你可能就忘了。',
+     'scene': '一个微缩尺寸的小人和一本日记本'},
+    {'style': None, 'layout': _flat_layout, 'color': None},
+    '3:4', ['治愈'], True, 'normal', '', False, 'graphic-text', '')
+ok('纯色留白图型不再要求暖调实景摄影，改纯色底融合',
+   composer.MICRO_FUSION_FLAT in _flat_prompt
+   and '暖调写实生活摄影' not in _flat_prompt,
+   '图型要留白、融合句要实景，两条打架')
+ok('图文卡把挑好的画面内容写进提示词',
+   '画面：一个微缩尺寸的小人和一本日记本' in _flat_prompt,
+   '只写了图块位置没写画什么，模型只能自己编')
+ok('没有画面内容时不硬拼一个空的「画面：」',
+   '画面：' not in composer.build_prompt(
+       {'title': 't', 'body': 'b', 'scene': ''},
+       {'layout': _flat_layout}, '3:4', [], True, 'normal', '', False, 'graphic-text', ''))
+ok('三层版式仍走「中层小辅助图」，不重复加画面行',
+   '中层小辅助图' in composer.build_prompt(
+       {'title': '', 'body': '副标题', 'scene': '小人和日记本'},
+       {'layout': _three_layout}, '3:4', [], True, 'normal', '', False, 'graphic-text', '')
+   and '画面：' not in composer.build_prompt(
+       {'title': '', 'body': '副标题', 'scene': '小人和日记本'},
+       {'layout': _three_layout}, '3:4', [], True, 'normal', '', False, 'graphic-text', ''))
+ok('画面描述不再指代不存在的「上层标题」',
+   '上层标题' not in composer._wrap_scene('一本旧书', True)
+   and '上层标题' not in composer.SCENE_FALLBACK)
+
+# 图文提示词的字段与顺序必须和官方技能包一致（用户 2026-11-26：同一图型同一主题，
+# 工作台出的图明显不如官方技能包像小林漫画，逐条比对后发现差在风格特征被截断、
+# 编号标签缺失、画幅情绪挤在最后一行、还硬塞了一句自动挑的道具画面）
+_traits_full = composer.clean_traits(_ink_style.get('features', ''))
+ok('风格特征不再截到 110 字（丢掉的红黄绿点涂正是小林漫画的辨识度）',
+   '红黄绿局部平涂' in _traits_full and '写意人物画' in _traits_full,
+   '特征被截断：' + _traits_full[-30:])
+_order_prompt = composer.build_prompt(
+    {'title': '有很多事你当时想不通', 'body': '', 'scene': ''},
+    {'style': _ink_style, 'layout': _flat_layout, 'color': {'prompt': '主题色：奶油白（Cream White）。',
+                                                            'name': '奶油白'}},
+    '3:4', ['治愈', '松弛'], False, 'normal', '', False, 'graphic-text', '')
+_heads = ['风格名称：', '参考作者/风格名称：', '主题色：', '画幅比例：', '排版要求：',
+          '核心风格特征：', '情绪基调：']
+_pos = [_order_prompt.find(h) for h in _heads]
+ok('图文提示词按官方顺序排列：风格名称→参考作者→主题色→画幅→排版→核心特征→情绪',
+   all(p >= 0 for p in _pos) and _pos == sorted(_pos), '字段位置：' + str(dict(zip(_heads, _pos))))
+ok('图文提示词带上官方固定图文后缀（文案升华 + 先设计隐喻 + 文字参与构图）',
+   composer.GRAPHIC_SUFFIX in _order_prompt and '文案由你来升华' in _order_prompt
+   and '由你先设计画面隐喻' in _order_prompt
+   and '文字清晰可读' not in _order_prompt)
+ok('图文提示词里没有「禁止饮用容器」这一大段噪声（和风格、画面都无关）',
+   '禁止出现任何饮用容器' not in _order_prompt)
+_auto_scene_prompt = composer.build_prompt(
+    {'title': '有很多事你当时想不通', 'body': '', 'scene': '一个涂鸦小人和一本日历'},
+    {'style': _ink_style, 'layout': _flat_layout, 'color': None},
+    '3:4', ['治愈'], False, 'normal', '', False, 'graphic-text', '', scene_manual=False)
+ok('纯色留白卡不把系统自动挑的道具写进提示词（一句忘记的话被画成一页日历）',
+   '日历' not in _auto_scene_prompt and '画面：' not in _auto_scene_prompt)
+_manual_scene_prompt = composer.build_prompt(
+    {'title': '有很多事你当时想不通', 'body': '', 'scene': '一个涂鸦小人和一本日历'},
+    {'style': _ink_style, 'layout': _flat_layout, 'color': None},
+    '3:4', ['治愈'], False, 'normal', '', False, 'graphic-text', '', scene_manual=True)
+ok('用户手填的画面描述在纯色留白卡上照样写进提示词',
+   '画面：一个涂鸦小人和一本日历' in _manual_scene_prompt)
+_cat_colors = catalog.build()['colors']
+_cid_pick = {c['id']: c for c in _cat_colors}
+ok('没选主题色时，白底线稿 + 纯色留白卡自动补纸白（否则纯色底被铺成蓝底）',
+   (composer.default_color(_ink_style, _flat_layout, _cat_colors) or {}).get('name') in ('奶油白', '象牙白', '米驼色')
+   and composer.default_color(_photo_style, _flat_layout, _cat_colors) is None
+   and composer.default_color(_ink_style, None, _cat_colors) is None)
+_auto_c = asyncio.run(composer.compose(
+    {'ratio': '3:4', 'layout_id': 'SC-008', 'style_id': 'FE-060',
+     'items': [{'title': '有很多事你当时想不通，别着急，过段时间你可能就忘了。', 'body': ''}]},
+    catalog.build()['styles'], catalog.build()['layouts'], _cat_colors))
+ok('拼词接口会自动补主题色并标出 auto_color',
+   _auto_c.get('auto_color') is True and '主题色：' in _auto_c['items'][0]['prompt']
+   and _auto_c['items'][0]['scene'] == '',
+   'scene 不该再自动挑道具：' + str(_auto_c['items'][0]['scene']))
+
+_single_pure = asyncio.run(composer.compose(
+    {'image_mode': 'pure-image', 'ratio': '3:4', 'style_id': 'FE-060',
+     'items': [{'title': '一只橘猫', 'body': '趴在窗台晒太阳'}]},
+    catalog.build()['styles'], catalog.build()['layouts'], _cat_colors))
+ok('单图快出不自动配道具：一句主题交给模型，不白等十几秒挑道具',
+   _single_pure['items'][0]['scene'] == ''
+   and '一个涂鸦小人' not in _single_pure['items'][0]['prompt'],
+   '仍在自动挑道具：' + str(_single_pure['items'][0]['scene']))
+
 # 纯图模式（用户 2026-11-26）：只出画面、不排文字，也不套图型版式
 _pure = composer.build_prompt({'title': '一只橘猫', 'body': '趴在窗台晒太阳'},
                               {'layout': _L[0]}, '3:4', [], False, 'normal', '', False, 'pure-image', '')
@@ -558,6 +677,32 @@ ok('_parse_props：返回数量与预期不符时抛错（绝不带着错位继�
 _a5 = _pp('一枚硬币\n一卷瑜伽垫\n一张工资条', 3)
 ok('_parse_props：逐行文本退化形态可解析',
    _a5 == ['一枚硬币', '一卷瑜伽垫', '一张工资条'], '解析结果：' + str(_a5))
+# 6) ESC 被上游渲染成字面标签：`["一本旧书"]</escape>` 在 JSON 解析失败后会退化成
+#    按行兜底，旧实现只剥首尾引号方括号，把 `" ]</escape>` 直接印进了提示词（v1.1.58 用户截图）
+_a6 = _pp('["一本旧书"]</escape>', 1)
+ok('_parse_props：ESC 残片 </escape> 不进道具名',
+   _a6 == ['一本旧书'], '解析结果：' + str(_a6))
+ok('道具名两边的孤立引号方括号一起削掉',
+   composer.tidy_phrase('一本旧书" ]</escape>') == '一本旧书'
+   and composer.tidy_phrase('["一枚硬币"') == '一枚硬币'
+   and composer.tidy_phrase('&lt;/escape&gt;一卷瑜伽垫') == '一卷瑜伽垫',
+   str([composer.tidy_phrase('一本旧书" ]</escape>'), composer.tidy_phrase('["一枚硬币"')]))
+ok('号池清洗同时删开标签与闭标签，正文内容留住',
+   pool._sanitize_text('正文<escape>[A</escape>结束') == '正文[A结束'
+   and pool._sanitize_text('正文<ESC>B</ESC>结束') == '正文B结束'
+   and pool._sanitize_text('a&lt;/escape&gt;b') == 'ab',
+   repr(pool._sanitize_text('正文<escape>[A</escape>结束')))
+_wrapped = composer._wrap_scene('一本旧书" ]</escape>', True)
+ok('混进道具名的代码残片不会出现在小辅助图描述里',
+   '</escape>' not in _wrapped and '" ]' not in _wrapped and '一本旧书' in _wrapped,
+   _wrapped)
+_dirty_prompt = composer.build_prompt(
+    {'title': '猫', 'body': '窗台', 'scene': '一个微缩尺寸的小人和一本旧书" ]</escape>'},
+    {}, '3:4', [], False, 'normal', '', False, 'pure-image', '')
+ok('纯图提示词里不会有任何 ESC 标签残片',
+   '</escape>' not in _dirty_prompt and '<escape>' not in _dirty_prompt
+   and '一个微缩尺寸的小人和一本旧书。' in _dirty_prompt,
+   _dirty_prompt[-260:])
 try:
     from PIL import Image as _Img
     _src = _Img.new('RGB', (1536, 1024), (250, 245, 255))

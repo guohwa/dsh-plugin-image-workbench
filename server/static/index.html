@@ -1346,7 +1346,7 @@
           <b>主题色</b>
           <span class="pk-opt" id="optColor">可选 (36)</span>
         </div>
-        <button class="pk-btn" id="emptyColor" type="button">
+        <button class="pk-btn" id="emptyColor" type="button" title="可以不选：白底线稿画风 + 纯色留白图型会自动配一个纸白（奶油白），其他组合不擅自配色">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5s6 6.4 6 10.2a6 6 0 11-12 0c0-3.8 6-10.2 6-10.2z"/></svg>
           <span class="t">按图选择主题色 <em id="cntColor">(36)</em></span>
         </button>
@@ -1458,8 +1458,8 @@
     </div>
     <div class="chips" id="moodChips"></div>
     <label class="cbx" style="margin-top:9px" id="fusionRow">
-      <input type="checkbox" id="fusion" checked>
-      <span>缩微摄影融合 · 角色小、场景真，同光源同空间（出图更有故事感）</span>
+      <input type="checkbox" id="fusion">
+      <span>缩微摄影融合 · 角色小、场景真，同光源同空间（实景/摄影类图用；纯色留白卡勾了会把人缩得很小）</span>
     </label>
 
     <div class="stepbar">
@@ -1703,7 +1703,7 @@
     <div class="pager">
       <span id="pickInfo">—</span>
       <span class="spacer"></span>
-      <button id="pickPrev" type="button" disabled>上一页</button>
+      <button id="pickPagerPrev" type="button" disabled>上一页</button>
       <button id="pickNext" type="button" disabled>下一页</button>
     </div>
     <div class="pick-foot">
@@ -2439,6 +2439,18 @@ function wirePickPreview(){
   // 点弹窗外面的遮罩也算取消（dialog 的 backdrop 点击目标就是 dialog 本身）
   $('#pickPrev').addEventListener('click', e=>{
     if (e.target === e.currentTarget) e.currentTarget.close();
+  });
+  // 看完大图直接关掉（Esc / 点遮罩 / 取消）时，风格、图型其实一点都没变。
+  // 用户以为「我选了」，出图却还是原来的画风——这里必须说清楚，否则会当成 bug。
+  $('#pickPrev').addEventListener('close', ()=>{
+    const pk = state.picker || {};
+    const it = (pk.list || [])[pk.at || 0];
+    if (!it) return;
+    const cur = state.sel[pk.kind];
+    if (cur && cur.id === it.id) return;          // 点过「选这个」或本来就是当前用的
+    const label = pk.kind === 'style' ? '风格' : pk.kind === 'layout' ? '图型' : '主题色';
+    toast('刚才只是看了大图，' + label + '还没换上。要这张点「选这个」，或双击缩略图直接选',
+          {type:'info', title:'没有更换' + label});
   });
   window.addEventListener('resize', ()=>{ if ($('#pickPrev').open) fitPrevWidth(); });
 }
