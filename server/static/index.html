@@ -2159,6 +2159,26 @@ function syncPicks(){
   noteContentChanged();        // 换图型 / 风格 / 主题色也算内容改动
 }
 
+/* ---------- 没选风格时的护栏（用户 2026-11-26） ----------
+   风格是独立卡片，不选就一个字的画风约束都没有，提示词只剩图型+情绪+主题，
+   模型出什么都算合理（截图里那句关于忘记的话被画成暖调扁平插画）。
+   只选图型、没选风格时，自动沿用上次用过的风格；从没用过就给白底线稿那条。
+   用户明确点过风格卡的「清空」才算真的不要画风，这里不再强塞。 */
+const DEFAULT_STYLE_ID = 'FE-060';
+function ensureStyle(){
+  if (state.sel.style || state.styleOptOut) return null;
+  let last = '';
+  try{ last = localStorage.getItem('iw_style_last') || ''; }catch(e){}
+  const list = state.styles || [];
+  const hit = list.find(x=>x.id === last) || list.find(x=>x.id === DEFAULT_STYLE_ID);
+  if (!hit) return null;
+  state.sel.style = hit;
+  state.selTouched = true;
+  syncPicks();
+  toast(`没选风格，按${hit.name || hit.id}出图；要换风格点风格卡`, {type:'ok', title:'已自动带画风'});
+  return hit;
+}
+
 /* ---------- 参考图（可选）：上传 / 拖入 / 粘贴 ---------- */
 function syncRef(){
   const r = state.ref;
@@ -2236,6 +2256,10 @@ function pick(kind, item){
   if (!item) return;
   state.sel[kind] = item;
   state.selTouched = true;
+  if (kind === 'style'){
+    state.styleOptOut = false;                 // 明确选了风格，就取消「不要风格」
+    try{ localStorage.setItem('iw_style_last', item.id); }catch(e){}
+  }
   syncPicks();
 }
 
@@ -2695,6 +2719,8 @@ state.omode = 'graphic-text';
 /* 单图快出自己的模式：初值纯图，选了图型会自动切图文（qsAutoMode），手动切过就不再自动跟随 */
 state.qsMode = 'pure-image';
 state.qsModeAuto = true;
+/* 用户点过风格卡的「清空」＝这次不想要画风，ensureStyle 不再自动补 */
+state.styleOptOut = false;
 /* 记住当前正在编辑哪份草稿，以及它的「身份键」（选题，空则用标题）。
    暂存时比对身份键：同一篇继续改就更新那份，换了选题就另存新的，
    避免把上一篇草稿悄悄覆盖掉（选题变了还写回旧 id 是最坑的一种）。 */
@@ -3003,6 +3029,7 @@ async function qsCompose(keyword){
 async function qsPolish(){
   const kw = qsCurrentKeyword();
   if (!kw){ toast('先写关键字'); $('#qsKey').focus(); return; }
+  ensureStyle();                 // 只选了图型就点这里：先把画风补上，别出空壳提示词
   qsBusy(true); qsStatus('正在按关键字拼提示词…');
   try{
     const prompt = await qsCompose(kw);
@@ -3020,6 +3047,7 @@ async function qsPolish(){
 async function qsGenerate(){
   let text = ($('#qsKey').value || '').trim();
   if (!text){ toast('先写关键字，或先点「优化提示词」'); $('#qsKey').focus(); return; }
+  ensureStyle();                   // 同上：出图前也要有画风，否则出来的图跟选型无关
   qsBusy(true); qsWorking(true);   // 立刻给动效，别让用户以为没点上
   let submitted = false;
   try{
@@ -3680,6 +3708,7 @@ function fillDemoSample(){
 async function runImage(){
   if (!redoGuard()) return;
   if (_batchRunning){ toast('上一批还在出图，等它跑完再点'); return; }
+  ensureStyle();                 // 多图同理：没选风格就没画风约束
   _stopRequested = false;
   // 什么都没有就直接点：先补一套随机示例，否则出的图没有依据
   const demoIdea = isBlankStart() ? fillDemoSample() : null;
@@ -5347,7 +5376,12 @@ $('#docBody').addEventListener('input', syncPreview);
 CARD_KINDS.forEach(([k, sfx])=>{
   $('#empty'+sfx).onclick = ()=> openPicker(k);
   $('#chg'+sfx).onclick   = ()=> openPicker(k);
-  $('#clr'+sfx).onclick   = ()=>{ state.sel[k] = null; state.selTouched = true; syncPicks(); };
+  $('#clr'+sfx).onclick   = ()=>{
+    state.sel[k] = null;
+    state.selTouched = true;
+    if (k === 'style') state.styleOptOut = true;   // 明确清掉风格＝这次就是要模型自由发挥，别再自动补
+    syncPicks();
+  };
 });
 $('#pickerFilter').addEventListener('input', renderPicker);
 $('#pickerClose').onclick = ()=> $('#pickerDlg').close();

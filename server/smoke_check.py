@@ -647,6 +647,17 @@ ok('纯图提示词同样是官方字段结构，不再把风格名和特征揉�
    '纯图提示词：' + _pure_real[:60])
 ok('纯图不再出现「纯图模式。」这种模型读不懂的系统术语，也不写排版要求',
    '纯图模式' not in _pure_real and '排版要求' not in _pure_real)
+# 只选图型不选风格：提示词里一个画风字都没有，出图只能靠模型自由发挥（用户 2026-11-26 踩坑）
+_no_style = asyncio.run(composer.compose({'layout_id': 'SC-008', 'ratio': '3:4',
+                                          'mood': '治愈、松弛、幽默', 'image_mode': 'graphic-text',
+                                          'topic': '有很多事你当时想不通，别着急，过段时间你可能就忘了。'},
+                                         [], catalog.build()['layouts'], catalog.build()['colors']))
+ok('没选风格时明确标记 style_missing，前端据此自动补画风',
+   _no_style.get('style_missing') is True and _no_style['selection']['style'] is None,
+   'selection：' + str(_no_style.get('selection')))
+ok('没选风格时提示词确实没有风格字段（不是拼词偶发丢失）',
+   '风格名称：' not in _no_style['items'][0]['prompt']
+   and '核心风格特征：' not in _no_style['items'][0]['prompt'])
 ok('纯图/图文/摄影三种模式指令各自独立',
    '纯图模式' in composer.build_instruction({'layout': _L[0]}, '3:4', [], False, 'normal', False, 'pure-image', '')
    and '图型：SC-002' not in composer.build_instruction({'layout': _L[0]}, '3:4', [], False, 'normal', False, 'pure-image', '')

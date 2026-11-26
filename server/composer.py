@@ -849,7 +849,7 @@ async def compose(payload: dict, styles: list[dict], layouts: list[dict], colors
         if topic:
             lines = topic.split("\n", 1)
             items.append({"title": lines[0].strip(), "body": lines[1].strip() if len(lines) > 1 else "",
-                          "scene": "", "scene_manual": False})
+                          "scene": "", "scene_manual": False, "visual": ""})
 
     # 没选主题色时，纯色留白的线稿卡补一个同调的纸白。
     # 不补的话「纯色背景」这一条只能让模型自己挑颜色，一句治愈文案被铺成蓝底（用户 2026-11-26）。
@@ -899,6 +899,9 @@ async def compose(payload: dict, styles: list[dict], layouts: list[dict], colors
         "instruction": instruction,
         "items": out_items,
         "auto_color": auto_color,
+        # 没有风格＝提示词里一个画风字都没有，出图只能靠模型自由发挥。
+        # 前端据此提示并自动补风格，其它入口也能从响应里看出来（用户 2026-11-26）。
+        "style_missing": not bool(sel["style"]),
         "selection": {
             "style": sel["style"]["id"] if sel["style"] else None,
             "layout": sel["layout"]["id"] if sel["layout"] else None,
