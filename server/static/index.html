@@ -138,6 +138,8 @@
     height:100%;max-height:none;min-height:0;padding:3px 16px 0}
   /* 号池分组只看本地号池：接口配置已经搬进设置弹窗，整页不再出现页签和接口表单 */
   #configDlg.pool-only .cfg-tabs,#configDlg.pool-only #tabIface,#configDlg.pool-only #cfgFoot{display:none}
+  /* 弹窗模式的 660px 高度上限在整页会留下大块空白，整页时撑满剩余高度 */
+  #configDlg.pool-only #tabPool{flex:1 1 auto;height:auto}
   @media (max-width:1180px){main{grid-template-columns:minmax(0,1fr)}.panel.right{grid-column:1/-1}}
   @media (max-width:860px){main{grid-template-columns:1fr}}
   @media (max-width:640px){body{padding-left:0}.rail{position:static;width:100%;height:auto;

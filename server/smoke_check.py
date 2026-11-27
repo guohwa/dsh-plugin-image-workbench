@@ -2172,7 +2172,8 @@ ok('号池分组整页只显示本地号池内容',
    and "dlg.classList.add('pool-only');   // 号池分组只显示本地号池，不带页签和接口配置" in _html
    and "if (name === 'pool') dlg.classList.remove('pool-only');" in _html
    and "if (window.showCfgTab) showCfgTab('pool');" in _html
-   and "if (window.currentNav === 'pool' && window.showCfgTab) showCfgTab('pool');" in _html)
+   and "if (window.currentNav === 'pool' && window.showCfgTab) showCfgTab('pool');" in _html
+   and '#configDlg.pool-only #tabPool{flex:1 1 auto;height:auto}' in _html)
 ok('设置弹窗借还接口配置与升级面板节点，不复制 ID',
    'tabHome = {parent: tabIface.parentNode, next: tabIface.nextSibling};' in _html
    and 'upHome = {parent: upInner.parentNode, next: upInner.nextSibling};' in _html
