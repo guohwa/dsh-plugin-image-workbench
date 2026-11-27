@@ -8835,8 +8835,15 @@ setInterval(refreshPool, 10000);
     P[k] = e; main.insertBefore(e, aside);
   });
 
-  /* 热榜：整页只放 8 张平台卡 + 榜单，不重复堆 AI 热点 / 推荐话题。
-     那两块留在文案页原来的位置，从榜单点「用作选题」会跳回文案页。 */
+  /* 热榜已经有整页榜单：文案页不再重复 AI 热点 / 推荐话题两张卡。
+     节点在这里摘掉（各自的初始化已完成，保留缓存引用不会报错），
+     从榜单点「用作选题」仍会跳回文案页填题。 */
+  const aihot = left.querySelector('.aihot');
+  if (aihot) aihot.remove();
+  const recTopics = $('recTopics');
+  if (recTopics) recTopics.remove();
+  const saveHint = left.querySelector('.save-hint > span');
+  if (saveHint) saveHint.remove();
   P.copy.appendChild(left);
 
   /* 配图工坊拆三块：公共的四张卡 + 单图快出 + 多图流程 */

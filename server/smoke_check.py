@@ -2051,6 +2051,12 @@ ok('抓一次热榜按钮移到工具栏右侧',
    'id="hbClose" type="button">关闭</button>\n    </div>\n    <div class="hb-toolbar">' in _html
    and '<span class="spacer"></span>\n      <button class="btn ghost mini" id="hbRefresh"' in _html
    and 'if(hbRefresh) hbRefresh.onclick = function(){ hbLoad(1); };' in _html)
+# 2026-11-27：热榜已独立成页，文案页不再显示 AI 热点 / 推荐话题两张重复卡
+ok('文案页去掉 AI 热点与推荐话题两张卡',
+   "const aihot = left.querySelector('.aihot');\n  if (aihot) aihot.remove();" in _html
+   and "const recTopics = $('recTopics');\n  if (recTopics) recTopics.remove();" in _html
+   and "const saveHint = left.querySelector('.save-hint > span');\n  if (saveHint) saveHint.remove();" in _html
+   and 'if ($(\'recTopics\')) hotPanel.appendChild' not in _html)
 
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')
