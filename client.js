@@ -57,8 +57,9 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = useState('');
       const [nonce, setNonce] = useState(0);
 
-      const call = useCallback(async (action) => {
-        setBusy(action || '刷新');
+      // silent=true 用于自动轮询：不点亮按钮的「检查中…」，免得每几秒闪一次
+      const call = useCallback(async (action, opts = {}) => {
+        if (!opts.silent) setBusy(action || '刷新');
         setError('');
         try {
           const response = action
@@ -122,6 +123,14 @@ window.__ModuleLoader__.load({
         return () => clearInterval(timer);
       }, [status?.running, call]);
 
+      // 后端在跑但号池没读到（读取中 / 未就绪）时，每 5 秒静默自动重查，就绪即停；
+      // 其余情况不自动刷，「刷新状态」只做用户主动点击的那一次
+      useEffect(() => {
+        if (!status?.running || status?.pool?.online) return undefined;
+        const timer = setInterval(() => { void call(null, { silent: true }); }, 5000);
+        return () => clearInterval(timer);
+      }, [status?.running, status?.pool?.online, call]);
+
       // 后端起不来时，把真实原因复制出来，不用让用户去翻日志文件
       const copyDiag = useCallback(async () => {
         const d = {
@@ -150,9 +159,9 @@ window.__ModuleLoader__.load({
       const guardClass = !status ? '' : !guard ? 'warn' : guard.enabled && !guard.consecutiveFailures ? 'on' : 'off';
       // 号池是工作台自带的第二个进程，状态由后端上报；不再有独立号池插件
       const bp = status?.pool;
-      const poolText = !status ? '' : !bp ? '内置号池读取中'
+      const poolText = !status ? '' : !bp ? '内置号池读取中 · 自动重试'
         : bp.online ? `内置号池 ${bp.active}/${bp.total} · 剩 ${bp.quota} 次`
-          : '内置号池未就绪';
+          : '内置号池未就绪 · 自动重试';
       const poolClass = !bp ? 'warn' : bp.online ? 'on' : 'off';
 
       return h('div', { className: 'iw-root' },
