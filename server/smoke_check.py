@@ -2153,6 +2153,25 @@ ok('设置块初始挂载，草稿载入不缺元素',
    'wm.appendChild(gen);   // 初始就挂进 DOM' in _html
    and "const rsel = $('#ratio');\n  rsel.value" in _html)
 
+# 2026-11-27：设置改成模仿漫画工作台的小弹窗，左侧分组右侧内容
+ok('设置弹窗左侧分组含接口配置与检查更新',
+   '<dialog id="settingsDlg">' in _html
+   and 'data-set="iface">接口配置</button>' in _html
+   and 'data-set="update">检查更新</button>' in _html
+   and '<div class="set-ver" id="setVersion"></div>' in _html)
+ok('左下角设置打开弹窗而不是切到号池整页',
+   "gear.onclick = function(e){ e.stopPropagation(); openSettings('iface'); };" in _html
+   and 'window.openSettings = openSettings;' in _html
+   and "note.onclick = function(){ if (window.openSettings) window.openSettings('update'); else openPanel(); };" in _html
+   and 'window.prepUpgradePanel = prepPanel;' in _html
+   and 'if (window.prepUpgradePanel) window.prepUpgradePanel();' in _html)
+ok('设置弹窗借还接口配置与升级面板节点，不复制 ID',
+   'tabHome = {parent: tabIface.parentNode, next: tabIface.nextSibling};' in _html
+   and 'upHome = {parent: upInner.parentNode, next: upInner.nextSibling};' in _html
+   and 'tabHome.parent.insertBefore(tabIface, tabHome.next);' in _html
+   and 'upHome.parent.insertBefore(upInner, upHome.next);' in _html
+   and '#settingsDlg .up-step' in _html)
+
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')
 sys.exit(0 if failed == 0 else 1)

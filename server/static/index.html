@@ -1154,6 +1154,53 @@
   #configDlg .inner{display:flex;flex-direction:column;max-height:calc(100vh - 32px);min-height:0}
   #configDlg .dlg-head,#configDlg .cfg-tabs,#configDlg .cfg-foot{flex:none}
   #configDlg #tabIface{flex:1 1 auto;overflow:auto;min-height:0;padding-right:4px}
+  /* 设置弹窗：模仿漫画工作台的「左侧分组 + 右侧内容」小窗。
+     接口配置和升级面板都是把现有节点临时借进来，关窗时原样还回去，不复制 ID。 */
+  #settingsDlg{width:min(920px,94vw);height:min(670px,calc(100vh - 32px));max-height:none;overflow:hidden}
+  #settingsDlg .inner{display:flex;flex-direction:column;height:100%;min-height:0;padding:16px 18px;background:#fff}
+  #settingsDlg .set-body{display:grid;grid-template-columns:168px minmax(0,1fr);gap:16px;flex:1 1 auto;min-height:0}
+  #settingsDlg .set-menu{display:flex;flex-direction:column;gap:6px;padding:12px 10px;min-height:0;
+    background:#f7f8fa;border:1px solid var(--line);border-radius:12px}
+  #settingsDlg .set-item{display:block;width:100%;text-align:left;border:0;border-radius:9px;
+    padding:9px 11px;font:inherit;font-size:13px;color:var(--ink-2);background:transparent;cursor:pointer}
+  #settingsDlg .set-item:hover{background:#ebe7ff;color:var(--primary)}
+  #settingsDlg .set-item.on{background:#ebe7ff;color:var(--primary);font-weight:600}
+  #settingsDlg .set-ver{margin-top:auto;padding:10px 6px 0;font-size:11.5px;color:var(--ink-3);line-height:1.6}
+  #settingsDlg .set-panes{min-width:0;min-height:0;overflow:auto;padding-right:4px}
+  #settingsDlg .set-pane{display:none}
+  #settingsDlg .set-pane.on{display:block}
+  #settingsDlg #tabIface{padding-right:0}
+  #settingsDlg .set-check{display:flex;align-items:center;gap:10px;margin:0 0 12px;flex-wrap:wrap}
+  #settingsDlg .set-check .set-check-state{font-size:11.5px;color:var(--ink-3)}
+  /* 升级面板搬进设置弹窗后，原来的 #upDlg 选择器不再命中，这里补一份 */
+  #settingsDlg .up-hero{display:flex;align-items:center;gap:10px;margin:2px 0 12px;
+    font-size:15px;font-weight:600;color:var(--ink)}
+  #settingsDlg .up-hero .up-from{color:var(--ink-3);font-weight:500}
+  #settingsDlg .up-hero .up-to{color:var(--primary)}
+  #settingsDlg .up-hero .up-arrow{color:var(--ink-3);font-weight:400}
+  #settingsDlg .up-notes{margin:0 0 12px;padding:9px 11px;border:1px solid var(--line);
+    border-radius:10px;background:#fbfaff;max-height:196px;overflow:auto}
+  #settingsDlg .up-notes-t{font-size:11.5px;font-weight:600;color:var(--ink-3);margin-bottom:5px}
+  #settingsDlg .up-notes .up-v{font-size:11.5px;color:var(--primary);font-weight:600;margin:6px 0 2px}
+  #settingsDlg .up-notes .up-v:first-child{margin-top:0}
+  #settingsDlg .up-notes ul{margin:0 0 4px;padding-left:16px;font-size:12.5px;line-height:1.7;color:var(--ink-2)}
+  #settingsDlg .up-notes ul:last-child{margin-bottom:0}
+  #settingsDlg .up-notes li{margin:1px 0}
+  #settingsDlg .up-list{margin:0 0 4px;padding-left:17px;font-size:12px;line-height:1.75;color:var(--ink-2)}
+  #settingsDlg .up-list li{margin:2px 0}
+  #settingsDlg .up-step{margin-top:10px;padding:8px 10px;border-radius:9px;background:#f7f5ff;
+    border:1px solid var(--line);font-size:12px;line-height:1.55;color:var(--ink-2);
+    min-height:34px;word-break:break-word}
+  #settingsDlg .up-step.err{background:#fdf1f3;border-color:#f3cdd5;color:#c03a52}
+  #settingsDlg .up-step.ok{background:#eef8f2;border-color:#c9e9d8;color:#1f8a52}
+  #settingsDlg .up-step.busy{background:#f7f5ff;border-color:#e0d8ff;color:var(--primary)}
+  @media (max-width:760px){
+    #settingsDlg{height:calc(100vh - 24px)}
+    #settingsDlg .set-body{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
+    #settingsDlg .set-menu{flex-direction:row;flex-wrap:wrap;padding:8px}
+    #settingsDlg .set-item{width:auto}
+    #settingsDlg .set-ver{margin:0;padding:6px;flex-basis:100%}
+  }
   .iface-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px}
   .iface-grid > *{min-width:0}
   .iface-grid > .span2{grid-column:1/-1}
@@ -1758,6 +1805,32 @@
       <span class="spacer"></span>
       <button class="btn ghost" id="upCancel" type="button">取消</button>
       <button class="btn primary" id="upGo" type="button">立即升级</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="settingsDlg">
+  <div class="inner">
+    <div class="dlg-head">
+      <h3>设置</h3>
+      <span class="spacer"></span>
+      <button class="btn ghost mini" id="settingsClose" type="button">关闭</button>
+    </div>
+    <div class="set-body">
+      <nav class="set-menu" aria-label="设置分组">
+        <button class="set-item on" type="button" data-set="iface">接口配置</button>
+        <button class="set-item" type="button" data-set="update">检查更新</button>
+        <div class="set-ver" id="setVersion"></div>
+      </nav>
+      <div class="set-panes">
+        <section class="set-pane on" id="setPaneIface"></section>
+        <section class="set-pane" id="setPaneUpdate">
+          <div class="set-check">
+            <button class="btn ghost mini" id="setCheckBtn" type="button">检查更新</button>
+            <span class="set-check-state" id="setCheckState"></span>
+          </div>
+        </section>
+      </div>
     </div>
   </div>
 </dialog>
@@ -7898,6 +7971,10 @@ setInterval(refreshPool, 10000);
      工作台常年开着，只在首屏查一次就永远等不到提示，所以切回页面和每 10 分钟各复查一次；
      复查拿到的结果如果已经没有新版本，要把胶囊收回去，不能挂着过期提示。 */
   function render(d){
+    /* 设置弹窗「检查更新」分组的状态行：查完给一句明确结果，别让人对着按钮猜 */
+    var cs = document.getElementById('setCheckState');
+    if (cs) cs.textContent = (d && d.has_new && d.latest)
+      ? '发现新版本 v' + d.latest : '当前已是最新版本';
     if (!d || !d.has_new || !d.latest){
       note.hidden = true;
       note.textContent = '';
@@ -7915,12 +7992,17 @@ setInterval(refreshPool, 10000);
 
   /* ---------- 面板 ---------- */
 
-  function openPanel(){
-    if (!dlg) return;
+  /* 版本对照和按钮状态单独抽出来：设置弹窗借走升级面板后也要照样刷新 */
+  function prepPanel(){
     if (fromEl) fromEl.textContent = curVer ? 'v' + curVer : '当前版本';
     if (toEl) toEl.textContent = latestVer ? 'v' + latestVer : '最新版本';
     if (goBtn){ goBtn.disabled = false; goBtn.textContent = '立即升级'; }
     setStep('点「立即升级」开始：先下载安装包核对版本，再逐个覆盖代码文件。', '');
+  }
+  window.prepUpgradePanel = prepPanel;
+  function openPanel(){
+    if (!dlg) return;
+    prepPanel();
     if (!dlg.open) dlg.showModal();
   }
 
@@ -7980,9 +8062,13 @@ setInterval(refreshPool, 10000);
   }
 
   // 用 onclick 覆盖而不是 addEventListener：复查会反复渲染，监听器不能越叠越多
-  note.onclick = openPanel;
+  /* 版本胶囊不再单独弹升级窗，直接落到设置弹窗的「检查更新」分组 */
+  note.onclick = function(){ if (window.openSettings) window.openSettings('update'); else openPanel(); };
   if (goBtn) goBtn.onclick = doUpgrade;
-  if (cancelEl) cancelEl.onclick = function(){ if (dlg) dlg.close(); };
+  if (cancelEl) cancelEl.onclick = function(){
+    if (window.closeSettings) window.closeSettings();
+    if (dlg && dlg.open) dlg.close();
+  };
   if (copyEl) copyEl.onclick = function(){
     copyText('git pull\nnode install.mjs', '命令已复制，到插件目录执行，装完重启 DSH');
   };
@@ -7997,6 +8083,7 @@ setInterval(refreshPool, 10000);
       .catch(function(){})
       .then(function(){ busy = false; });
   }
+  window.checkUpgrade = check;
 
   check();
   setInterval(check, 10 * 60 * 1000);
@@ -9115,6 +9202,84 @@ setInterval(refreshPool, 10000);
   let saved = '';
   try{ saved = sessionStorage.getItem('iw_nav') || ''; }catch(e){}
   navTo(P[saved] ? saved : 'copy', true);
+})();
+</script>
+
+<script>
+/* 左下角「设置」：模仿漫画工作台弹一个小窗，左侧分组、右侧内容。
+   接口配置 / 升级面板都只有一份 DOM，开窗时借进来、关窗时还回去；
+   这样号池整页和版本胶囊仍能用同一批节点，不会出现两套 ID 抢状态。 */
+(function(){
+  const $ = id => document.getElementById(id);
+  const dlg = $('settingsDlg'); if (!dlg) return;
+  const paneIface = $('setPaneIface'), paneUpdate = $('setPaneUpdate');
+  const tabIface = $('tabIface'), upInner = document.querySelector('#upDlg .inner');
+  let tabHome = null, upHome = null, ifaceLoaded = false;
+
+  function setTab(tab){
+    document.querySelectorAll('#settingsDlg .set-item').forEach(b=>{
+      b.classList.toggle('on', b.dataset.set === tab);
+    });
+    paneIface.classList.toggle('on', tab !== 'update');
+    paneUpdate.classList.toggle('on', tab === 'update');
+  }
+
+  function openSettings(tab){
+    /* 借节点：记下原父节点和紧邻的后继，关窗时插回原位 */
+    if (tabIface && paneIface && tabIface.parentNode !== paneIface){
+      tabHome = {parent: tabIface.parentNode, next: tabIface.nextSibling};
+      paneIface.appendChild(tabIface);
+    }
+    if (upInner && paneUpdate && upInner.parentNode !== paneUpdate){
+      upHome = {parent: upInner.parentNode, next: upInner.nextSibling};
+      paneUpdate.appendChild(upInner);
+    }
+    const ver = $('verFoot'), setVer = $('setVersion');
+    if (setVer) setVer.textContent = '版本 ' + ((ver && ver.textContent) || '—');
+    setTab(tab === 'update' ? 'update' : 'iface');
+    if (!dlg.open) dlg.showModal();
+    if (tab === 'update'){
+      if (window.prepUpgradePanel) window.prepUpgradePanel();
+      const cs = $('setCheckState');
+      if (cs) cs.textContent = '检查中…';
+      if (window.checkUpgrade) window.checkUpgrade();
+    } else if (!ifaceLoaded && window.loadConfigPage){
+      ifaceLoaded = true;
+      window.loadConfigPage();
+    }
+  }
+
+  function closeSettings(){
+    if (dlg.open) dlg.close();
+    if (tabHome && tabIface && tabIface.parentNode === paneIface){
+      tabHome.parent.insertBefore(tabIface, tabHome.next);
+    }
+    if (upHome && upInner && upInner.parentNode === paneUpdate){
+      upHome.parent.insertBefore(upInner, upHome.next);
+    }
+    tabHome = null; upHome = null;
+  }
+
+  window.openSettings = openSettings;
+  window.closeSettings = closeSettings;
+  window.setSettingsTab = setTab;
+
+  const gear = $('railSetting');
+  if (gear) gear.onclick = function(e){ e.stopPropagation(); openSettings('iface'); };
+  const closeBtn = $('settingsClose');
+  if (closeBtn) closeBtn.onclick = closeSettings;
+  dlg.addEventListener('cancel', function(e){ e.preventDefault(); closeSettings(); });
+  document.querySelectorAll('#settingsDlg .set-item').forEach(b=>{
+    b.onclick = function(){ setTab(b.dataset.set); if (b.dataset.set === 'update' && window.checkUpgrade){
+      const cs = $('setCheckState'); if (cs) cs.textContent = '检查中…';
+      window.checkUpgrade();
+    }};
+  });
+  const checkBtn = $('setCheckBtn');
+  if (checkBtn) checkBtn.onclick = function(){
+    const cs = $('setCheckState'); if (cs) cs.textContent = '检查中…';
+    if (window.checkUpgrade) window.checkUpgrade();
+  };
 })();
 </script>
 </body>
