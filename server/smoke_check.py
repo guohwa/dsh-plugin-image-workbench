@@ -1852,7 +1852,7 @@ ok('还原示例按示例本身落到纯图，不再被图型自动顶成图文'
 # 2026-11-26 六次调整：单图快出成品登记进结果列表，修复右侧预览点不开
 ok('单图出完登记进结果列表，右侧预览可点击',
    "if (onFinish) onFinish('done', d);" in _html
-   and 'topic:text.slice(0, 60), seq:state.results.length,' in _html
+   and 'topic:text.slice(0, 60), seq:state.singleResults.length,' in _html
    and "qsStatus('出图完成，点右侧预览图可放大', 'ok')" in _html)
 # 2026-11-27：单图已是独立分组，固定展开、不再有折叠开关；画幅/情绪/出图指令跟着页面走
 ok('单图快出固定展开，画幅情绪与出图指令跟到单图页',
@@ -1873,6 +1873,22 @@ ok('单图页保留一键清空、隐藏批量按钮，预览与多图文案剥�
    and "$('#pTitle').textContent = '单图预览';" in _html
    and "bar.textContent = '单图 · 预览'" in _html
    and 'if (window.syncPreview) syncPreview();' in _html)
+# 2026-11-27 反馈：单图和多图结果列表按模式隔离，预览/翻页/查看/下载/快照各自独立
+ok('单图与多图结果列表隔离，预览按当前页取，切页不串图',
+   'results:[], idx:0, singleResults:[], singleIdx:0' in _html
+   and "function curResults(){ return (window.currentNav === 'single') ? state.singleResults : state.results; }" in _html
+   and "function curIndex(){ return (window.currentNav === 'single') ? state.singleIdx : state.idx; }" in _html
+   and "const rs = curResults();" in _html
+   and "state.singleResults.push(rec);" in _html
+   and "if (window.renderStrip) renderStrip();   // 预览按当前页取单图或多图那份结果，别串" in _html
+   and "snap.singleResults = pack(state.singleResults);" in _html
+   and "state.singleResults = unpack(d.singleResults);" in _html
+   and "const rs = curResults();\n  const idsAll = rs.map(x=>x.id)" in _html)
+ok('历史任务行标注单图/多图，两类各自独立成任务',
+   "startsWith('q') ? '<span class=\"chipx kind-single\">单图</span>'" in _html
+   and "startsWith('k') ? '<span class=\"chipx kind-multi\">多图</span>'" in _html
+   and "task_id: 'q' + Date.now().toString(36)" in _html
+   and "const taskId = 'k' + Date.now().toString(36)" in _html)
 # 2026-11-27 反馈：整张卡都能点开选择器；「更换」按钮去掉；X 放大且不占文字宽度
 ok('四张选择卡整块可点，更换按钮已去掉，X 放大且浮在右上角',
    'id="chgLayout"' not in _html and 'id="chgStyle"' not in _html

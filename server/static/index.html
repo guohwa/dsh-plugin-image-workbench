@@ -995,6 +995,8 @@
   .task-head .chipx{font-size:10.5px;color:var(--ink-3);border:1px solid var(--line);
     border-radius:20px;padding:1px 7px;white-space:nowrap;background:#fbfaff}
   .task-head .chipx.img{color:var(--primary);border-color:#ded5fb;background:#f7f4ff}
+  .task-head .chipx.kind-single{color:#b4690e;border-color:#f4d9a8;background:#fff7e8}
+  .task-head .chipx.kind-multi{color:#1f9d6b;border-color:#bfe8d3;background:#e8f6ef}
   /* 任务行右侧两个动作：载入 / 删除。别让它们把标题挤没，标题那边靠 ellipsis 兜 */
   .task-head .tacts{display:flex;gap:5px;flex:none;margin-left:2px}
   .task-head .tacts .mini{padding:3px 8px;font-size:10.5px;line-height:1.45;white-space:nowrap}
@@ -2203,7 +2205,9 @@ const $ = s => document.querySelector(s);
 
 const state = {styles:[], layouts:[], colors:[], sel:{style:null, layout:null, color:null},
   picker:{kind:'style', group:'全部'},
-  results:[], idx:0, instrCustom:null, redo:null, selTouched:false,
+  /* 单图和多图各存一份结果：预览只看当前模式出的图，互不串图。
+     写入端固定写 state.results（多图）或 state.singleResults（单图），读取端按当前页取。 */
+  results:[], idx:0, singleResults:[], singleIdx:0, instrCustom:null, redo:null, selTouched:false,
   /* 从「AI 热点选题」带过来的事件：{id, title}。生成文章时随请求发 story_id，
      让后端把事件综述当事实依据；选题文字一改就不再匹配，自动失效。 */
   hotStory:null,
@@ -2218,6 +2222,14 @@ const state = {styles:[], layouts:[], colors:[], sel:{style:null, layout:null, c
      默认 false —— 这是漫画分镜对话框里的开关（那个复选框自己默认勾上，勾了才写进 state）；
      以前这里默认 true，导致普通图文的分镜条目也挂出「旁白」框（用户 2026-11-27 反馈）。 */
   comicNovel:false};
+
+/* 当前页该看哪一份结果：单图页只看单图出的，多图页只看多图出的。
+   单独封一层，渲染 / 翻页 / 大图查看共用，别在各处再写 currentNav 判断。 */
+function curResults(){ return (window.currentNav === 'single') ? state.singleResults : state.results; }
+function curIndex(){ return (window.currentNav === 'single') ? state.singleIdx : state.idx; }
+function setCurIndex(i){
+  if (window.currentNav === 'single') state.singleIdx = i; else state.idx = i;
+}
 
 /* 气泡：默认是轻提示；出图完成走 ok（带勾，停 5 秒），失败走 err。
    页面在后台时不硬弹（反正看不见），先攒一条，切回来再补。 */
@@ -3423,15 +3435,15 @@ async function qsGenerate(){
         const raw = d && d.image_url;
         const prev = (d && d.preview_url) || ('/api/history/' + job_id + '/preview');
         if (raw){
-          const rec = {url:raw, preview:prev, topic:text.slice(0, 60), seq:state.results.length,
+          const rec = {url:raw, preview:prev, topic:text.slice(0, 60), seq:state.singleResults.length,
             id:job_id, account:(d && d.account) || '',
             w:d.result && d.result.width, h:d.result && d.result.height};
-          state.results.push(rec);
-          state.idx = state.results.indexOf(rec);
+          state.singleResults.push(rec);
+          state.singleIdx = state.singleResults.indexOf(rec);
           renderStrip();
           $('#dlRow').classList.add('show');
           const dl = $('#downloadBtn'); dl.href = downloadHref(rec, raw); dl.style.display = 'block';
-          $('#viewerMeta').textContent = `第 ${state.idx+1}/${state.results.length} 张 · ${rec.topic}`
+          $('#viewerMeta').textContent = `第 ${state.singleIdx+1}/${state.singleResults.length} 张 · ${rec.topic}`
             + (rec.account ? ' · ' + rec.account : '');
         }
         qsStatus('出图完成，点右侧预览图可放大', 'ok');
@@ -3819,14 +3831,15 @@ async function copyText(text, okMsg){
 }
 
 function renderStrip(){
-  const has = state.results.length > 0;
+  const rs = curResults();
+  const has = rs.length > 0;
   $('#coverPrev').hidden = !has;
   $('#coverNext').hidden = !has;
   $('#coverNavRow').classList.toggle('show', has);
-  $('#coverPrev').disabled = state.results.length < 2;
-  $('#coverNext').disabled = state.results.length < 2;
-  if (has) selectResult(state.idx);
-  else $('#dlRow').classList.remove('show');
+  $('#coverPrev').disabled = rs.length < 2;
+  $('#coverNext').disabled = rs.length < 2;
+  if (has) selectResult(curIndex());
+  else { $('#dlRow').classList.remove('show'); clearCover(); }
   saveSessionSoon();          // 图出来了也进会话快照，刷新不丢预览
 }
 
@@ -3849,15 +3862,17 @@ function clearCover(){
 }
 
 function selectResult(i){
-  const n = state.results.length;
+  const rs = curResults();
+  const n = rs.length;
   if (!n) return;
-  state.idx = Math.max(0, Math.min(n-1, i));
-  const r = state.results[state.idx];
+  const cur = Math.max(0, Math.min(n-1, i));
+  setCurIndex(cur);
+  const r = rs[cur];
   setCover(r.preview || r.url, r.url);
-  $('#coverCount').textContent = (state.idx + 1) + '/' + n;
+  $('#coverCount').textContent = (cur + 1) + '/' + n;
   $('#dlRow').classList.add('show');
   const dl = $('#downloadBtn'); dl.href = downloadHref(r, r.url);
-  $('#viewerMeta').textContent = `第 ${state.idx+1}/${n} 张 · ${r.topic}` + (r.account ? ' · ' + r.account : '');
+  $('#viewerMeta').textContent = `第 ${cur+1}/${n} 张 · ${r.topic}` + (r.account ? ' · ' + r.account : '');
 }
 
 /* 大图查看器：同一个任务内部就能左右翻。
@@ -3935,7 +3950,7 @@ function renderView(i){
   $('#viewPrev').hidden = n < 2;
   $('#viewNext').hidden = n < 2;
   // 工作台侧的缩略条跟着走：关掉大图后停在你最后看的那张
-  if (!hist){ state.idx = VIEW.i; selectResult(VIEW.i); }
+  if (!hist){ setCurIndex(VIEW.i); selectResult(VIEW.i); }
 }
 
 function stepView(d){
@@ -3944,11 +3959,12 @@ function stepView(d){
 }
 
 function openViewer(){
-  const list = state.results.filter(r=>r && (r.url || r.preview));
+  const rs = curResults();
+  const list = rs.filter(r=>r && (r.url || r.preview));
   if (!list.length){ toast('还没有可预览的图片'); return; }
   VIEW.kind = 'result';
   VIEW.list = list;
-  VIEW.i = Math.max(0, list.indexOf(state.results[state.idx]));
+  VIEW.i = Math.max(0, list.indexOf(rs[curIndex()]));
   const dlg = $('#viewDlg');
   if (!dlg.open) dlg.showModal();   // 单击已经打开过一次时别重复 showModal（会抛异常）
   resetZoom();
@@ -5536,8 +5552,8 @@ $('#qsKey').addEventListener('input', ()=>{
   if (window.syncPreview) syncPreview();
 });
 $('#redoExit').onclick = ()=> clearRedo(false);
-$('#coverPrev').onclick = ()=>{ if (state.results.length > 1) selectResult((state.idx - 1 + state.results.length) % state.results.length); };
-$('#coverNext').onclick = ()=>{ if (state.results.length > 1) selectResult((state.idx + 1) % state.results.length); };
+$('#coverPrev').onclick = ()=>{ const rs = curResults(); if (rs.length > 1) selectResult((curIndex() - 1 + rs.length) % rs.length); };
+$('#coverNext').onclick = ()=>{ const rs = curResults(); if (rs.length > 1) selectResult((curIndex() + 1) % rs.length); };
 $('#viewClose').onclick = ()=> $('#viewDlg').close();
 $('#viewPrev').onclick = ()=> stepView(-1);
 $('#viewNext').onclick = ()=> stepView(1);
@@ -5694,7 +5710,7 @@ function briefAll(){
 }
 
 $('#downloadAll').onclick = async ()=>{
-  const rs = state.results;
+  const rs = curResults();
   const idsAll = rs.map(x=>x.id).filter(Boolean);
   if (!idsAll.length){ toast('还没有可打包的图片（本轮没有生成成功的图片）'); return; }
   const btn = $('#downloadAll');
@@ -5962,6 +5978,8 @@ function taskRowEl(task){
         '<div class="task-head">'
       + '<span class="tw">▶</span>'
       + `<b>${esc(task.title || '未命名任务')}</b>`
+      + (String(task.task_id || '').startsWith('q') ? '<span class="chipx kind-single">单图</span>'
+        : String(task.task_id || '').startsWith('k') ? '<span class="chipx kind-multi">多图</span>' : '')
       + `<span class="chipx">${task.total} 条</span>`
       + (nImg ? `<span class="chipx img">${nImg} 张图</span>` : '')
       + (nText ? `<span class="chipx">文字 ${nText}</span>` : '')
@@ -7029,7 +7047,9 @@ async function resetAll(){
   state.redo = null; renderRedoBar();
   hideDemoNote();
 
-  state.results = []; state.idx = 0; renderStrip(); clearCover();
+  state.results = []; state.idx = 0;
+  state.singleResults = []; state.singleIdx = 0;
+  renderStrip(); clearCover();
   ['#imageStatus', '#textStatus', '#splitStatus'].forEach(id=>{
     const el = $(id); if (el){ el.className = 'status'; el.textContent = ''; }
   });
@@ -7174,12 +7194,14 @@ function applySnapshot(d){
   syncPicks(); renderMoodChips(); syncRef(); syncInstr(); renderItems();
   syncOmode(); renderShootChips();
   // 预览条：会话快照里有图就铺回来；草稿没有这个字段，按空处理，别让上一次的图串到这份草稿上
-  state.results = (d.results || []).filter(r=> r && r.url).map((r, i)=>({
+  const unpack = rows => (rows || []).filter(r=> r && r.url).map((r, i)=>({
     url: r.url, preview: r.preview || r.url, topic: r.topic || '配图',
     seq: typeof r.seq === 'number' ? r.seq : i, id: r.id || '', account: r.account || ''}));
-  state.idx = 0;
+  state.results = unpack(d.results);
+  state.singleResults = unpack(d.singleResults);
+  state.idx = 0; state.singleIdx = 0;
   renderStrip();
-  if (!state.results.length) clearCover();
+  if (!curResults().length) clearCover();
   // 载入草稿是直接改 value，不会触发 input 事件，右侧预览得手动推一次
   syncPreview();
   markContentClean();        // 刚载入的内容不算改动，别紧接着又自动存一遍
@@ -7202,9 +7224,11 @@ function saveSession(){
     // 热点事件只进本地会话，不进草稿箱、也不算「内容改动」的指纹
     snap.hot_story = state.hotStory || null;
     snap.hot_ref = state.hotRef || null;
-    // 预览条也一起存：刷新后右侧不该只剩文字，图得原地回来
-    snap.results = state.results.map(r=>({url: r.url, preview: r.preview,
+    // 预览条也一起存：刷新后右侧不该只剩文字，图得原地回来；单图和多图各存一份
+    const pack = rs => rs.map(r=>({url: r.url, preview: r.preview,
       topic: r.topic, seq: r.seq, id: r.id, account: r.account || ''}));
+    snap.results = pack(state.results);
+    snap.singleResults = pack(state.singleResults);
     localStorage.setItem('wb_session', JSON.stringify(snap));
   }catch(e){}
 }
@@ -8932,6 +8956,7 @@ setInterval(refreshPool, 10000);
     if (work){
       if (window.syncRatioUi) syncRatioUi();
       if (window.syncPreview) syncPreview();
+      if (window.renderStrip) renderStrip();   // 预览按当前页取单图或多图那份结果，别串
       if (!quiet){
         if (window.syncInstr) syncInstr();
         if (window.qsFitKey) qsFitKey();
