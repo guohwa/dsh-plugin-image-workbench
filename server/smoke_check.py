@@ -1865,8 +1865,9 @@ ok('单图快出固定展开，画幅情绪与出图指令跟到单图页',
    and "if (multiTail) multi.insertBefore(gen, multiTail);" in _html
    and 'class="params" id="omodeRow"' in _html)
 # 单图页顶部只留状态与号池，右侧预览不再借用多图文案
-ok('单图页隐藏批量按钮，预览与多图文案剥离',
-   '.head-acts.single-mode #composeAll,' in _html
+ok('单图页保留一键清空、隐藏批量按钮，预览与多图文案剥离',
+   '.head-acts.single-mode #resetAll' not in _html
+   and '.head-acts.single-mode #composeAll,' in _html
    and "headActs.classList.toggle('single-mode', name === 'single');" in _html
    and "if (window.currentNav === 'single'){" in _html
    and "$('#pTitle').textContent = '单图预览';" in _html
