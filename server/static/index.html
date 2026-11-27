@@ -1444,10 +1444,11 @@
         <span>文字讲清经过，配图表现重点</span>
       </div>
     </div>
-    <button class="btn primary full" id="splitToItems" type="button">拆成分镜 →</button>
-    <div class="row" style="margin-top:8px">
-      <button class="btn ghost" id="polishText">AI 润色</button>
-      <button class="btn ghost" id="copyText">复制</button>
+    <!-- 拆成分镜不再独占一整行：缩小后和 AI 润色 / 复制 / 标题编号并排，正文下方只占一行 -->
+    <div class="row doc-actions" style="margin-top:8px">
+      <button class="btn primary mini" id="splitToItems" type="button">拆成分镜 →</button>
+      <button class="btn ghost mini" id="polishText">AI 润色</button>
+      <button class="btn ghost mini" id="copyText">复制</button>
       <label class="num-chk" for="titleNumbered" title="默认勾选：拆出的分镜标题带 01 02 03 编号，编号会一起写进画面文字。取消勾选后标题不带编号，卡片左侧改用序号标记顺序。改动在下次点「拆成分镜」时生效。">
         <input type="checkbox" id="titleNumbered" checked><span>标题带编号</span>
       </label>
