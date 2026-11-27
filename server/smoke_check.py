@@ -2046,6 +2046,11 @@ ok('热榜分组页上下贴边，不再有卡片外框',
    and 'main.hot-full dialog.inline-dlg.hb-dlg .inner{height:100%;min-height:0;padding:3px 16px 0}' in _html
    and "main.classList.toggle('hot-full', name === 'hot');" in _html
    and "header.offsetTop + header.offsetHeight" in _html)
+# 2026-11-27：「抓一次热榜」放在工具栏右端，标题行只留关闭（分组页隐藏）
+ok('抓一次热榜按钮移到工具栏右侧',
+   'id="hbClose" type="button">关闭</button>\n    </div>\n    <div class="hb-toolbar">' in _html
+   and '<span class="spacer"></span>\n      <button class="btn ghost mini" id="hbRefresh"' in _html
+   and 'if(hbRefresh) hbRefresh.onclick = function(){ hbLoad(1); };' in _html)
 
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')
