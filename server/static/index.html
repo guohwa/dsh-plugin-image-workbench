@@ -85,6 +85,22 @@
     display:flex;flex-direction:column;align-items:center}
   .page[hidden]{display:none}
   .rail-page-h{display:none}
+  /* 文案页左右分栏：左草稿箱常驻，右内容工坊直接编辑，点草稿就地载入右侧 */
+  .copy-split{display:grid;grid-template-columns:330px minmax(0,1fr);gap:14px;align-items:start}
+  @media (max-width:1180px){.copy-split{grid-template-columns:1fr}}
+  dialog.inline-dlg#draftsDlg .inner{padding:14px;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 6px 22px rgba(80,60,160,.05)}
+  dialog.inline-dlg#draftsDlg .draft-list{max-height:calc(100vh - 190px);min-height:180px}
+  dialog.inline-dlg#draftsDlg #draftsClose{display:none}
+  dialog.inline-dlg#draftsDlg .dlg-head h3{font-size:13px}
+  /* 左栏窄，按钮换行到标题下面，别把草稿名挤成两三个字 */
+  dialog.inline-dlg#draftsDlg .draft-row{flex-wrap:wrap;gap:2px 6px;padding:6px 9px}
+  dialog.inline-dlg#draftsDlg .draft-row .dc{flex:1 1 100%}
+  dialog.inline-dlg#draftsDlg .draft-row b{font-size:12px}
+  dialog.inline-dlg#draftsDlg .draft-row .ds{font-size:10px}
+  dialog.inline-dlg#draftsDlg .draft-row .dacts{margin-left:auto;gap:4px}
+  dialog.inline-dlg#draftsDlg .draft-row .dacts .btn{min-height:22px;padding:2px 7px;font-size:10.5px}
+  dialog.inline-dlg#draftsDlg .draft-row .chipx{margin-left:auto}
+  .copy-split .panel.left{min-width:0}
   /* 历史 / 监控 / 号池：同一份弹窗节点挂进主区当页面用，不再弹 modal */
   dialog.inline-dlg{display:block;position:static;width:auto;max-width:none;height:auto;max-height:none;
     margin:0;padding:0;overflow:visible;box-shadow:none;background:transparent}
@@ -7370,7 +7386,10 @@ async function persistDraft(opts){
         : `已存为新草稿 · ${n} 条分镜 · ${at}（上一篇没动）`);
     } else {
       setSaveState('ok', '已存 ' + hhmm());
-      if (created) refreshDraftCount();
+      if (created){
+        refreshDraftCount();
+        if ($('#draftsDlg').dataset.inline) openDrafts();   // 自动存出新草稿，左栏立刻多一条
+      }
     }
     return j;
   }catch(e){
@@ -7432,6 +7451,8 @@ function flushOnLeave(){
 
 async function saveDraft(asNew){
   await withSave(()=> persistDraft({manual: true, asNew: !!asNew}));
+  // 常驻草稿箱要跟着变：存完立刻重刷左栏，标题 / 时间 / 使用中标记才是新的
+  if ($('#draftsDlg').dataset.inline) openDrafts();
 }
 
 async function refreshDraftCount(){
@@ -7458,14 +7479,15 @@ async function consumeCurrentDraft(){
   // 内容已经出过图，别再当成「待保存」又自动建一份新草稿
   markContentClean();
   refreshDraftCount();
-  if ($('#draftsDlg').open) openDrafts();
+  if ($('#draftsDlg').dataset.inline || $('#draftsDlg').open) openDrafts();
   return true;
 }
 
 async function openDrafts(){
   const box = $('#draftList');
   box.innerHTML = '<div class="task-empty">加载中…</div>';
-  if (!$('#draftsDlg').open) $('#draftsDlg').showModal();
+  // 文案页草稿箱已常驻左栏：inline 模式只刷新列表，不再弹 modal
+  if (!$('#draftsDlg').dataset.inline && !$('#draftsDlg').open) $('#draftsDlg').showModal();
   let d;
   try{ d = await (await fetch('/api/drafts')).json(); }
   catch(e){ box.innerHTML = '<div class="task-empty">草稿加载失败</div>'; return; }
@@ -7543,7 +7565,8 @@ async function openDrafts(){
       try{
         const full = await (await fetch('/api/drafts/' + it.id)).json();
         applyDraft(full);
-        $('#draftsDlg').close();
+        if (!$('#draftsDlg').dataset.inline) $('#draftsDlg').close();
+        else openDrafts();   // 左栏「使用中」标记跟着走
         toast('已载入草稿');
       }catch(e){ toast('载入失败'); }
     }
@@ -7563,7 +7586,10 @@ async function openDrafts(){
 $('#saveDraft').onclick = ()=> saveDraft(false);
 $('#openDrafts').onclick = openDrafts;
 $('#draftsClose').onclick = ()=> $('#draftsDlg').close();
-$('#draftNew').onclick = ()=>{ $('#draftsDlg').close(); saveDraft(true); };
+$('#draftNew').onclick = ()=>{
+  if (!$('#draftsDlg').dataset.inline) $('#draftsDlg').close();
+  saveDraft(true);
+};
 
 $('#openMonitor').onclick = ()=> navTo('monitor');
 $('#stopGen').onclick = stopAllJobs;
@@ -8894,7 +8920,16 @@ setInterval(refreshPool, 10000);
   if (recTopics) recTopics.remove();
   const saveHint = left.querySelector('.save-hint > span');
   if (saveHint) saveHint.remove();
-  P.copy.appendChild(left);
+  /* 文案页拆两块：左侧草稿箱常驻（复用原弹窗节点，不复制），右侧内容工坊直接编辑 */
+  const copySplit = document.createElement('div'); copySplit.className = 'copy-split';
+  const draftsDlg = $('draftsDlg');
+  if (draftsDlg){
+    if (draftsDlg.open) { try{ draftsDlg.close(); }catch(e){} }
+    draftsDlg.dataset.inline = '1'; draftsDlg.classList.add('inline-dlg');
+    copySplit.appendChild(draftsDlg);
+  }
+  copySplit.appendChild(left);
+  P.copy.appendChild(copySplit);
 
   /* 配图工坊拆块：公共四张卡 + 单图快出 + 画幅/情绪/出图指令（跟着页面走的同一份节点）+ 多图分镜流程 */
   const kids = Array.from(studio.children);
@@ -8916,6 +8951,7 @@ setInterval(refreshPool, 10000);
   const ws = document.createElement('section'); ws.className = 'panel'; P.single.appendChild(ws);
   const wm = document.createElement('section'); wm.className = 'panel'; P.multi.appendChild(wm);
   ws.appendChild(shared); ws.appendChild(single); wm.appendChild(multi);
+  wm.appendChild(gen);   // 初始就挂进 DOM：文案页读写草稿要用到画幅 / 情绪，元素不在 DOM 会直接报错
   const multiTail = kids[ti];   // 分镜清单的标题行，gen 回到多图页时插在它前面
 
   /* 历史 / 监控 / 号池：弹窗节点挂进主区 */
@@ -8973,6 +9009,7 @@ setInterval(refreshPool, 10000);
     });
     window.currentNav = name;
     if (name in DLG && !mounted[name]) mountDlg(name);
+    if (name === 'copy' && window.openDrafts) openDrafts();   // 常驻草稿箱：进文案页就拉最新列表
     if (work){
       if (window.syncRatioUi) syncRatioUi();
       if (window.syncPreview) syncPreview();

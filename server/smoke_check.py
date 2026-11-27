@@ -2087,6 +2087,21 @@ ok('文案页去掉 AI 热点与推荐话题两张卡',
    and "const recTopics = $('recTopics');\n  if (recTopics) recTopics.remove();" in _html
    and "const saveHint = left.querySelector('.save-hint > span');\n  if (saveHint) saveHint.remove();" in _html
    and 'if ($(\'recTopics\')) hotPanel.appendChild' not in _html)
+# 2026-11-27：文案页左右分栏，草稿箱常驻左栏，点草稿直接载入右侧编辑
+ok('文案页草稿箱常驻左栏，点草稿直接载入右侧编辑',
+   '.copy-split{display:grid;grid-template-columns:330px minmax(0,1fr);gap:14px;align-items:start}' in _html
+   and "draftsDlg.dataset.inline = '1'; draftsDlg.classList.add('inline-dlg');" in _html
+   and 'copySplit.appendChild(draftsDlg);' in _html
+   and 'copySplit.appendChild(left);' in _html
+   and "if (!$('#draftsDlg').dataset.inline && !$('#draftsDlg').open) $('#draftsDlg').showModal();" in _html
+   and "if (!$('#draftsDlg').dataset.inline) $('#draftsDlg').close();\n        else openDrafts();" in _html
+   and "if (name === 'copy' && window.openDrafts) openDrafts();" in _html
+   and 'if ($(\'#draftsDlg\').dataset.inline) openDrafts();' in _html
+   and 'if ($(\'#draftsDlg\').dataset.inline) openDrafts();   // 自动存出新草稿' in _html)
+# 2026-11-27：画幅 / 情绪设置块初始就挂进 DOM，否则文案页读写草稿会找不到元素
+ok('设置块初始挂载，草稿载入不缺元素',
+   'wm.appendChild(gen);   // 初始就挂进 DOM' in _html
+   and "const rsel = $('#ratio');\n  rsel.value" in _html)
 
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')
