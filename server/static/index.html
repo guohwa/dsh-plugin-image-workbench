@@ -163,6 +163,8 @@
   @keyframes iwSpin{to{transform:rotate(360deg)}}
   /* 文案页页头只留「一键清空 + 号池」：出图按钮和更多菜单在文案页没有意义 */
   .head-acts.copy-mode > :not(#resetAll):not(.pool-chip){display:none}
+  /* 多图页左侧已有历史 / 监控 / 号池分组，页头「更多功能」不再重复露入口 */
+  .head-acts.multi-mode #moreMenu{display:none}
   /* 拆成分镜旁的标题编号开关：默认勾选，保持标题带 01 02 前缀的原有行为 */
   .num-chk{display:flex;align-items:center;gap:5px;margin:0 0 0 2px;font-size:11px;
     color:var(--ink-2);white-space:nowrap;cursor:pointer;user-select:none}
@@ -9069,6 +9071,7 @@ setInterval(refreshPool, 10000);
       headActs.style.display = (work || name === 'copy') ? '' : 'none';
       headActs.classList.toggle('single-mode', name === 'single');
       headActs.classList.toggle('copy-mode', name === 'copy');
+      headActs.classList.toggle('multi-mode', name === 'multi');
     }
     main.classList.toggle('solo', !work);
     main.classList.toggle('single-mode', name === 'single');

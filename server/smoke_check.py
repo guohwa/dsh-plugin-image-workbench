@@ -2101,6 +2101,9 @@ ok('文案页草稿箱常驻左栏，点草稿直接载入右侧编辑',
    and 'if ($(\'#draftsDlg\').dataset.inline) openDrafts();' in _html
    and 'if ($(\'#draftsDlg\').dataset.inline) openDrafts();   // 自动存出新草稿' in _html)
 # 2026-11-27 下午：文案页草稿箱标题不折行、两栏等高贴底、生成动效、右上角只清右侧
+ok('多图页隐藏更多功能，左侧分组已覆盖历史监控号池',
+   '.head-acts.multi-mode #moreMenu{display:none}' in _html
+   and "headActs.classList.toggle('multi-mode', name === 'multi');" in _html)
 ok('文案页草稿箱标题不折行，两栏等高贴底各自滚动',
    'dialog.inline-dlg#draftsDlg .dlg-head h3{font-size:13px;flex:none;white-space:nowrap}' in _html
    and 'dialog.inline-dlg#draftsDlg #draftHint{display:none}' in _html
