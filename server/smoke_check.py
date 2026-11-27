@@ -2118,6 +2118,13 @@ ok('文案页一键清空只清右侧内容，草稿箱和配图设置保留',
    and "$('#resetAll').onclick = ()=> (window.currentNav === 'copy' ? resetCopyOnly() : resetAll());" in _html
    and "左侧草稿箱会原样保留。" in _html
    and 'toast(\'右侧内容已清空，草稿箱保留\');' in _html)
+# 2026-11-27：拆成分镜成功就跳多图并同步左侧导航，失败 / 取消不跳
+ok('拆成分镜成功即跳多图，左侧分组同步定位',
+   _html.count("window.navTo('multi');   // 拆完直接去多图看清单，左侧分组同步定位") == 2
+   and "window.navTo('multi');   // 小说拆完一样落到多图，别让用户回到文案页找清单" in _html
+   and "window.navTo('multi');   // 清单早就拆好了，直接送过去看，别把人留在文案页" in _html
+   and "if (!items.length){ toast('没拆出内容'); return; }" in _html
+   and "if (dirty && !confirm('小说会重新拆成 ' + items.length + ' 张卡片，当前清单（含已改过的提示词）会被替换，继续？')) return;" in _html)
 # 2026-11-27：画幅 / 情绪设置块初始就挂进 DOM，否则文案页读写草稿会找不到元素
 ok('设置块初始挂载，草稿载入不缺元素',
    'wm.appendChild(gen);   // 初始就挂进 DOM' in _html

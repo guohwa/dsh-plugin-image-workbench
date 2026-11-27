@@ -5903,7 +5903,7 @@ async function splitToItems(){
   const body  = $('#docBody').value.trim();
   if (!title && !body){
     // 左侧全空也允许：给一条空白分镜，直接靠选型 + 出图指令（可手改）出提示词
-    if (state.items.length){ toast('左侧为空，保留现有清单直接出图'); return; }
+    if (state.items.length){ toast('左侧为空，保留现有清单直接出图'); window.navTo('multi'); return; }
     state.items = [{title: '', body: '', scene: '', prompt: ''}];
     state.group = '';
     $('#groupTag').textContent = '';
@@ -5913,6 +5913,7 @@ async function splitToItems(){
     st.textContent = '空白分镜 · 提示词按出图指令拼';
     await composeAll();
     toast('已按出图指令生成提示词');
+    window.navTo('multi');   // 拆完直接去多图看清单，左侧分组同步定位
     return;
   }
   const items = splitDoc(title, body, titleNumbered());
@@ -5934,6 +5935,7 @@ async function splitToItems(){
   st.className = 'status ok';
   st.textContent = `已拆 ${items.length} 张 · 提示词已生成，可逐条修改`;
   toast(`已拆成 ${items.length} 张卡片`);
+  window.navTo('multi');   // 拆完直接去多图看清单，左侧分组同步定位
 }
 
 /* ================= 生成历史 ================= */
@@ -7015,6 +7017,7 @@ async function splitNovelToItems(){
     } else {
       toast('已按原文拆成 ' + items.length + ' 张卡片', {type:'ok', title:'拆分完成'});
     }
+    window.navTo('multi');   // 小说拆完一样落到多图，别让用户回到文案页找清单
   }catch(e){
     st.className = 'status err';
     st.textContent = '拆分失败：' + e.message;
@@ -7030,6 +7033,7 @@ $('#splitToItems').onclick = function(){
     toast('漫画分镜已拆好 ' + state.items.length + ' 格，不用再点「拆成分镜」。'
       + '直接点右上「批量出图」；想改某一格先点「生成提示词」。'
       + '要重拆请点分镜弹窗里的「重新拆分」。', {type:'info', title:'已经拆好了'});
+    window.navTo('multi');   // 清单早就拆好了，直接送过去看，别把人留在文案页
     return;
   }
   return currentDocTab() === 'novel' ? splitNovelToItems() : splitToItems();
