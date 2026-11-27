@@ -2084,6 +2084,11 @@ ok('热榜搜索框与第二张卡对齐，按钮紧跟其后',
    and 'window.addEventListener(\'resize\', hbAlignToolbar);' in _html
    and 'dialog.inline-dlg.hb-dlg .hb-toolbar{font-size:12.5px;gap:12px;position:relative}' in _html)
 # 2026-11-27：热榜已独立成页，文案页不再显示 AI 热点 / 推荐话题两张重复卡
+ok('历史 / 监控 / 号池三个分组整页铺满右侧',
+   'main.full-page{padding:0}' in _html
+   and 'main.full-page #pageHistory,main.full-page #pageMonitor,main.full-page #pagePool{' in _html
+   and 'main.full-page #historyDlg,main.full-page #monitorDlg,main.full-page #configDlg{' in _html
+   and "main.classList.toggle('full-page', name === 'history' || name === 'monitor' || name === 'pool');" in _html)
 ok('文案页去掉 AI 热点与推荐话题两张卡',
    "const aihot = left.querySelector('.aihot');\n  if (aihot) aihot.remove();" in _html
    and "const recTopics = $('recTopics');\n  if (recTopics) recTopics.remove();" in _html

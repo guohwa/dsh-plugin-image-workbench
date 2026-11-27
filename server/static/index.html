@@ -126,6 +126,16 @@
   main.hot-full dialog.inline-dlg.hb-dlg{height:100%;border-radius:0;background:transparent;box-shadow:none}
   main.hot-full dialog.inline-dlg.hb-dlg .inner{height:100%;min-height:0;padding:3px 16px 0}
   main.hot-full dialog.inline-dlg.hb-dlg .scroller{padding-bottom:0}
+  /* 历史 / 监控 / 号池：整页铺满右侧，跟热榜一样去掉弹窗宽高上限和四周留白。
+     用带 ID 的选择器压过 dialog.wide / #configDlg 原有的固定宽度。 */
+  main.full-page{padding:0}
+  main.full-page #pageHistory,main.full-page #pageMonitor,main.full-page #pagePool{
+    height:calc(100vh - var(--hot-top,69px))}
+  main.full-page #historyDlg,main.full-page #monitorDlg,main.full-page #configDlg{
+    width:100%;max-width:none;height:100%;max-height:none;margin:0;padding:0;
+    border:0;border-radius:0;background:transparent;box-shadow:none}
+  main.full-page #historyDlg .inner,main.full-page #monitorDlg .inner,main.full-page #configDlg .inner{
+    height:100%;max-height:none;min-height:0;padding:3px 16px 0}
   @media (max-width:1180px){main{grid-template-columns:minmax(0,1fr)}.panel.right{grid-column:1/-1}}
   @media (max-width:860px){main{grid-template-columns:1fr}}
   @media (max-width:640px){body{padding-left:0}.rail{position:static;width:100%;height:auto;
@@ -9076,6 +9086,7 @@ setInterval(refreshPool, 10000);
     main.classList.toggle('solo', !work);
     main.classList.toggle('single-mode', name === 'single');
     main.classList.toggle('hot-full', name === 'hot');
+    main.classList.toggle('full-page', name === 'history' || name === 'monitor' || name === 'pool');
     fitHot();   // 文案页整页高度按页头实测值算，两栏才能贴着窗口底
     document.querySelectorAll('.rail-item').forEach(b=>{
       const on = b.dataset.nav === name && b.id !== 'railSetting';
