@@ -2096,6 +2096,15 @@ ok('排版预览卡片悬停：滚动时贴页头停住，窄屏退回普通文�
    and 'max-height:calc(100vh - var(--hot-top,69px) - 28px);overflow-y:auto}' in _html
    and 'position:static;max-height:none;overflow:visible' in _html
    and 'fitHot();\n  window.addEventListener(\'resize\', fitHot);' in _html)
+# 2026-11-27：出图中的分组图标加呼吸动效——单图挂 qsWorking，多图挂 setBatchRunning（两条批量路径共用）
+ok('左栏分组图标有出图工作态动效',
+   '.rail-item.busy{position:relative;color:var(--primary)}' in _html
+   and '@keyframes railPulse' in _html and '@keyframes railGlow' in _html
+   and "railBusy('single', on);" in _html
+   and "function setBatchRunning(on){" in _html
+   and "railBusy('multi', on);" in _html
+   and _html.count('setBatchRunning(true)') == 2
+   and _html.count('setBatchRunning(false)') == 2)
 # 2026-11-27：分组页要压过弹窗的 1240px 宽度上限，并在大屏放大卡片 / 榜单字号
 ok('热榜独立页宽度铺满主区，卡片与榜单字号放大',
    'dialog.inline-dlg.hb-dlg{width:100%;max-width:none;height:auto;max-height:none;margin:0}' in _html

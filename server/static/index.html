@@ -79,6 +79,13 @@
   .rail-item svg{width:19px;height:19px;flex:none}
   .rail-item:hover{background:#f5f2ff;color:var(--primary)}
   .rail-item.on{background:#ebe7ff;color:var(--primary);font-weight:600}
+  /* 出图工作中的分组图标：呼吸光圈 + 图标脉冲，切到别的分组也一眼看出哪一组在干活 */
+  .rail-item.busy{position:relative;color:var(--primary)}
+  .rail-item.busy svg{animation:railPulse 1.1s ease-in-out infinite}
+  .rail-item.busy::after{content:'';position:absolute;inset:3px;border-radius:11px;pointer-events:none;
+    border:1.5px solid rgba(106,90,224,.45);animation:railGlow 1.1s ease-in-out infinite}
+  @keyframes railPulse{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.18);opacity:1}}
+  @keyframes railGlow{0%,100%{box-shadow:0 0 0 0 rgba(106,90,224,.30)}50%{box-shadow:0 0 0 5px rgba(106,90,224,0)}}
   .rail-item .rail-dot{position:absolute;width:6px;height:6px;border-radius:50%;background:var(--pink)}
   .rail-gap{flex:1}
   .rail-bottom{width:100%;border-top:1px solid var(--line);padding-top:8px;margin-top:6px;
@@ -3507,6 +3514,7 @@ function qsWorking(on){
   const box = $('#quickSingle'), btn = $('#qsGen'), st = $('#qsStatus');
   if (box) box.classList.toggle('working', !!on);
   if (st) st.classList.toggle('working', !!on);
+  railBusy('single', on);              // 左栏「单图」图标同步呼吸发光
   qsPaintMini();                       // 收起态显示「出图中…」
   if (btn){
     if (on){
@@ -4173,6 +4181,15 @@ function openViewer(){
 
 /* 同一时间只允许一个批次在等图：手动点「批量出图」和刷新后的自动续接互斥 */
 let _batchRunning = false;
+/* 左栏分组图标工作态：哪一组在出图，图标就呼吸发光（用户 2026-11-27） */
+function railBusy(nav, on){
+  const btn = document.querySelector('.rail-item[data-nav="' + nav + '"]');
+  if (btn) btn.classList.toggle('busy', !!on);
+}
+function setBatchRunning(on){
+  _batchRunning = !!on;
+  railBusy('multi', on);
+}
 let _stopRequested = false;   // 点「停止生图」后置位，批量提交与轮询循环见到就退出
 
 /* ---------- 空手点「批量出图」：先随机给一套示例，别让人猜图是按什么出的 ----------
@@ -4283,7 +4300,7 @@ async function runImage(){
   const statusEl = $('#imageStatus');
   const btn = $('#genImage');
   btn.disabled = true;
-  _batchRunning = true;
+  setBatchRunning(true);
   const _sg = $('#stopGen'); if (_sg) _sg.disabled = false;
   const _ms = $('#monStop'); if (_ms) _ms.disabled = false;
   state.results = []; state.idx = 0;
@@ -4358,7 +4375,7 @@ async function runImage(){
     }
   }finally{
     btn.disabled = false;
-    _batchRunning = false;
+    setBatchRunning(false);
   }
 }
 
@@ -4536,7 +4553,7 @@ async function resumeBatch(){
   if (Date.now() - (b.t || 0) > 2 * 3600 * 1000){ clearBatch(); return; }
   if (_batchRunning) return;
   _stopRequested = false;
-  _batchRunning = true;
+  setBatchRunning(true);
   const statusEl = $('#imageStatus');
   const btn = $('#genImage');
   btn.disabled = true;
@@ -4548,7 +4565,7 @@ async function resumeBatch(){
   }catch(e){
     statusEl.className = 'status err'; statusEl.textContent = e.message;
   }finally{
-    _batchRunning = false;
+    setBatchRunning(false);
     btn.disabled = false;
   }
 }
