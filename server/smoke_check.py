@@ -1854,28 +1854,24 @@ ok('单图出完登记进结果列表，右侧预览可点击',
    "if (onFinish) onFinish('done', d);" in _html
    and 'topic:text.slice(0, 60), seq:state.results.length,' in _html
    and "qsStatus('出图完成，点右侧预览图可放大', 'ok')" in _html)
-# 2026-11-26 七次调整：单图快出默认折叠，只留标题；多图模式照常显示
-ok('单图快出默认折叠，只留标题，下方多图模式正常显示',
-   'class="quick-single collapsed" id="quickSingle"' in _html
-   and 'id="qsHead"' in _html
-   and 'id="qsBody" hidden' in _html
-   and '.quick-single.collapsed .qs-tag,' in _html
-   and '.quick-single.collapsed .qs-body{display:none}' in _html
+# 2026-11-27：单图已是独立分组，固定展开、不再有折叠开关；画幅/情绪/出图指令跟着页面走
+ok('单图快出固定展开，画幅情绪与出图指令跟到单图页',
+   'class="quick-single" id="quickSingle"' in _html
+   and 'id="qsBody"' in _html and 'id="qsBody" hidden' not in _html
+   and 'class="qs-fold" id="qsFold"' not in _html
+   and 'qsSetOpen(true);' in _html
+   and 'gen.id    = \'genShared\'' in _html
+   and "single.appendChild(gen);" in _html
+   and "if (multiTail) multi.insertBefore(gen, multiTail);" in _html
    and 'class="params" id="omodeRow"' in _html)
-ok('点标题可展开/收起单图快出，键盘也能操作，出图逻辑不受影响',
-   'function qsSetOpen(open)' in _html
-   and "head.addEventListener('click', toggle);" in _html
-   and "head.addEventListener('keydown'" in _html
-   and "qsSetOpen(false);" in _html
-   and 'async function qsGenerate()' in _html)
-# 2026-11-27 反馈：只有一个 14px 小箭头，用户根本看不见能收，改成文字开关 + 收起态摘要
-ok('折叠开关是看得见文字的按钮，收起态还带内容摘要',
-   'class="qs-fold" id="qsFold"' in _html
-   and "<span id=\"qsFoldTxt\">展开</span>" in _html
-   and "t.textContent = open ? '收起' : '展开';" in _html
-   and 'function qsPaintMini()' in _html
-   and 'class="qs-mini" id="qsMini"' in _html
-   and '.quick-single:not(.collapsed) .qs-mini{display:none}' in _html)
+# 单图页顶部只留状态与号池，右侧预览不再借用多图文案
+ok('单图页隐藏批量按钮，预览与多图文案剥离',
+   '.head-acts.single-mode #composeAll,' in _html
+   and "headActs.classList.toggle('single-mode', name === 'single');" in _html
+   and "if (window.currentNav === 'single'){" in _html
+   and "$('#pTitle').textContent = '单图预览';" in _html
+   and "bar.textContent = '单图 · 预览'" in _html
+   and 'if (window.syncPreview) syncPreview();' in _html)
 # 2026-11-27 反馈：整张卡都能点开选择器；「更换」按钮去掉；X 放大且不占文字宽度
 ok('四张选择卡整块可点，更换按钮已去掉，X 放大且浮在右上角',
    'id="chgLayout"' not in _html and 'id="chgStyle"' not in _html
@@ -2012,8 +2008,8 @@ ok('左侧分组导航齐全，历史 / 监控 / 号池做成主区页面',
 # 四张卡只有一份 DOM：切页时把同一份节点挂到目标页，复制一份就会出现两套 ID、状态必然不同步
 ok('配图工坊四张卡共用一份节点，切单图 / 多图时跟随移动',
    "shared.id = 'studioShared'" in _html and 'studio.remove();' in _html
-   and "if (name === 'single') ws.insertBefore(shared, ws.firstChild);" in _html
-   and "if (name === 'multi')  wm.insertBefore(shared, wm.firstChild);" in _html
+   and "if (name === 'single'){\n      ws.insertBefore(shared, ws.firstChild);" in _html
+   and "if (name === 'multi'){\n      wm.insertBefore(shared, wm.firstChild);" in _html
    and "if (!P[name]) name = 'copy';" in _html)
 ok('排版预览只在单图 / 多图页常驻，其它分组隐藏',
    "const work = (name === 'single' || name === 'multi');" in _html
