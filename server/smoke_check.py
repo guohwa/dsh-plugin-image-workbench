@@ -2089,6 +2089,13 @@ ok('热榜分组直接铺满页面，不再重复 AI 热点与推荐话题',
    and "const b = $('recOpen'); if (b) b.click();" not in _html
    and 'if(recOpen) recOpen.onclick = window.hbOpenHot;' in _html
    and _html.count('id="hotBoardDlg"') == 1)
+# 2026-11-27：排版预览卡片悬停（sticky 而非 fixed），窗口太矮面板内部自己滚；窄屏退回文档流
+ok('排版预览卡片悬停：滚动时贴页头停住，窄屏退回普通文档流',
+   'aside.panel.right{position:sticky;top:calc(var(--hot-top,69px) + 14px);align-self:start;'
+   in _html
+   and 'max-height:calc(100vh - var(--hot-top,69px) - 28px);overflow-y:auto}' in _html
+   and 'position:static;max-height:none;overflow:visible' in _html
+   and 'fitHot();\n  window.addEventListener(\'resize\', fitHot);' in _html)
 # 2026-11-27：分组页要压过弹窗的 1240px 宽度上限，并在大屏放大卡片 / 榜单字号
 ok('热榜独立页宽度铺满主区，卡片与榜单字号放大',
    'dialog.inline-dlg.hb-dlg{width:100%;max-width:none;height:auto;max-height:none;margin:0}' in _html
