@@ -2165,6 +2165,14 @@ ok('左下角设置打开弹窗而不是切到号池整页',
    and "note.onclick = function(){ if (window.openSettings) window.openSettings('update'); else openPanel(); };" in _html
    and 'window.prepUpgradePanel = prepPanel;' in _html
    and 'if (window.prepUpgradePanel) window.prepUpgradePanel();' in _html)
+
+# 2026-11-27：号池分组整页只显示本地号池，接口配置留在设置弹窗
+ok('号池分组整页只显示本地号池内容',
+   '#configDlg.pool-only .cfg-tabs,#configDlg.pool-only #tabIface,#configDlg.pool-only #cfgFoot{display:none}' in _html
+   and "dlg.classList.add('pool-only');   // 号池分组只显示本地号池，不带页签和接口配置" in _html
+   and "if (name === 'pool') dlg.classList.remove('pool-only');" in _html
+   and "if (window.showCfgTab) showCfgTab('pool');" in _html
+   and "if (window.currentNav === 'pool' && window.showCfgTab) showCfgTab('pool');" in _html)
 ok('设置弹窗借还接口配置与升级面板节点，不复制 ID',
    'tabHome = {parent: tabIface.parentNode, next: tabIface.nextSibling};' in _html
    and 'upHome = {parent: upInner.parentNode, next: upInner.nextSibling};' in _html

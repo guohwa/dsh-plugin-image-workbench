@@ -136,6 +136,8 @@
     border:0;border-radius:0;background:transparent;box-shadow:none}
   main.full-page #historyDlg .inner,main.full-page #monitorDlg .inner,main.full-page #configDlg .inner{
     height:100%;max-height:none;min-height:0;padding:3px 16px 0}
+  /* 号池分组只看本地号池：接口配置已经搬进设置弹窗，整页不再出现页签和接口表单 */
+  #configDlg.pool-only .cfg-tabs,#configDlg.pool-only #tabIface,#configDlg.pool-only #cfgFoot{display:none}
   @media (max-width:1180px){main{grid-template-columns:minmax(0,1fr)}.panel.right{grid-column:1/-1}}
   @media (max-width:860px){main{grid-template-columns:1fr}}
   @media (max-width:640px){body{padding-left:0}.rail{position:static;width:100%;height:auto;
@@ -2058,7 +2060,7 @@
 <dialog id="configDlg">
   <div class="inner">
     <div class="dlg-head">
-      <h3>接口与号池 <span id="cfgEngine" style="font-weight:400;color:var(--ink-3);font-size:12px"></span><span id="cfgVersion" style="font-weight:400;color:var(--ink-3);font-size:11px;opacity:.7;margin-left:6px"></span></h3>
+      <h3>本地号池 <span id="cfgEngine" style="font-weight:400;color:var(--ink-3);font-size:12px"></span><span id="cfgVersion" style="font-weight:400;color:var(--ink-3);font-size:11px;opacity:.7;margin-left:6px"></span></h3>
       <span class="spacer"></span>
       <button class="btn ghost mini" id="cfgClose" type="button">关闭</button>
     </div>
@@ -9138,13 +9140,18 @@ setInterval(refreshPool, 10000);
       if (window.refreshMonitor) refreshMonitor();
       if (window.scheduleMonitor) scheduleMonitor();
     }
-    if (name === 'pool' && window.loadConfigPage) loadConfigPage();
+    if (name === 'pool'){
+      dlg.classList.add('pool-only');   // 号池分组只显示本地号池，不带页签和接口配置
+      if (window.loadConfigPage) loadConfigPage();
+      if (window.showCfgTab) showCfgTab('pool');
+    }
   }
   function unmountDlg(name){
     if (!mounted[name]) return;
     const dlg = $(DLG[name]); if (!dlg) return;
     if (dlg.open) { try{ dlg.close(); }catch(e){} }
     delete dlg.dataset.inline; dlg.classList.remove('inline-dlg');
+    if (name === 'pool') dlg.classList.remove('pool-only');
     document.body.appendChild(dlg); mounted[name] = false;
   }
 
@@ -9257,6 +9264,9 @@ setInterval(refreshPool, 10000);
     if (upHome && upInner && upInner.parentNode === paneUpdate){
       upHome.parent.insertBefore(upInner, upHome.next);
     }
+    /* 号池整页只认本地号池：借还过程会把页签状态切成 iface，回来必须拨回去，
+       否则号池面板还挂着 hidden，整页就空白了 */
+    if (window.currentNav === 'pool' && window.showCfgTab) showCfgTab('pool');
     tabHome = null; upHome = null;
   }
 
