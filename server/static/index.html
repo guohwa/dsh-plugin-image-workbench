@@ -94,6 +94,8 @@
   dialog.inline-dlg.hb-dlg .inner{display:flex;flex-direction:column;height:min(72vh,760px);padding:14px 4px}
   dialog.inline-dlg.hb-dlg .scroller{flex:1 1 auto;min-height:0;overflow:auto;padding-right:4px}
   main{display:grid;grid-template-columns:minmax(0,1fr) 440px;gap:14px;padding:14px;align-items:start}
+  /* 热榜 / 历史 / 监控 / 号池不显示右侧预览，主区不能替隐藏的预览留 440px 空列 */
+  main.solo{grid-template-columns:minmax(0,1fr)}
   @media (max-width:1180px){main{grid-template-columns:minmax(0,1fr)}.panel.right{grid-column:1/-1}}
   @media (max-width:860px){main{grid-template-columns:1fr}}
   @media (max-width:640px){body{padding-left:0}.rail{position:static;width:100%;height:auto;
@@ -7964,7 +7966,7 @@ setInterval(refreshPool, 10000);
     return Math.floor(n / 86400) + ' 天';
   }
 
-  function hbOpen(){
+  window.hbOpenHot = function hbOpen(){
     if(!hbDlg) return;
     /* 热榜已挂进「热榜」分组页时不再弹 modal，直接在外面加载 / 渲染 */
     if(hbDlg.dataset.inline){ if(hbData){ hbRender(); return; } hbLoad(0); return; }
@@ -8099,8 +8101,8 @@ setInterval(refreshPool, 10000);
   if(hbDayEl) hbDayEl.onchange = function(){ hbDay = this.value; hbRender(); };
   if(hbSearchEl) hbSearchEl.oninput = function(){ hbQuery = String(this.value || '').trim(); hbRender(); };
   const recOpen = document.getElementById('recOpen');
-  if(recOpen) recOpen.onclick = hbOpen;
-  if(pageEl) pageEl.onclick = hbOpen;
+  if(recOpen) recOpen.onclick = window.hbOpenHot;
+  if(pageEl) pageEl.onclick = window.hbOpenHot;
   if(hbRefresh) hbRefresh.onclick = function(){ hbLoad(1); };
   if(hbClose && hbDlg) hbClose.onclick = function(){ hbDlg.close(); };
 })();
@@ -8787,14 +8789,8 @@ setInterval(refreshPool, 10000);
     P[k] = e; main.insertBefore(e, aside);
   });
 
-  /* 热榜：把原来挤在文案页的 AI 热点 / 推荐话题搬到独立页 */
-  const hotPanel = document.createElement('section');
-  hotPanel.className = 'panel';
-  hotPanel.innerHTML = '<h2>每日热榜</h2><p class="hint">热点选题与推荐话题，点一条带进文案页的选题框。</p>';
-  const aihot = document.querySelector('section.panel.left .aihot');
-  if (aihot) hotPanel.appendChild(aihot);
-  if ($('recTopics')) hotPanel.appendChild($('recTopics'));
-  P.hot.appendChild(hotPanel);
+  /* 热榜：整页只放 8 张平台卡 + 榜单，不重复堆 AI 热点 / 推荐话题。
+     那两块留在文案页原来的位置，从榜单点「用作选题」会跳回文案页。 */
   P.copy.appendChild(left);
 
   /* 配图工坊拆三块：公共的四张卡 + 单图快出 + 多图流程 */
@@ -8818,7 +8814,7 @@ setInterval(refreshPool, 10000);
     if (dlg.open) { try{ dlg.close(); }catch(e){} }
     dlg.dataset.inline = '1'; dlg.classList.add('inline-dlg');
     P[name].appendChild(dlg); mounted[name] = true;
-    if (name === 'hot'){ const b = $('recOpen'); if (b) b.click(); }
+    if (name === 'hot' && window.hbOpenHot) window.hbOpenHot();
     if (name === 'history' && window.loadTasks) loadTasks(1);
     if (name === 'monitor'){
       if (window.bindWorkersCtl) bindWorkersCtl();
@@ -8846,6 +8842,7 @@ setInterval(refreshPool, 10000);
     const work = (name === 'single' || name === 'multi');
     if (aside) aside.hidden = !work;
     if (headActs) headActs.style.display = work ? '' : 'none';
+    main.classList.toggle('solo', !work);
     document.querySelectorAll('.rail-item').forEach(b=>{
       const on = b.dataset.nav === name && b.id !== 'railSetting';
       b.classList.toggle('on', on); b.setAttribute('aria-current', on ? 'page' : 'false');

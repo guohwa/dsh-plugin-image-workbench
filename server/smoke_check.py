@@ -1440,7 +1440,7 @@ ok('情绪化热榜标题只展示原题不加工',
 ok('可接自定义热榜源',
    'TOPIC_HOT_API_' in _src_app and 'custom' in _src_app)
 ok('底部入口能打开每日热榜弹窗',
-   all(x in _src_html for x in ('id="recOpen"', 'recOpen.onclick = hbOpen', '每日热榜 ↗')))
+   all(x in _src_html for x in ('id="recOpen"', 'recOpen.onclick = window.hbOpenHot', '每日热榜 ↗')))
 ok('弹窗含八平台卡片、页签、日期、同步时间和完整榜单表格',
    all(x in _src_html for x in ('id="hotBoardDlg"', 'id="hbTabs"', 'id="hbNote"',
                                 'id="hbList"', 'id="hbDay"', 'id="hbSynced"',
@@ -2020,6 +2020,16 @@ ok('排版预览只在单图 / 多图页常驻，其它分组隐藏',
    and 'aside.hidden = !work;' in _html
    and "headActs.style.display = work ? '' : 'none';" in _html
    and "if(hbDlg.dataset.inline)" in _html)
+# 2026-11-27：热榜整页只放 8 卡 + 榜单，AI 热点 / 推荐话题留在文案页；非工作页不留 440px 空列
+ok('热榜分组直接铺满页面，不再重复 AI 热点与推荐话题',
+   'main.solo{grid-template-columns:minmax(0,1fr)}' in _html
+   and "main.classList.toggle('solo', !work);" in _html
+   and 'window.hbOpenHot = function hbOpen(){' in _html
+   and "if (name === 'hot' && window.hbOpenHot) window.hbOpenHot();" in _html
+   and "if ($('recTopics')) hotPanel.appendChild" not in _html
+   and "const b = $('recOpen'); if (b) b.click();" not in _html
+   and 'if(recOpen) recOpen.onclick = window.hbOpenHot;' in _html
+   and _html.count('id="hotBoardDlg"') == 1)
 
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')
