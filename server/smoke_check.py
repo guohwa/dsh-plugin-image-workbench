@@ -2012,11 +2012,17 @@ _rj = _rp.json() if _rp.status_code == 200 else {}
 ok('推荐接口可用，返回三件套 / 题材 / 标签',
    _rp.status_code == 200 and (_rj.get('layout') or {}).get('id') in _LAY_IDS
    and isinstance(_rj.get('tags'), list))
-# 2026-11-27：推荐组合只留配图工坊那条推荐带，顶部 / 单图下方的重复入口全撤
-ok('推荐组合只剩推荐带一个入口，顶部与单图下方的重复按钮已撤',
-   'id="comboRecBtn"' in _html and 'id="comboTop"' not in _html
+# 2026-11-27：单图 / 多图分组后手动推荐按钮撤掉，改自动推荐 + 换一组文字链
+ok('手动推荐按钮已撤，改自动推荐 + 换一组文字链',
+   'id="comboRecBtn"' not in _html and 'id="comboTop"' not in _html
    and 'id="qsRec"' not in _html and 'id="randomCombo"' not in _html
-   and "if ($('#comboRecBtn')) $('#comboRecBtn').onclick = ()=> comboRecommend('auto');" in _html
+   and 'id="comboAgain"' in _html
+   and "if ($('#comboAgain')) $('#comboAgain').onclick = ()=> comboRecommend('auto');" in _html
+   and 'function selUntouched(){' in _html
+   and 'function snapshotSelInit(){' in _html
+   and 'snapshotSelInit();       // 自动推荐以此为「用户没动过」的基线' in _html
+   and 'function autoComboSoon(delay){' in _html
+   and 'if (!quiet) autoComboSoon();' in _html
    and "'/api/recommend'" in _html and 'avoid_layout' in _html)
 ok('推荐前先读原始关键字，不拿九行提示词去匹配题材',
    "(_qsOptimized && _qsRawKey) ? _qsRawKey : val('#qsKey')" in _html)
@@ -2033,10 +2039,10 @@ ok('推荐按「最后动过哪一边」读内容，并写明读的是哪边、�
    and 'id="crSrc"' in _html and 'class="cr-src"' in _html
    and "e.target.closest('.cr-src')" in _html
    and 'function comboSrcLabel(from)' in _html)
-ok('推荐后同步三张卡、记住这次风格，按钮变「换一组」',
+ok('推荐后同步三张卡、记住这次风格，配过才亮「换一组」',
    'state.sel.layout = L;' in _html and 'state.sel.color  = C;' in _html
    and "_comboLast = {layout: L.id, style: S.id, color: C.id};" in _html
-   and "if (btn) btn.textContent = _comboLast ? '换一组' : '按内容推荐';" in _html)
+   and "if (again) again.hidden = !_comboLast;" in _html)
 # 2026-11-27：缩微摄影融合默认常开，只有用户自己关过才记住「关」
 ok('缩微摄影融合默认常开，用户关过才记住',
    '<input type="checkbox" id="fusion" checked>' in _html
