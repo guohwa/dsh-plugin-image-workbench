@@ -1861,7 +1861,7 @@ ok('单图快出固定展开，画幅情绪与出图指令跟到单图页',
    and 'class="qs-fold" id="qsFold"' not in _html
    and 'qsSetOpen(true);' in _html
    and 'gen.id    = \'genShared\'' in _html
-   and "single.appendChild(gen);" in _html
+   and "single.insertBefore(gen, single.firstChild);" in _html
    and "if (multiTail) multi.insertBefore(gen, multiTail);" in _html
    and 'class="params" id="omodeRow"' in _html)
 # 单图页顶部只留状态与号池，右侧预览不再借用多图文案

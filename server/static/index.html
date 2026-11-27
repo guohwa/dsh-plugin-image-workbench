@@ -8908,7 +8908,7 @@ setInterval(refreshPool, 10000);
     if (prev in DLG && prev !== name) unmountDlg(prev);
     if (name === 'single'){
       ws.insertBefore(shared, ws.firstChild);
-      single.appendChild(gen);   // 出图指令跟到单图页，关键字框下面
+      single.insertBefore(gen, single.firstChild);   // 设置块在上，关键字文本框沉到下面
     }
     if (name === 'multi'){
       wm.insertBefore(shared, wm.firstChild);
