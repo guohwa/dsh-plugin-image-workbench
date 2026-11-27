@@ -2054,13 +2054,18 @@ ok('左侧分组导航齐全，历史 / 监控 / 号池做成主区页面',
    and "$('#openHistory').onclick = ()=> navTo('history');" in _html
    and "$('#openMonitor').onclick = ()=> navTo('monitor');" in _html
    and "$('#openConfig').onclick = ()=> navTo('pool');" in _html)
-# 2026-11-27：单图置顶 + 单图页隐藏右侧底部号池说明
-ok('单图导航放第一位，单图页隐藏右侧底部说明文字',
+# 2026-11-27：单图置顶；排版预览底部只留常驻下载行与一行提示，
+# 提示词回显行 / 号池明细行 / 号池说明段全部移除，下载按钮无图时置灰
+ok('单图导航放第一位，排版预览底部只留下载与提示',
    _html.index('data-nav="single"') < _html.index('data-nav="hot"')
    and _html.index('data-nav="single"') < _html.index('data-nav="copy"')
-   and 'main.single-mode .footer-note{display:none}' in _html
    and "main.classList.toggle('single-mode', name === 'single');" in _html
-   and '号池 = 10 个 ChatGPT 账号' in _html)
+   and 'id="dlRow"' in _html and 'id="downloadBtn"' in _html and 'id="downloadAll"' in _html
+   and '.dl-row{display:flex' in _html
+   and '号池 = 10 个 ChatGPT 账号' not in _html
+   and 'id="poolDetail"' not in _html
+   and 'setPoolDetail' not in _html
+   and "$('#viewerMeta').textContent = `第" not in _html)
 # 四张卡只有一份 DOM：切页时把同一份节点挂到目标页，复制一份就会出现两套 ID、状态必然不同步
 ok('配图工坊四张卡共用一份节点，切单图 / 多图时跟随移动',
    "shared.id = 'studioShared'" in _html and 'studio.remove();' in _html
