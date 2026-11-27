@@ -2126,6 +2126,13 @@ ok('拆成分镜按钮与 AI 生成文章同尺寸并并入底部操作行',
    and '<button class="btn ghost" id="copyText">复制</button>' in _html
    and '.doc-actions .btn.ghost{border:0;box-shadow:inset 0 0 0 1px var(--line)}' in _html
    and 'class="btn primary full" id="splitToItems"' not in _html)
+# 2026-11-27：拆分在文案页发生时 DOM 未挂载，正文不能被压成 2px；scene 同步回填
+ok('拆分后正文不被压扁，中层小辅助图自动回填',
+   'function fitBody(el){\n  if (!el || !el.isConnected) return;' in _html
+   and 'function refitItems(){' in _html
+   and "if (name === 'multi' && window.refitItems) refitItems();" in _html
+   and _html.count('fillScenes();            //') == 3
+   and "window.navTo('multi'); fillScenes(); return;" in _html)
 # 2026-11-27：拆成分镜成功就跳多图并同步左侧导航，失败 / 取消不跳
 ok('拆成分镜成功即跳多图，左侧分组同步定位',
    _html.count("window.navTo('multi');   // 拆完直接去多图看清单，左侧分组同步定位") == 2

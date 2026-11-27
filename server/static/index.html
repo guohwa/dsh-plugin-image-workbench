@@ -3522,14 +3522,23 @@ function autoGrow(el, max){
 /* 正文框：一行就一行高，最多两行，再多就自己滚动 */
 const BODY_MAX = 62;
 function fitBody(el){
-  if (!el) return;
-  /* 先把高度压到 0 才能量出真实内容高度：textarea 的 scrollHeight 永远不小于
-     自身高度，不清 min-height 就永远读到两行（rows=2 的默认高度）。 */
+  if (!el || !el.isConnected) return;
+  /* 拆分发生在文案页时，分镜节点还没挂进多图页，这里量到的 scrollHeight 是 0，
+     会把行高写死成 2px。未挂载就别算，等 navTo 切到多图后 refitItems 再量。 */
   el.style.minHeight = '0';
   el.style.height = '0px';
   const h = el.scrollHeight + 2;
   el.style.height = Math.min(h, BODY_MAX) + 'px';
   el.style.overflowY = h > BODY_MAX ? 'auto' : 'hidden';
+}
+
+/* 切到多图页后把所有分镜的文本域按当前内容重算高度。
+   从文案页拆分 / 载入草稿时节点还没挂载，fitBody 会主动跳过，靠这里补上。 */
+function refitItems(){
+  document.querySelectorAll('#itemList .item').forEach(el=>{
+    const b = el.querySelector('.it-body'); if (b) fitBody(b);
+    const p = el.querySelector('.it-prompt'); if (p && p.value) autoGrow(p);
+  });
 }
 
 function renderItems(){
@@ -5906,7 +5915,7 @@ async function splitToItems(){
   const body  = $('#docBody').value.trim();
   if (!title && !body){
     // 左侧全空也允许：给一条空白分镜，直接靠选型 + 出图指令（可手改）出提示词
-    if (state.items.length){ toast('左侧为空，保留现有清单直接出图'); window.navTo('multi'); return; }
+    if (state.items.length){ toast('左侧为空，保留现有清单直接出图'); window.navTo('multi'); fillScenes(); return; }
     state.items = [{title: '', body: '', scene: '', prompt: ''}];
     state.group = '';
     $('#groupTag').textContent = '';
@@ -5917,6 +5926,7 @@ async function splitToItems(){
     await composeAll();
     toast('已按出图指令生成提示词');
     window.navTo('multi');   // 拆完直接去多图看清单，左侧分组同步定位
+    fillScenes();            // 进多图后再给每条挑中层小辅助图，DOM 已挂载，回填能直接看见
     return;
   }
   const items = splitDoc(title, body, titleNumbered());
@@ -5939,6 +5949,7 @@ async function splitToItems(){
   st.textContent = `已拆 ${items.length} 张 · 提示词已生成，可逐条修改`;
   toast(`已拆成 ${items.length} 张卡片`);
   window.navTo('multi');   // 拆完直接去多图看清单，左侧分组同步定位
+  fillScenes();            // 中层小辅助图同步选好，不用等点生成提示词
 }
 
 /* ================= 生成历史 ================= */
@@ -7021,6 +7032,7 @@ async function splitNovelToItems(){
       toast('已按原文拆成 ' + items.length + ' 张卡片', {type:'ok', title:'拆分完成'});
     }
     window.navTo('multi');   // 小说拆完一样落到多图，别让用户回到文案页找清单
+    fillScenes();            // 每格的中层小辅助图跟着回填
   }catch(e){
     st.className = 'status err';
     st.textContent = '拆分失败：' + e.message;
@@ -9072,6 +9084,7 @@ setInterval(refreshPool, 10000);
     if (work){
       if (window.syncRatioUi) syncRatioUi();
       if (window.syncPreview) syncPreview();
+      if (name === 'multi' && window.refitItems) refitItems();   // 节点刚挂进多图页，重新量正文 / 提示词高度
       if (window.renderStrip) renderStrip();   // 预览按当前页取单图或多图那份结果，别串
       if (!quiet){
         if (window.syncInstr) syncInstr();
