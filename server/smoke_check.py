@@ -2030,6 +2030,13 @@ ok('热榜分组直接铺满页面，不再重复 AI 热点与推荐话题',
    and "const b = $('recOpen'); if (b) b.click();" not in _html
    and 'if(recOpen) recOpen.onclick = window.hbOpenHot;' in _html
    and _html.count('id="hotBoardDlg"') == 1)
+# 2026-11-27：分组页要压过弹窗的 1240px 宽度上限，并在大屏放大卡片 / 榜单字号
+ok('热榜独立页宽度铺满主区，卡片与榜单字号放大',
+   'dialog.inline-dlg.hb-dlg{width:100%;max-width:none;height:auto;max-height:none;margin:0}' in _html
+   and 'dialog.inline-dlg.hb-dlg .hb-pname{font-size:17px}' in _html
+   and 'dialog.inline-dlg.hb-dlg .hb-pitem{font-size:14.5px;gap:8px;line-height:1.8}' in _html
+   and 'dialog.inline-dlg.hb-dlg .hb-table{font-size:15px}' in _html
+   and 'dialog.inline-dlg.hb-dlg .hb-pcard{padding:14px 16px;gap:6px;min-height:180px;border-radius:14px}' in _html)
 
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')

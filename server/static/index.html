@@ -545,6 +545,41 @@
     border-radius:7px;padding:4px 10px;cursor:pointer;white-space:nowrap}
   .hb-use:hover{background:#d7efe2}
   .hb-empty{grid-column:1/-1;font-size:13.5px;color:var(--ink-3);padding:26px;text-align:center}
+  /* 热榜独立分组页：宽屏下铺满主区，字号跟着放大；从文案页打开的小弹窗保持原样。
+     必须写在 dialog.hb-dlg 之后，宽度 / 高度要压过弹窗上的 1240px、92vh 限制。 */
+  dialog.inline-dlg.hb-dlg{width:100%;max-width:none;height:auto;max-height:none;margin:0}
+  dialog.inline-dlg.hb-dlg .inner{height:min(calc(100vh - 150px),980px);min-height:560px;padding:16px 4px}
+  dialog.inline-dlg.hb-dlg .dlg-head h3{font-size:20px}
+  dialog.inline-dlg.hb-dlg .dlg-head h3 span{font-size:14px}
+  dialog.inline-dlg.hb-dlg .dlg-head .btn{font-size:14px}
+  dialog.inline-dlg.hb-dlg .hb-toolbar{font-size:14px;gap:12px}
+  dialog.inline-dlg.hb-dlg .hb-toolbar select,
+  dialog.inline-dlg.hb-dlg .hb-toolbar input{min-width:160px;padding:7px 11px;font-size:14px}
+  dialog.inline-dlg.hb-dlg .hb-toolbar input{min-width:240px;flex-basis:320px}
+  dialog.inline-dlg.hb-dlg .hb-note{font-size:13.5px}
+  dialog.inline-dlg.hb-dlg .hb-tab{font-size:14px;padding:7px 16px}
+  dialog.inline-dlg.hb-dlg .hb-grid{gap:13px}
+  dialog.inline-dlg.hb-dlg .hb-pcard{padding:14px 16px;gap:6px;min-height:180px;border-radius:14px}
+  dialog.inline-dlg.hb-dlg .hb-phead{margin-bottom:8px}
+  dialog.inline-dlg.hb-dlg .hb-pname{font-size:17px}
+  dialog.inline-dlg.hb-dlg .hb-pcount{font-size:13.5px}
+  dialog.inline-dlg.hb-dlg .hb-pmore{font-size:13px}
+  dialog.inline-dlg.hb-dlg .hb-pitem{font-size:14.5px;gap:8px;line-height:1.8}
+  dialog.inline-dlg.hb-dlg .hb-prank{flex-basis:20px;font-size:13.5px}
+  dialog.inline-dlg.hb-dlg .hb-phot{font-size:13px}
+  dialog.inline-dlg.hb-dlg .hb-pfoot{font-size:12.5px;margin-top:9px;padding-top:9px}
+  dialog.inline-dlg.hb-dlg .hb-table{font-size:15px}
+  dialog.inline-dlg.hb-dlg .hb-table th{font-size:13.5px;padding:11px}
+  dialog.inline-dlg.hb-dlg .hb-table td{padding:13px 11px}
+  dialog.inline-dlg.hb-dlg .hb-sum{font-size:13.5px}
+  dialog.inline-dlg.hb-dlg .hb-use{font-size:13px;padding:6px 13px}
+  @media (max-width:760px){
+    dialog.inline-dlg.hb-dlg .inner{height:auto;min-height:0;padding:12px 2px}
+    dialog.inline-dlg.hb-dlg .hb-pcard{min-height:0;padding:10px 12px}
+    dialog.inline-dlg.hb-dlg .hb-pname{font-size:15px}
+    dialog.inline-dlg.hb-dlg .hb-pitem{font-size:13px}
+    dialog.inline-dlg.hb-dlg .hb-table{font-size:13px}
+  }
   /* 放大弹窗：高度定死，综述在卡内滚动；展开不同长度的条目时窗口不跟着抽 */
   dialog.aihot-dlg{width:min(780px,96vw);height:min(84vh,800px);padding:0}
   dialog.aihot-dlg[open]{display:flex;flex-direction:column}
