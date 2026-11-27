@@ -1197,10 +1197,10 @@ ok('新增必填三项、地址格式与唯一性校验齐全',
        '需以 http:// 或 https:// 开头', '新增接口必须填 API Key', '该地址已有档案')))
 ok('保存失败保留表单与已填内容', '改动仍留在表单里' in _src_html)
 ok('档案保存走新增 / 编辑独立接口', "'POST':'PATCH'" in _src_html)
-ok('老全局控件收进折叠区且没被删',
+ok('老全局控件搬进设置弹窗后仍一个不少',
    all(x in _src_html for x in ('id="cfgBase"', 'id="cfgWxGateway"',
-       'id="cfgSave"', '<details class="cfg-more">')))
-ok('折叠区默认收起', '<details class="cfg-more" open' not in _src_html)
+       'id="cfgSave"', 'id="cfgOutDir"'))
+   and '<details class="cfg-more">' not in _src_html)
 ok('后端补齐单档案详情 / 新增 / 编辑三接口',
    all(x in _src_app for x in ('@app.get("/api/config/profiles/{pid}")',
        '@app.post("/api/config/profiles")', '@app.patch("/api/config/profiles/{pid}")')))
@@ -1245,13 +1245,18 @@ ok('旧接口表单保留 DOM 与全部 id 但整体隐藏',
    '<div id="cfgLegacyIface" style="display:none"' in _src_html
    and all(f'id="{x}"' in _src_html for x in
            ('cfgBase', 'cfgKey', 'cfgAppName', 'cfgModelImage', 'cfgEdits', 'cfgFormat', 'cfgEditsStyle')))
+ok('折叠区已拆除，全局项平铺在工作台设置分组',
+   '<details class="cfg-more"' not in _src_html
+   and 'id="setPaneWs"' in _src_html)
 ok('「其他设置」标题不再写「当前接口参数」',
-   '<summary>其他设置：图片保存目录 / 公众号推送</summary>' in _src_html
+   '<summary>其他设置：图片保存目录 / 公众号推送</summary>' not in _src_html
    and '其他设置：当前接口参数' not in _src_html)
-ok('折叠区说明接口参数已上移到档案区', '这里不再重复放一套' in _src_html)
-ok('图片目录与公众号推送仍在隐藏容器之外（全局项可见）',
-   _re.search(r'</div>\s*<div class="span2"[^>]*>\s*<div[^>]*>生成图片保存目录', _src_html) is not None
-   and 'id="cfgWxGateway"' in _src_html)
+ok('接口配置分组说明只读一次、刷新才重查',
+   '不会每次查看都查询' in _src_html and 'id="cfgRefresh"' in _src_html)
+ok('图片目录与公众号推送在工作台设置分组，不在隐藏容器里',
+   _re.search(r'id="setPaneWs".{0,6000}?id="cfgOutDir"', _src_html, _re.S) is not None
+   and _re.search(r'id="setPaneWs".{0,12000}?id="cfgWxGateway"', _src_html, _re.S) is not None
+   and _re.search(r'id="cfgLegacyIface".{0,4000}?id="cfgOutDir"', _src_html, _re.S) is None)
 ok('底部保存只提交全局项，不再回写接口配置',
    bool(_cfg_body)
    and all(k in _cfg_body for k in ('output_dir', 'wx_gateway', 'wx_token', 'wx_push_mode'))
@@ -2153,14 +2158,16 @@ ok('设置块初始挂载，草稿载入不缺元素',
    'wm.appendChild(gen);   // 初始就挂进 DOM' in _html
    and "const rsel = $('#ratio');\n  rsel.value" in _html)
 
-# 2026-11-27：设置改成模仿漫画工作台的小弹窗，左侧分组右侧内容
-ok('设置弹窗左侧分组含接口配置与检查更新',
+# 2026-11-27：设置弹窗三分组（工作台设置 / 接口配置 / 检查更新），接口配置缓存
+ok('设置弹窗三分组：工作台设置 / 接口配置 / 检查更新',
    '<dialog id="settingsDlg">' in _html
+   and 'data-set="ws">工作台设置</button>' in _html
    and 'data-set="iface">接口配置</button>' in _html
    and 'data-set="update">检查更新</button>' in _html
-   and '<div class="set-ver" id="setVersion"></div>' in _html)
+   and 'id="setPaneWs"' in _html and 'id="setPaneIface"' in _html and 'id="setPaneUpdate"' in _html
+   and '<div class="set-foot"><span id="cfgResult"></span></div>' in _html)
 ok('左下角设置打开弹窗而不是切到号池整页',
-   "gear.onclick = function(e){ e.stopPropagation(); openSettings('iface'); };" in _html
+   "gear.onclick = function(e){ e.stopPropagation(); openSettings('ws'); };" in _html
    and 'window.openSettings = openSettings;' in _html
    and "note.onclick = function(){ if (window.openSettings) window.openSettings('update'); else openPanel(); };" in _html
    and 'window.prepUpgradePanel = prepPanel;' in _html
@@ -2174,12 +2181,14 @@ ok('号池分组整页只显示本地号池内容',
    and "if (window.showCfgTab) showCfgTab('pool');" in _html
    and "if (window.currentNav === 'pool' && window.showCfgTab) showCfgTab('pool');" in _html
    and '#configDlg.pool-only #tabPool{flex:1 1 auto;height:auto}' in _html)
-ok('设置弹窗借还接口配置与升级面板节点，不复制 ID',
-   'tabHome = {parent: tabIface.parentNode, next: tabIface.nextSibling};' in _html
-   and 'upHome = {parent: upInner.parentNode, next: upInner.nextSibling};' in _html
-   and 'tabHome.parent.insertBefore(tabIface, tabHome.next);' in _html
-   and 'upHome.parent.insertBefore(upInner, upHome.next);' in _html
-   and '#settingsDlg .up-step' in _html)
+ok('接口配置表单常驻设置弹窗，首次打开才查询',
+   'let ifaceLoaded = false;' in _html
+   and "tab === 'iface' && !ifaceLoaded && window.loadConfigPage" in _html
+   and '接口配置只在首次打开时读一次，之后看缓存，点「刷新」才重查' in _html
+   and "if (window.loadPoolPanel) loadPoolPanel(true);   // 号池整页只需要号池状态，接口配置留给设置弹窗按需加载" in _html
+   and '<dialog id="upDlg">' not in _html
+   and '#settingsDlg .up-step' in _html
+   and '#settingsDlg .up-ver-row' in _html)
 
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')

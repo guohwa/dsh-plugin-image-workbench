@@ -800,13 +800,8 @@
   dialog .inner{padding:16px}
   dialog h3{margin:0 0 8px;font-size:14px}
   dialog pre{white-space:pre-wrap;background:#f7f5ff;border-radius:10px;padding:12px;font-size:12px;max-height:58vh;overflow:auto}
-  /* 升级面板：版本对照 + 要点 + 一行状态，够用就好，不要做成设置页 */
+  /* 升级面板已并入设置弹窗的「检查更新」分组，样式见 #settingsDlg .up-* */
   #upDlg{width:min(560px,92vw)}
-  #upDlg .up-hero{display:flex;align-items:center;gap:10px;margin:2px 0 12px;
-    font-size:15px;font-weight:600;color:var(--ink)}
-  #upDlg .up-hero .up-from{color:var(--ink-3);font-weight:500}
-  #upDlg .up-hero .up-to{color:var(--primary)}
-  #upDlg .up-hero .up-arrow{color:var(--ink-3);font-weight:400}
   /* 更新说明：跨版本升级可能一次列出几条，给个上限免得把面板撑得老长 */
   #upDlg .up-notes{margin:0 0 12px;padding:9px 11px;border:1px solid var(--line);
     border-radius:10px;background:#fbfaff;max-height:196px;overflow:auto}
@@ -1160,9 +1155,9 @@
   #configDlg #tabIface{flex:1 1 auto;overflow:auto;min-height:0;padding-right:4px}
   /* 设置弹窗：模仿漫画工作台的「左侧分组 + 右侧内容」小窗。
      接口配置和升级面板都是把现有节点临时借进来，关窗时原样还回去，不复制 ID。 */
-  #settingsDlg{width:min(920px,94vw);height:min(670px,calc(100vh - 32px));max-height:none;overflow:hidden}
+  #settingsDlg{width:min(1060px,96vw);height:min(780px,calc(100vh - 36px));max-height:none;overflow:hidden}
   #settingsDlg .inner{display:flex;flex-direction:column;height:100%;min-height:0;padding:16px 18px;background:#fff}
-  #settingsDlg .set-body{display:grid;grid-template-columns:168px minmax(0,1fr);gap:16px;flex:1 1 auto;min-height:0}
+  #settingsDlg .set-body{display:grid;grid-template-columns:190px minmax(0,1fr);gap:16px;flex:1 1 auto;min-height:0}
   #settingsDlg .set-menu{display:flex;flex-direction:column;gap:6px;padding:12px 10px;min-height:0;
     background:#f7f8fa;border:1px solid var(--line);border-radius:12px}
   #settingsDlg .set-item{display:block;width:100%;text-align:left;border:0;border-radius:9px;
@@ -1170,18 +1165,41 @@
   #settingsDlg .set-item:hover{background:#ebe7ff;color:var(--primary)}
   #settingsDlg .set-item.on{background:#ebe7ff;color:var(--primary);font-weight:600}
   #settingsDlg .set-ver{margin-top:auto;padding:10px 6px 0;font-size:11.5px;color:var(--ink-3);line-height:1.6}
-  #settingsDlg .set-panes{min-width:0;min-height:0;overflow:auto;padding-right:4px}
+  #settingsDlg .set-panes{display:flex;flex-direction:column;min-width:0;min-height:0;overflow:auto;padding-right:4px}
   #settingsDlg .set-pane{display:none}
-  #settingsDlg .set-pane.on{display:block}
+  #settingsDlg .set-pane.on{display:block;flex:1 1 auto;min-height:0}
   #settingsDlg #tabIface{padding-right:0}
   #settingsDlg .set-check{display:flex;align-items:center;gap:10px;margin:0 0 12px;flex-wrap:wrap}
   #settingsDlg .set-check .set-check-state{font-size:11.5px;color:var(--ink-3)}
-  /* 升级面板搬进设置弹窗后，原来的 #upDlg 选择器不再命中，这里补一份 */
-  #settingsDlg .up-hero{display:flex;align-items:center;gap:10px;margin:2px 0 12px;
-    font-size:15px;font-weight:600;color:var(--ink)}
-  #settingsDlg .up-hero .up-from{color:var(--ink-3);font-weight:500}
-  #settingsDlg .up-hero .up-to{color:var(--primary)}
-  #settingsDlg .up-hero .up-arrow{color:var(--ink-3);font-weight:400}
+  /* 检查更新分组：版本对照卡片 + 更新说明 + 升级须知 + 状态行 + 操作行 */
+  #settingsDlg .up-ver-row{display:flex;align-items:center;gap:14px;margin:0 0 14px;flex-wrap:wrap}
+  #settingsDlg .up-card{min-width:150px;padding:12px 16px;border:1px solid var(--line);border-radius:12px;background:#fbfaff}
+  #settingsDlg .up-card-t{display:block;font-size:11px;color:var(--ink-3);margin-bottom:3px}
+  #settingsDlg .up-card-v{font-size:19px;font-weight:700;color:var(--ink);letter-spacing:.3px}
+  #settingsDlg .up-card-to{color:var(--primary)}
+  #settingsDlg .up-sep{font-size:17px;color:var(--ink-3)}
+  #settingsDlg .up-check{display:flex;align-items:center;gap:10px;flex:1;min-width:220px}
+  #settingsDlg .up-check .set-check-state{font-size:11.5px;color:var(--ink-3)}
+  #settingsDlg .up-plan{background:#fbfaff}
+  #settingsDlg .up-plan .up-list{margin:0}
+  #settingsDlg .up-plan-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:0 0 12px;
+    flex:1 1 auto;min-height:0}
+  #settingsDlg .up-steps{list-style:decimal;padding-left:18px}
+  /* 检查更新分组整栏纵向分布：操作行贴底，中间不堆在一处 */
+  #settingsDlg #setPaneUpdate.on{display:flex;flex-direction:column;min-height:0}
+  #settingsDlg #setPaneUpdate .up-step{margin-top:2px}
+  #settingsDlg #setPaneUpdate .up-acts{margin-top:auto;padding-top:12px}
+  /* 接口配置分组：号池档案区撑满整栏，列表在框内滚动 */
+  #settingsDlg #setPaneIface.on{display:flex;flex-direction:column;min-height:0}
+  #settingsDlg #setPaneIface .cfg-sec{flex:1 1 auto;display:flex;flex-direction:column;min-height:0}
+  #settingsDlg #setPaneIface .prof-split{flex:1 1 auto}
+  #settingsDlg .up-acts{margin-top:12px}
+  #settingsDlg .set-pane-tip{font-size:12px;color:var(--ink-3);margin:0 0 12px;line-height:1.6}
+  #settingsDlg .set-iface-bar{display:flex;align-items:center;gap:8px;margin:0 0 12px;flex-wrap:wrap}
+  #settingsDlg .set-save-row{display:flex;align-items:center;gap:10px;margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+  #settingsDlg .set-save-tip{font-size:11.5px;color:var(--ink-3)}
+  #settingsDlg .set-foot{flex:none;border-top:1px solid var(--line);margin-top:12px;padding-top:9px;
+    font-size:12px;min-height:18px;line-height:1.5;color:var(--ink-2)}
   #settingsDlg .up-notes{margin:0 0 12px;padding:9px 11px;border:1px solid var(--line);
     border-radius:10px;background:#fbfaff;max-height:196px;overflow:auto}
   #settingsDlg .up-notes-t{font-size:11.5px;font-weight:600;color:var(--ink-3);margin-bottom:5px}
@@ -1785,34 +1803,6 @@
   </div>
 </dialog>
 
-<dialog id="upDlg">
-  <div class="inner">
-    <h3>升级工作台</h3>
-    <div class="up-hero">
-      <span class="up-from" id="upFrom">v—</span>
-      <span class="up-arrow">→</span>
-      <span class="up-to" id="upTo">v—</span>
-    </div>
-    <div class="up-notes" id="upNotes" hidden>
-      <div class="up-notes-t">这次更新了什么</div>
-      <div id="upNotesBody"></div>
-    </div>
-    <ul class="up-list">
-      <li>只覆盖代码文件（后端 py、前端页面、插件外壳），草稿、历史、图片、账号配置一律不动。</li>
-      <li>覆盖前会把旧代码打包到 server/workbench/backup/，出问题能解回去。</li>
-      <li>号池内核 vendor/ 不随本次升级替换；出图进行中会拒绝升级。</li>
-      <li>升完服务自动重启，大约十秒，页面会自己刷新。</li>
-    </ul>
-    <div class="up-step" id="upStep">点「立即升级」开始</div>
-    <div class="row" style="margin-top:12px">
-      <button class="btn ghost mini" id="upCopy" type="button">复制命令</button>
-      <span class="spacer"></span>
-      <button class="btn ghost" id="upCancel" type="button">取消</button>
-      <button class="btn primary" id="upGo" type="button">立即升级</button>
-    </div>
-  </div>
-</dialog>
-
 <dialog id="settingsDlg">
   <div class="inner">
     <div class="dlg-head">
@@ -1822,20 +1812,175 @@
     </div>
     <div class="set-body">
       <nav class="set-menu" aria-label="设置分组">
-        <button class="set-item on" type="button" data-set="iface">接口配置</button>
+        <button class="set-item on" type="button" data-set="ws">工作台设置</button>
+        <button class="set-item" type="button" data-set="iface">接口配置</button>
         <button class="set-item" type="button" data-set="update">检查更新</button>
         <div class="set-ver" id="setVersion"></div>
       </nav>
       <div class="set-panes">
-        <section class="set-pane on" id="setPaneIface"></section>
-        <section class="set-pane" id="setPaneUpdate">
-          <div class="set-check">
-            <button class="btn ghost mini" id="setCheckBtn" type="button">检查更新</button>
-            <span class="set-check-state" id="setCheckState"></span>
+
+        <!-- 分组一：工作台设置（全局项，不随号池切换） -->
+        <section class="set-pane on" id="setPaneWs">
+          <p class="set-pane-tip">工作台名称、生成图片的保存位置、公众号推送都是全局项，在这里改；接口参数在「接口配置」里按号池档案管理。</p>
+          <div class="cfg-sec">
+            <div class="cfg-sec-t"><span class="cfg-no">1</span>工作台名称<span class="cfg-tip">全局项，不随号池切换；留空恢复默认名</span></div>
+            <div class="cfg-rename">
+              <input id="cfgRenameInput" maxlength="40" placeholder="例：Bluxe手绘工坊 · 生图工作台">
+              <button class="btn ghost mini" id="cfgRenameBtn" type="button">重命名</button>
+            </div>
+            <span class="cfg-tip" id="cfgRenameHint" style="display:block;margin-top:5px">改完点「重命名」，页头标题与浏览器标签同步更新，最多 40 字。</span>
+          </div>
+          <div class="cfg-sec">
+            <div class="cfg-sec-t"><span class="cfg-no">2</span>生成图片保存目录</div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input id="cfgOutDir" style="flex:1;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="留空 = 工作台默认目录">
+              <button class="btn ghost mini" id="cfgOpenDir" type="button" style="flex:0 0 auto;white-space:nowrap">打开目录</button>
+            </div>
+            <span id="cfgOutHint" style="font-size:11px;color:var(--ink-3);line-height:1.6;display:block;margin-top:5px"></span>
+          </div>
+          <div class="cfg-sec">
+            <div class="cfg-sec-t"><span class="cfg-no">3</span>微信公众号推送<span class="cfg-tip">可选，不填则不推送</span></div>
+            <label style="display:block;font-size:12px;color:var(--ink-3);margin-bottom:8px">微信网关地址
+              <input id="cfgWxGateway" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="https://你的网关/api">
+            </label>
+            <label style="display:block;font-size:12px;color:var(--ink-3)">微信网关 Token
+              <input id="cfgWxToken" type="password" autocomplete="off" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="留空沿用已保存 Token">
+            </label>
+            <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--ink-3);margin-top:8px">
+              <span>推送模式：</span>
+              <label style="display:flex;align-items:center;gap:5px;white-space:nowrap"><input type="radio" name="wxPushMode" value="news" style="width:auto;margin:0">图文消息（带正文+小标题）</label>
+              <label style="display:flex;align-items:center;gap:5px;white-space:nowrap"><input type="radio" name="wxPushMode" value="newspic" style="width:auto;margin:0">贴图（纯图片）</label>
+            </div>
+            <span style="font-size:11px;color:var(--ink-3);line-height:1.6;display:block;margin-top:6px">Token 只存本地 config（不随插件分发），别人装的插件默认无 Token、推不进来。换 Token 只需在这里重填。历史记录里每条也能临时切换图文/贴图。</span>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+              <input type="checkbox" id="pushWxDraft" style="width:auto;margin:0">
+              <span style="font-size:13px;color:var(--ink-2)" title="开关打开、且已配置网关与 Token 时，批量出图完成后自动把这批图按上方「推送模式」推送到公众号草稿箱（图文=带正文+小标题，贴图=纯图片）">自动推送公众号</span>
+            </div>
+          </div>
+          <div class="set-save-row">
+            <span class="set-save-tip">保存只写图片目录与公众号推送这类全局项，不碰接口配置。</span>
+            <span class="spacer"></span>
+            <button class="btn primary" id="cfgSave" type="button" title="只保存图片目录与公众号推送等全局项，不碰接口配置">保存全局设置</button>
           </div>
         </section>
+
+        <!-- 分组二：接口配置（当前在用 + 历史档案；首次打开读取一次，点「刷新」才重查） -->
+        <section class="set-pane" id="setPaneIface">
+          <div class="set-iface-bar">
+            <span class="set-pane-tip" style="flex:1;margin:0">当前正在使用的接口与历史使用过的号池档案都在这里；内容只在首次打开或点「刷新」时读取，不会每次查看都查询。</span>
+            <button class="btn ghost mini" id="cfgRefresh" type="button" title="重新读取接口配置与号池档案">刷新</button>
+            <button class="btn ghost mini" id="cfgTest" type="button" title="测当前生效的那份号池配置；接口参数在档案区改">测试当前接口</button>
+          </div>
+          <div class="cfg-sec">
+            <div class="cfg-sec-t"><span class="cfg-no">1</span>用过的号池<span class="cfg-tip">左侧选档案，右侧查看或编辑；列表末尾固定「＋ 新增接口」</span></div>
+            <div class="prof-split">
+              <div class="prof-left">
+                <div class="prof-left-h">用过的号池 <span id="profCnt">读取中…</span></div>
+                <div class="prof-list" id="profList"></div>
+                <div class="prof-left-foot">当前使用中的档案不能删，先切换再删。</div>
+              </div>
+              <div class="prof-right" id="profDetail"></div>
+            </div>
+          </div>
+          <!-- 老接口表单的 DOM 与 id 全部保留（cfgFill / cfgPayload / 切回内置池等仍会读写），
+               不再对用户显示：接口参数的唯一入口是上方档案区。 -->
+          <div id="cfgLegacyIface" style="display:none" aria-hidden="true">
+            <div class="span2" hidden style="border:1px solid #e9e4f7;background:#fbfaff;border-radius:10px;padding:9px 11px">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span style="font-size:12px;color:var(--ink-2);font-weight:600">用过的接口 / 号池</span>
+                <span id="cfgProfHint" style="font-size:11px;color:var(--ink-3)"></span>
+                <span style="flex:1"></span>
+                <button class="btn ghost mini" id="cfgProfDel" type="button">删除这份</button>
+              </div>
+              <select id="cfgProfile" style="width:100%;margin-top:6px;padding:7px 8px;border:1px solid #e4dff2;border-radius:8px;font-size:12px;background:#fff"></select>
+              <div style="font-size:11px;color:var(--ink-3);line-height:1.6;margin-top:4px">选中即整套切换：接口地址、API Key、号池数据目录、模型一起恢复，不用再手填。当前正在用的这份不能删。</div>
+            </div>
+            <label style="display:block;font-size:12px;color:var(--ink-3)">工作台名称
+              <input id="cfgAppName" maxlength="40" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="例：Bluxe手绘工坊 · 生图工作台">
+              <span id="cfgAppNameHint" style="font-size:11px;color:var(--ink-3)">改完保存，页头标题和浏览器标签一起变；留空回到默认名。</span>
+            </label>
+            <label style="display:block;font-size:12px;color:var(--ink-3)">接口地址 Base URL
+              <input id="cfgBase" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="http://127.0.0.1:38651/v1">
+              <span style="font-size:11px;color:var(--ink-3)">填到根就行，漏写 /v1 会自动补上</span>
+            </label>
+            <label style="display:block;font-size:12px;color:var(--ink-3)">API Key
+              <input id="cfgKey" type="password" autocomplete="off" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="sk-...">
+              <span id="cfgKeyHint" style="font-size:11px;color:var(--ink-3)"></span>
+            </label>
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <label style="display:block;font-size:12px;color:var(--ink-3);flex:1;min-width:150px">出图模型
+                <input id="cfgModelImage" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="gpt-image-2 / dall-e-3">
+              </label>
+              <label style="display:block;font-size:12px;color:var(--ink-3);flex:1;min-width:150px">文案模型
+                <input id="cfgModelText" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="auto 或 gpt-4o-mini">
+              </label>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-3);white-space:nowrap">
+              <input id="cfgEdits" type="checkbox" style="width:auto;flex:0 0 auto;margin:0">
+              <span>支持参考图（edits，/v1/images/edits）</span>
+            </div>
+            <div style="display:flex;gap:18px;align-items:center;font-size:12px;color:var(--ink-3);flex-wrap:wrap">
+              <div style="display:flex;align-items:center;gap:6px;white-space:nowrap">返回格式
+                <select id="cfgFormat" style="padding:4px;border:1px solid #e4dff2;border-radius:6px"><option value="auto">自动</option><option value="b64_json">b64_json</option><option value="url">url</option></select>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;white-space:nowrap">参考图方式
+                <select id="cfgEditsStyle" style="padding:4px;border:1px solid #e4dff2;border-radius:6px"><option value="auto">自动</option><option value="json">JSON（号池）</option><option value="multipart">multipart（标准）</option><option value="off">关闭</option></select>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 分组三：检查更新 -->
+        <section class="set-pane" id="setPaneUpdate">
+          <div class="up-ver-row">
+            <div class="up-card">
+              <span class="up-card-t">当前版本</span>
+              <span class="up-card-v" id="upFrom">—</span>
+            </div>
+            <div class="up-sep" aria-hidden="true">→</div>
+            <div class="up-card">
+              <span class="up-card-t">最新版本</span>
+              <span class="up-card-v up-card-to" id="upTo">—</span>
+            </div>
+            <div class="up-check">
+              <button class="btn" id="setCheckBtn" type="button">检查更新</button>
+              <span class="set-check-state" id="setCheckState">打开分组时自动检查一次，也可手动复查</span>
+            </div>
+          </div>
+          <div class="up-notes" id="upNotes" hidden>
+            <div class="up-notes-t">这次更新了什么</div>
+            <div id="upNotesBody"></div>
+          </div>
+          <div class="up-plan-grid">
+            <div class="cfg-sec up-plan">
+              <div class="cfg-sec-t">升级流程</div>
+              <ol class="up-list up-steps">
+                <li>下载安装包并核对版本号。</li>
+                <li>逐个覆盖代码文件（后端 py、前端页面、插件外壳）。</li>
+                <li>服务自动重启，大约十秒，页面会自己刷新。</li>
+              </ol>
+            </div>
+            <div class="cfg-sec up-plan">
+              <div class="cfg-sec-t">不会动的数据</div>
+              <ul class="up-list">
+                <li>草稿、历史、图片、账号配置一律不动。</li>
+                <li>号池内核 vendor/ 不随本次升级替换；出图进行中会拒绝升级。</li>
+                <li>覆盖前旧代码打包到 server/workbench/backup/，出问题能解回去。</li>
+              </ul>
+            </div>
+          </div>
+          <div class="up-step" id="upStep">点「立即升级」开始：先下载安装包核对版本，再逐个覆盖代码文件。</div>
+          <div class="row up-acts">
+            <button class="btn ghost mini" id="upCopy" type="button">复制命令</button>
+            <span class="spacer"></span>
+            <button class="btn ghost" id="upCancel" type="button">关闭</button>
+            <button class="btn primary" id="upGo" type="button">立即升级</button>
+          </div>
+        </section>
+
       </div>
     </div>
+    <div class="set-foot"><span id="cfgResult"></span></div>
   </div>
 </dialog>
 
@@ -2071,113 +2216,9 @@
       <button class="cfg-tab" type="button" data-tab="pool" role="tab">本地号池<i id="poolTabTag"></i></button>
     </div>
 
-    <div id="tabIface">
-    <p style="font-size:12px;color:var(--ink-3);margin:0 0 12px;line-height:1.6">
-      工作台名称是全局的；接口地址、API Key、模型等按号池档案分开管理，选中即可查看和编辑，保存只改这一份。底部的「其他设置」只放图片保存目录、公众号推送这类与号池无关的全局项，不会出现第二套接口表单。
-    </p>
-
-    <div class="cfg-sec">
-      <div class="cfg-sec-t"><span class="cfg-no">1</span>工作台名称<span class="cfg-tip">全局项，不随号池切换；留空恢复默认名</span></div>
-      <div class="cfg-rename">
-        <input id="cfgRenameInput" maxlength="40" placeholder="例：Bluxe手绘工坊 · 生图工作台">
-        <button class="btn ghost mini" id="cfgRenameBtn" type="button">重命名</button>
-      </div>
-      <span class="cfg-tip" id="cfgRenameHint" style="display:block;margin-top:5px">改完点「重命名」，页头标题与浏览器标签同步更新，最多 40 字。</span>
-    </div>
-
-    <div class="cfg-sec">
-      <div class="cfg-sec-t"><span class="cfg-no">2</span>用过的号池<span class="cfg-tip">左侧选档案，右侧查看或编辑；列表末尾固定「＋ 新增接口」</span></div>
-      <div class="prof-split">
-        <div class="prof-left">
-          <div class="prof-left-h">用过的号池 <span id="profCnt">读取中…</span></div>
-          <div class="prof-list" id="profList"></div>
-          <div class="prof-left-foot">当前使用中的档案不能删，先切换再删。</div>
-        </div>
-        <div class="prof-right" id="profDetail"></div>
-      </div>
-    </div>
-
-    <details class="cfg-more">
-      <summary>其他设置：图片保存目录 / 公众号推送</summary>
-    <div class="iface-grid">
-      <div class="span2" style="font-size:11px;color:var(--ink-3);line-height:1.6;background:#f6f3ff;border:1px solid #e9e4f7;border-radius:8px;padding:7px 10px">
-        接口地址、API Key、出图/文案模型、参考图与返回格式都在上面第 2 项里按号池档案管理，这里不再重复放一套，避免两处改动互相覆盖。
-      </div>
-      <!-- 老接口表单的 DOM 与 id 全部保留（cfgFill / cfgPayload / 切回内置池等仍会读写），
-           但不再对用户显示：接口参数的唯一入口是上方的号池档案区。 -->
-      <div id="cfgLegacyIface" style="display:none" aria-hidden="true">
-      <div class="span2" hidden style="border:1px solid #e9e4f7;background:#fbfaff;border-radius:10px;padding:9px 11px">
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <span style="font-size:12px;color:var(--ink-2);font-weight:600">用过的接口 / 号池</span>
-          <span id="cfgProfHint" style="font-size:11px;color:var(--ink-3)"></span>
-          <span style="flex:1"></span>
-          <button class="btn ghost mini" id="cfgProfDel" type="button">删除这份</button>
-        </div>
-        <select id="cfgProfile" style="width:100%;margin-top:6px;padding:7px 8px;border:1px solid #e4dff2;border-radius:8px;font-size:12px;background:#fff"></select>
-        <div style="font-size:11px;color:var(--ink-3);line-height:1.6;margin-top:4px">选中即整套切换：接口地址、API Key、号池数据目录、模型一起恢复，不用再手填。当前正在用的这份不能删。</div>
-      </div>
-      <label style="display:block;font-size:12px;color:var(--ink-3)">工作台名称
-        <input id="cfgAppName" maxlength="40" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="例：Bluxe手绘工坊 · 生图工作台">
-        <span id="cfgAppNameHint" style="font-size:11px;color:var(--ink-3)">改完保存，页头标题和浏览器标签一起变；留空回到默认名。</span>
-      </label>
-      <label style="display:block;font-size:12px;color:var(--ink-3)">接口地址 Base URL
-        <input id="cfgBase" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="http://127.0.0.1:38651/v1">
-        <span style="font-size:11px;color:var(--ink-3)">填到根就行，漏写 /v1 会自动补上</span>
-      </label>
-      <label style="display:block;font-size:12px;color:var(--ink-3)">API Key
-        <input id="cfgKey" type="password" autocomplete="off" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="sk-...">
-        <span id="cfgKeyHint" style="font-size:11px;color:var(--ink-3)"></span>
-      </label>
-      <div style="display:flex;gap:12px;flex-wrap:wrap">
-        <label style="display:block;font-size:12px;color:var(--ink-3);flex:1;min-width:150px">出图模型
-          <input id="cfgModelImage" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="gpt-image-2 / dall-e-3">
-        </label>
-        <label style="display:block;font-size:12px;color:var(--ink-3);flex:1;min-width:150px">文案模型
-          <input id="cfgModelText" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="auto 或 gpt-4o-mini">
-        </label>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-3);white-space:nowrap">
-        <input id="cfgEdits" type="checkbox" style="width:auto;flex:0 0 auto;margin:0">
-        <span>支持参考图（edits，/v1/images/edits）</span>
-      </div>
-      <div style="display:flex;gap:18px;align-items:center;font-size:12px;color:var(--ink-3);flex-wrap:wrap">
-        <div style="display:flex;align-items:center;gap:6px;white-space:nowrap">返回格式
-          <select id="cfgFormat" style="padding:4px;border:1px solid #e4dff2;border-radius:6px"><option value="auto">自动</option><option value="b64_json">b64_json</option><option value="url">url</option></select>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px;white-space:nowrap">参考图方式
-          <select id="cfgEditsStyle" style="padding:4px;border:1px solid #e4dff2;border-radius:6px"><option value="auto">自动</option><option value="json">JSON（号池）</option><option value="multipart">multipart（标准）</option><option value="off">关闭</option></select>
-        </div>
-      </div>
-      </div>
-      <div class="span2" style="border-top:1px solid #f0ecfa;padding-top:10px">
-        <div style="font-size:12px;color:var(--ink-3);margin-bottom:4px">生成图片保存目录</div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input id="cfgOutDir" style="flex:1;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="留空 = 工作台默认目录">
-          <button class="btn ghost mini" id="cfgOpenDir" type="button" style="flex:0 0 auto;white-space:nowrap">打开目录</button>
-        </div>
-        <span id="cfgOutHint" style="font-size:11px;color:var(--ink-3);line-height:1.6"></span>
-      </div>
-      <div class="span2" style="border-top:1px solid #f0ecfa;padding-top:10px">
-        <div style="font-size:12px;color:var(--ink-3);margin-bottom:4px">微信公众号推送（可选，不填则不推送）</div>
-        <label style="display:block;font-size:12px;color:var(--ink-3);margin-bottom:8px">微信网关地址
-          <input id="cfgWxGateway" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="https://你的网关/api">
-        </label>
-        <label style="display:block;font-size:12px;color:var(--ink-3)">微信网关 Token
-          <input id="cfgWxToken" type="password" autocomplete="off" style="width:100%;margin-top:4px;padding:8px;border:1px solid #e4dff2;border-radius:8px;font-size:13px" placeholder="留空沿用已保存 Token">
-        </label>
-        <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--ink-3);margin-top:4px">
-          <span>推送模式：</span>
-          <label style="display:flex;align-items:center;gap:5px;white-space:nowrap"><input type="radio" name="wxPushMode" value="news" style="width:auto;margin:0">图文消息（带正文+小标题）</label>
-          <label style="display:flex;align-items:center;gap:5px;white-space:nowrap"><input type="radio" name="wxPushMode" value="newspic" style="width:auto;margin:0">贴图（纯图片）</label>
-        </div>
-        <span style="font-size:11px;color:var(--ink-3);line-height:1.6">Token 只存本地 config（不随插件分发），别人装的插件默认无 Token、推不进来。换 Token 只需在这里重填。历史记录里每条也能临时切换图文/贴图。</span>
-      </div>
-      <div class="span2" style="border-top:1px solid #f0ecfa;padding-top:10px;display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="pushWxDraft" style="width:auto;margin:0">
-        <span style="font-size:13px;color:var(--ink-2)" title="开关打开、且已配置网关与 Token 时，批量出图完成后自动把这批图按上方「推送模式」推送到公众号草稿箱（图文=带正文+小标题，贴图=纯图片）">自动推送公众号</span>
-      </div>
-    </div></details>
-    </div>
+    <!-- 接口配置 / 全局设置的全部表单已搬进设置弹窗（#settingsDlg）的三个分组；
+         这里只留空壳让 showCfgTab 的页签切换仍能运行，号池整页（pool-only）不会显示它们。 -->
+    <div id="tabIface" hidden></div>
 
     <div id="tabPool" hidden>
       <div class="pool-col pool-left">
@@ -2256,12 +2297,7 @@
       </div>
     </div>
 
-    <div class="cfg-foot" id="cfgFoot">
-      <span id="cfgResult" style="font-size:12px;min-height:18px;line-height:1.5"></span>
-      <span class="spacer"></span>
-      <button class="btn ghost" id="cfgTest" type="button" title="测当前生效的那份号池配置；接口参数在上面的档案区改">测试当前接口</button>
-      <button class="btn primary" id="cfgSave" type="button" title="只保存图片目录与公众号推送等全局项，不碰接口配置">保存全局设置</button>
-    </div>
+    <div class="cfg-foot" id="cfgFoot" hidden></div>
   </div>
 </dialog>
 
@@ -9144,7 +9180,7 @@ setInterval(refreshPool, 10000);
     }
     if (name === 'pool'){
       dlg.classList.add('pool-only');   // 号池分组只显示本地号池，不带页签和接口配置
-      if (window.loadConfigPage) loadConfigPage();
+      if (window.loadPoolPanel) loadPoolPanel(true);   // 号池整页只需要号池状态，接口配置留给设置弹窗按需加载
       if (window.showCfgTab) showCfgTab('pool');
     }
   }
@@ -9216,60 +9252,46 @@ setInterval(refreshPool, 10000);
 
 <script>
 /* 左下角「设置」：模仿漫画工作台弹一个小窗，左侧分组、右侧内容。
-   接口配置 / 升级面板都只有一份 DOM，开窗时借进来、关窗时还回去；
-   这样号池整页和版本胶囊仍能用同一批节点，不会出现两套 ID 抢状态。 */
+   工作台设置 / 接口配置 / 检查更新三个分组的表单常驻弹窗（configDlg 里只留空壳）；
+   接口配置只在首次打开时读取一次，之后看缓存，点「刷新」才重新查询。 */
 (function(){
   const $ = id => document.getElementById(id);
   const dlg = $('settingsDlg'); if (!dlg) return;
-  const paneIface = $('setPaneIface'), paneUpdate = $('setPaneUpdate');
-  const tabIface = $('tabIface'), upInner = document.querySelector('#upDlg .inner');
-  let tabHome = null, upHome = null, ifaceLoaded = false;
+  const PANES = {ws:'setPaneWs', iface:'setPaneIface', update:'setPaneUpdate'};
+  let ifaceLoaded = false;
 
   function setTab(tab){
+    if (!PANES[tab]) tab = 'ws';
     document.querySelectorAll('#settingsDlg .set-item').forEach(b=>{
       b.classList.toggle('on', b.dataset.set === tab);
     });
-    paneIface.classList.toggle('on', tab !== 'update');
-    paneUpdate.classList.toggle('on', tab === 'update');
+    Object.keys(PANES).forEach(k=>{
+      const p = $(PANES[k]); if (p) p.classList.toggle('on', k === tab);
+    });
   }
 
   function openSettings(tab){
-    /* 借节点：记下原父节点和紧邻的后继，关窗时插回原位 */
-    if (tabIface && paneIface && tabIface.parentNode !== paneIface){
-      tabHome = {parent: tabIface.parentNode, next: tabIface.nextSibling};
-      paneIface.appendChild(tabIface);
-    }
-    if (upInner && paneUpdate && upInner.parentNode !== paneUpdate){
-      upHome = {parent: upInner.parentNode, next: upInner.nextSibling};
-      paneUpdate.appendChild(upInner);
-    }
+    if (!PANES[tab]) tab = 'ws';
     const ver = $('verFoot'), setVer = $('setVersion');
     if (setVer) setVer.textContent = '版本 ' + ((ver && ver.textContent) || '—');
-    setTab(tab === 'update' ? 'update' : 'iface');
+    setTab(tab);
     if (!dlg.open) dlg.showModal();
     if (tab === 'update'){
       if (window.prepUpgradePanel) window.prepUpgradePanel();
       const cs = $('setCheckState');
       if (cs) cs.textContent = '检查中…';
       if (window.checkUpgrade) window.checkUpgrade();
-    } else if (!ifaceLoaded && window.loadConfigPage){
-      ifaceLoaded = true;
+    } else if (tab === 'iface' && !ifaceLoaded && window.loadConfigPage){
+      ifaceLoaded = true;   // 接口配置只在首次打开时读一次，之后看缓存，点「刷新」才重查
       window.loadConfigPage();
     }
   }
 
   function closeSettings(){
     if (dlg.open) dlg.close();
-    if (tabHome && tabIface && tabIface.parentNode === paneIface){
-      tabHome.parent.insertBefore(tabIface, tabHome.next);
-    }
-    if (upHome && upInner && upInner.parentNode === paneUpdate){
-      upHome.parent.insertBefore(upInner, upHome.next);
-    }
-    /* 号池整页只认本地号池：借还过程会把页签状态切成 iface，回来必须拨回去，
+    /* 号池整页只认本地号池：首次加载接口配置会把页签状态切成 iface，回来必须拨回去，
        否则号池面板还挂着 hidden，整页就空白了 */
     if (window.currentNav === 'pool' && window.showCfgTab) showCfgTab('pool');
-    tabHome = null; upHome = null;
   }
 
   window.openSettings = openSettings;
@@ -9277,20 +9299,30 @@ setInterval(refreshPool, 10000);
   window.setSettingsTab = setTab;
 
   const gear = $('railSetting');
-  if (gear) gear.onclick = function(e){ e.stopPropagation(); openSettings('iface'); };
+  if (gear) gear.onclick = function(e){ e.stopPropagation(); openSettings('ws'); };
   const closeBtn = $('settingsClose');
   if (closeBtn) closeBtn.onclick = closeSettings;
   dlg.addEventListener('cancel', function(e){ e.preventDefault(); closeSettings(); });
   document.querySelectorAll('#settingsDlg .set-item').forEach(b=>{
-    b.onclick = function(){ setTab(b.dataset.set); if (b.dataset.set === 'update' && window.checkUpgrade){
-      const cs = $('setCheckState'); if (cs) cs.textContent = '检查中…';
-      window.checkUpgrade();
-    }};
+    b.onclick = function(){
+      setTab(b.dataset.set);
+      if (b.dataset.set === 'update' && window.checkUpgrade){
+        const cs = $('setCheckState'); if (cs) cs.textContent = '检查中…';
+        window.checkUpgrade();
+      } else if (b.dataset.set === 'iface' && !ifaceLoaded && window.loadConfigPage){
+        ifaceLoaded = true;
+        window.loadConfigPage();
+      }
+    };
   });
   const checkBtn = $('setCheckBtn');
   if (checkBtn) checkBtn.onclick = function(){
     const cs = $('setCheckState'); if (cs) cs.textContent = '检查中…';
     if (window.checkUpgrade) window.checkUpgrade();
+  };
+  const refreshBtn = $('cfgRefresh');
+  if (refreshBtn) refreshBtn.onclick = function(){
+    if (window.loadConfigPage) window.loadConfigPage();
   };
 })();
 </script>
