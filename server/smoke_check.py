@@ -81,6 +81,7 @@ ok('PoolManager._execute', callable(getattr(pool.PoolManager, '_execute', None))
 ok('PoolManager.snapshot', callable(getattr(pool.PoolManager, 'snapshot', None)))
 ok('PoolManager.check_all', callable(getattr(pool.PoolManager, 'check_all', None)))
 ok('PoolManager.cancel_all', callable(getattr(pool.PoolManager, 'cancel_all', None)))
+ok('PoolManager.cancel_one（单图精确停止）', callable(getattr(pool.PoolManager, 'cancel_one', None)))
 ok('app.api_generate_stop', hasattr(app, 'api_generate_stop'))
 ok('POST /api/generate/stop 已注册',
    any(getattr(r, 'path', '') == '/api/generate/stop'
@@ -198,6 +199,20 @@ ok('内容工坊与预览条不再标小红书',
 ok('前端停止链路完整',
    all(x in _src_html for x in ('async function stopAllJobs', '/api/generate/stop',
                                 'clearBatch();', "d.status === 'cancelled'")))
+# 2026-11-27：停止按任务拆分——单图只停自己、多图只停本批、监控保留全局停
+ok('单图快出有独立停止按钮，只停自己的任务',
+   'id="qsStop"' in _src_html and 'let _qsJobId = null;' in _src_html
+   and 'body: JSON.stringify({job_id: _qsJobId})' in _src_html
+   and "$('#stopGen').onclick = stopBatchJobs;" in _src_html
+   and "$('#monStop').onclick = stopAllJobs;" in _src_html
+   and 'async function stopBatchJobs' in _src_html
+   and 'body: JSON.stringify({job_ids: ids})' in _src_html)
+ok('poll 认识 cancelled 状态立即收尾（单图停止卡死根因）',
+   "if (d.status === 'cancelled'){" in _src_html
+   and "if (onFinish) onFinish('cancelled');" in _src_html
+   and 'else if (result === \'cancelled\') qsStatus(\'已停止本次出图\');' in _src_html)
+ok('后端支持按 job_id 精确停止', 'async def cancel_one' in _src_pool
+   and 'POOL.cancel_one' in _src_app and 'body.get("job_ids")' in _src_app)
 # AI 热点选题：卡片必须真的落在「选题」输入框上方，节点顺序错了会跑到下面去
 ok('前端 AI 热点选题节点齐全',
    all(x in _src_html for x in ('id="aihotList"', 'id="aihotDlg"', 'id="aihotDList"',
@@ -1848,11 +1863,11 @@ ok('直接出图有完整工作动效：按钮转圈 + 卡片扫光 + 状态脉�
    and '.qs-btn.loading' in _html and '.quick-single.working' in _html
    and '.qs-status.working' in _html and 'function qsWorking(on)' in _html
    and 'qsBusy(true); qsWorking(true)' in _html)
-ok('出图动效持续到图片生成完成，poll 三种终态都回调收尾',
+ok('出图动效持续到图片生成完成，poll 四种终态都回调收尾',
    'async function poll(id, statusEl, mode, waitTxt, onFinish)' in _html
-   and _html.count('if (onFinish) onFinish(') == 3
+   and _html.count('if (onFinish) onFinish(') == 4
    and "'单图排队中…', (result, d)=>{" in _html
-   and 'qsWorking(false); qsBusy(false);' in _html)
+   and 'qsWorking(false); qsBusy(false); _qsJobId = null;' in _html)
 ok('状态文字更新不冲掉工作动效类',
    "el.classList.contains('working') ? ' working' : ''" in _html)
 # 2026-11-26 五次调整：内置示例，一键还原图型/风格/主题色和关键字

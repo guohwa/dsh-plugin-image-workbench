@@ -3760,8 +3760,30 @@ async def api_generate(req: GenRequest):
 
 
 @app.post("/api/generate/stop")
-async def api_generate_stop():
-    '''停止当前生图任务：中断在途请求、清空排队、阻止换号重试。'''
+async def api_generate_stop(request: Request):
+    '''停止生图任务：中断在途请求、清空排队、阻止换号重试。
+
+    带 job_id / job_ids 时精确停那几个任务（单图快出、多图批量各自
+    用，互不串扰）；不带则全局停（监控里的「停止当前任务」）。
+    '''
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    ids = body.get("job_ids")
+    if not isinstance(ids, list):
+        ids = [body["job_id"]] if body.get("job_id") else []
+    ids = [str(x) for x in ids if x]
+    if ids:
+        stopped = 0
+        for jid in ids:
+            r = await POOL.cancel_one(jid)
+            stopped += int(r.get("stopped") or 0)
+        return JSONResponse({"ok": True, "stopped": stopped,
+                             "message": (f"已停止 {stopped} 个任务" if stopped
+                                         else "任务已结束，无需停止")})
     return JSONResponse(await POOL.cancel_all())
 
 

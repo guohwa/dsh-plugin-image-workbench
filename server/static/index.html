@@ -389,6 +389,8 @@
   .qs-btn:hover:not(:disabled){border-color:#1f9d6b;color:#1f9d6b;background:#f4fbf6}
   .qs-btn.primary{background:#1f9d6b;border-color:#1f9d6b;color:#fff}
   .qs-btn.primary:hover:not(:disabled){background:#188a5c;color:#fff}
+  .qs-btn.stop{color:#c0392b;border-color:#eecac5}
+  .qs-btn.stop:hover:not(:disabled){border-color:#c0392b;color:#c0392b;background:#fdf5f4}
   .qs-btn:disabled{opacity:.55;cursor:default}
   /* 直接出图工作态：按钮转圈 + 卡片顶部扫光 + 状态脉冲点（用户 2026-11-26） */
   @keyframes qsSpin{to{transform:rotate(360deg)}}
@@ -1696,6 +1698,7 @@
           <span class="qs-status" id="qsStatus"></span>
           <button class="qs-btn" id="qsRestore" type="button" title="一键还原示例的图型、风格、主题色和关键字">还原示例</button>
           <button class="qs-btn" id="qsPolish" type="button" title="把关键字和上面的图型/风格/主题色/参考图拼成完整提示词，直接覆盖在这个输入框里，可继续手改">优化提示词</button>
+          <button class="qs-btn stop" id="qsStop" type="button" title="只停止这张单图的任务，不影响多图批量出图" hidden>停止</button>
           <button class="qs-btn primary" id="qsGen" type="button" title="按输入框里的提示词直接出一张图，不进分镜清单">直接出图</button>
         </div>
       </div>
@@ -3155,6 +3158,13 @@ async function poll(id, statusEl, mode, waitTxt, onFinish){
       continue;
     }
     if (d.status === 'running'){ statusEl.textContent = '生成中 · ' + (d.account || ''); continue; }
+    if (d.status === 'cancelled'){
+      // 手动停止不是失败：立即收尾，别让工作态动画和轮询空转到超时（2026-11-27 单图停止卡死根因）
+      statusEl.className = 'status';
+      statusEl.textContent = '已停止生图';
+      if (onFinish) onFinish('cancelled');
+      return;
+    }
     if (d.status === 'done'){
       statusEl.className = 'status ok';
       // 只有真实账号（脱敏邮箱）才跟在「完成」后面；「文案任务 / 出图任务 /
@@ -3479,6 +3489,7 @@ function qsSetMode(mode){
 let _qsOptimized = false;   // 输入框里现在是不是提示词（点过「优化提示词」或拼过词）；false=还是原始关键字
 let _qsRawKey = '';          // 用户原始关键字：优化后框里变成提示词，原始关键字留在这里，选型变了要靠它重拼
 let _qsFingerprint = '';     // 拼词那一刻的选型指纹；出图时和当前选型比对，变了就重拼，保证和上方四张卡关联
+let _qsJobId = null;         // 单图快出在跑的任务 id；停止按钮只停这一个，不碰多图批量（2026-11-27）
 /* 内置示例：旧书店橘猫。prompt 取自 2026-11-26 13:25 的真实出图记录 93b2899443b2；
    那条出图记录没有保存选型，三张卡按示例效果截图固定为 IG-030 / FE-061 / C-27。
    一键还原图型 / 风格 / 主题色 + 关键字；不动参考图、画幅情绪和分镜清单。 */
@@ -3549,6 +3560,8 @@ function qsBusy(on){
 /* 直接出图工作态：按钮转圈、卡片扫光、状态脉冲；从点击持续到 poll 出结果（用户 2026-11-26） */
 function qsWorking(on){
   const box = $('#quickSingle'), btn = $('#qsGen'), st = $('#qsStatus');
+  const sp = $('#qsStop');
+  if (sp){ sp.hidden = !on; if (!on) sp.disabled = false; }   // 停止按钮只在出图时出现
   if (box) box.classList.toggle('working', !!on);
   if (st) st.classList.toggle('working', !!on);
   railBusy('single', on);              // 左栏「单图」图标同步呼吸发光
@@ -3633,9 +3646,10 @@ async function qsGenerate(){
       task_id: 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2,5)};
     const {job_id} = await submitGenerate(p);
     submitted = true;
+    _qsJobId = job_id;              // 停止按钮只停这一个任务
     // 动效持续到图片真正出完；poll 的回调负责收尾，提交成功就别在 finally 提前恢复
     poll(job_id, $('#imageStatus'), 'image', '单图排队中…', (result, d)=>{
-      qsWorking(false); qsBusy(false);
+      qsWorking(false); qsBusy(false); _qsJobId = null;
       if (result === 'done'){
         // 通用 poll 只把图贴到预览区，没登记进 state.results；不补这一步，点预览会提示「还没有可预览的图片」
         const raw = d && d.image_url;
@@ -3650,6 +3664,7 @@ async function qsGenerate(){
         }
         qsStatus('出图完成，点右侧预览图可放大', 'ok');
       }
+      else if (result === 'cancelled') qsStatus('已停止本次出图');
       else qsStatus(result === 'error' ? '出图失败，见右侧提示' : '出图超时，见右侧提示', 'err');
     });
   }catch(e){ qsStatus('出图失败：' + e.message, 'err'); toast('出图失败：' + e.message, {type:'err'}); }
@@ -3858,6 +3873,11 @@ async function pollOne(id, i, topic, statusEl){
             + (swapped ? ` · 换号 ${swapped} 次后成功` : ''),
             {type: 'ok', title: '第 ' + (i + 1) + ' 张出图完成'});
       return true;
+    }
+    if (d.status === 'cancelled'){
+      // 手动停止不是失败：不弹错误气泡，汇总由 pollBatch 统一说「未出」
+      statusEl.textContent = '第 ' + (i + 1) + ' 张已停止';
+      return false;
     }
     const who = [...new Set((d.attempts || []).map(a=>a.account).filter(Boolean))];
     statusEl.textContent = '第 ' + (i + 1) + ' 张失败：' + (d.error || '未知错误');
@@ -5767,6 +5787,24 @@ $('#polishText').onclick = polishText;
 $('#genImage').onclick = runImage;
 $('#qsPolish').onclick = qsPolish;
 $('#qsGen').onclick = qsGenerate;
+/* 单图停止：只停单图快出自己那个任务（job_id 精确停止），多图批量、文案任务都不受影响 */
+$('#qsStop').onclick = async ()=>{
+  if (!_qsJobId) return;
+  const sp = $('#qsStop');
+  if (sp) sp.disabled = true;
+  try{
+    const r = await fetch('/api/generate/stop', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body: JSON.stringify({job_id: _qsJobId})});
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.message || ('HTTP ' + r.status));
+    qsStatus('正在停止…');
+    toast(d.message || '已发送停止指令', {type:'info', title:'停止生图'});
+    refreshPool();
+  }catch(e){
+    if (sp) sp.disabled = false;
+    toast('停止失败：' + e.message, {type:'err', title:'停止生图'});
+  }
+};
 $('#qsRestore').onclick = qsRestoreExample;
 /* 手动推荐按钮已撤；推荐带右边的「换一组」负责同一份内容换一套搭配 */
 if ($('#comboAgain')) $('#comboAgain').onclick = ()=> comboRecommend('auto');
@@ -6858,6 +6896,33 @@ async function stopAllJobs(){
   }
 }
 
+/* 多图页「停止生图」：只停这一批批量任务的 job（按断点里的 job_ids 精确停止），
+   单图快出、文案任务都不受影响；监控里的「停止当前任务」才是全局停（2026-11-27） */
+async function stopBatchJobs(){
+  if (!confirm('确定停止本批出图任务？\n正在出图的请求会被中断，已完成的图片不受影响。')) return;
+  _stopRequested = true;                 // 提交循环 / pollBatch 见到立即退出
+  const sg = $('#stopGen');
+  if (sg) sg.disabled = true;
+  const b = loadBatch();
+  const ids = (b && Array.isArray(b.ids)) ? b.ids.slice() : [];
+  try{
+    if (ids.length){
+      const r = await fetch('/api/generate/stop', {method:'POST',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify({job_ids: ids})});
+      const d = await r.json();
+      if (!r.ok || !d.ok) throw new Error(d.message || ('HTTP ' + r.status));
+      toast(d.message || '已停止本批任务', {type:'info', title:'停止生图'});
+    } else {
+      toast('当前没有正在跑的批量任务', {type:'info', title:'停止生图'});
+    }
+    clearBatch();                        // 清断点，刷新页面不会自动接上被停掉的批次
+    refreshPool();
+    if ($('#monitorDlg').open) refreshMonitor();
+  }catch(e){
+    toast('停止失败：' + e.message, {type:'err', title:'停止生图'});
+  }
+}
+
 /* ================= 运行监控 ================= */
 const ST_LABEL = {ready:'可用', busy:'出图中', limited:'限流', unhealthy:'已下线', unbound:'未绑定', pending:'待验证', error:'异常'};
 let monTimer = null;
@@ -7881,7 +7946,7 @@ $('#draftNew').onclick = ()=>{
 };
 
 $('#openMonitor').onclick = ()=> navTo('monitor');
-$('#stopGen').onclick = stopAllJobs;
+$('#stopGen').onclick = stopBatchJobs;   // 多图停止只停本批 job；监控里才是全局停
 $('#monStop').onclick = stopAllJobs;
 $('#monClose').onclick = closeMonitor;
 $('#monitorDlg').addEventListener('close', ()=>{ clearTimeout(monTimer); monTimer = null; });

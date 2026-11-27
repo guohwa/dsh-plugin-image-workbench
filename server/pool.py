@@ -1300,6 +1300,26 @@ class PoolManager:
                 "queued": dropped,
                 "message": f"已停止 {len(stopped)} 个任务（执行中 {len(running)}、排队 {dropped}）"}
 
+    async def cancel_one(self, job_id: str, reason: str = "已手动停止") -> dict:
+        '''精确停止单个任务：单图快出的停止按钮用，不碰批量和其他任务。
+
+        与 cancel_all 同一套语义：先改状态再 cancel，_run_job 的 finally
+        才不会写历史或安排重试；排队中的任务留在队列里，worker 取到时按
+        cancelled 跳过。
+        '''
+        job = self.jobs.get(job_id)
+        if not job or job.get("status") not in ("queued", "running"):
+            return {"ok": False, "stopped": 0,
+                    "message": "任务不存在或已结束，无需停止"}
+        job.update({"status": "cancelled", "error": reason,
+                    "will_retry": 0, "finished": int(time.time())})
+        task = self._job_tasks.get(job_id)
+        if task and not task.done():
+            task.cancel()
+        self._persist()
+        log(f"手动停止单个任务：{job_id}")
+        return {"ok": True, "stopped": 1, "message": "已停止 1 个任务"}
+
     def _finish(self, job: dict) -> None:
         job.setdefault("finished", int(time.time()))
         if self.on_finish:
