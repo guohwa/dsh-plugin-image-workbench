@@ -2153,6 +2153,15 @@ ok('拆成分镜成功即跳多图，左侧分组同步定位',
    and "window.navTo('multi');   // 清单早就拆好了，直接送过去看，别把人留在文案页" in _html
    and "if (!items.length){ toast('没拆出内容'); return; }" in _html
    and "if (dirty && !confirm('小说会重新拆成 ' + items.length + ' 张卡片，当前清单（含已改过的提示词）会被替换，继续？')) return;" in _html)
+# 2026-11-27：换一组之后，多图侧自动拼过的提示词要按新组合重拼，手改的保留
+ok('换组合后自动重拼提示词，手改条目保留',
+   'async function recomposeAllQuiet(){' in _html
+   and 'if (it.hand) return;                                               // 手写的保留' in _html
+   and 'state.items[i].hand = true;' in _html
+   and 'state.items[i].hand = false;   // 确认覆盖后就是自动拼的版本，换组合要跟着走' in _html
+   and 'state.items[i].hand = false;   // 手动重拼确认过覆盖，回到自动版本' in _html
+   and 'recomposeAllQuiet();' in _html
+   and '提示词（可手改；手改后换组合不自动覆盖这条）' in _html)
 # 2026-11-27：画幅 / 情绪设置块初始就挂进 DOM，否则文案页读写草稿会找不到元素
 ok('设置块初始挂载，草稿载入不缺元素',
    'wm.appendChild(gen);   // 初始就挂进 DOM' in _html

@@ -2636,6 +2636,9 @@ async function comboRecommend(src){
         const p = await qsCompose(qsCurrentKeyword());
         if (p){ $('#qsKey').value = p; qsFitKey(); _qsFingerprint = qsCardFingerprint(); }
       }catch(e){ /* 重拼失败不影响选型，出图时还会再拼一次 */ }
+    }else if (!useSingle){
+      // 多图这边同理：分镜清单里自动拼过的提示词跟着新组合重拼（用户 2026-11-27 要求）
+      recomposeAllQuiet();
     }
 
     const other = picked.from === 'single' ? 'multi' : 'single';
@@ -3690,7 +3693,7 @@ function renderItems(){
       + (it.visual ? '<textarea class="it-scene it-visual" rows="2" placeholder="画面表演要点（可改，只影响画面，不排进文字）"></textarea>' : '')
       + '<div class="it-pw' + (it.prompt ? '' : ' blank') + '">'
       + '<div class="it-ph"><span>' + (cover ? '主图 ' : '卡片 ') + tag + ' · '
-      + (it.prompt ? '提示词（可手改，出图就用这一版）' : '提示词（留空自动拼，写了就用你这份）')
+      + (it.prompt ? '提示词（可手改；手改后换组合不自动覆盖这条）' : '提示词（留空自动拼，写了就用你这份）')
       + '</span>'
       + '<button type="button" class="mini it-copy">复制</button>'
       + '<button type="button" class="mini it-re">重拼</button></div>'
@@ -3715,7 +3718,7 @@ function renderItems(){
       vEl.value = it.visual || '';
       vEl.oninput = ()=>{ state.items[i].visual = vEl.value; noteContentChanged(); };
     }
-    pEl.oninput = ()=>{ state.items[i].prompt = pEl.value; autoGrow(pEl); noteContentChanged(); };
+    pEl.oninput = ()=>{ state.items[i].prompt = pEl.value; state.items[i].hand = true; autoGrow(pEl); noteContentChanged(); };
     el.querySelector('.it-del').onclick = ()=>{
       state.items.splice(i, 1);
       renderItems();
@@ -3739,6 +3742,7 @@ async function recomposeOne(i){
   try{
     const d = await postCompose([it]);
     state.items[i].prompt = leadFor(it) + d.items[0].prompt;
+    state.items[i].hand = false;   // 手动重拼确认过覆盖，回到自动版本
     if (d.items[0].scene) state.items[i].scene = d.items[0].scene;
     renderItems();
     toast('第 ' + (i + 1) + ' 条已重拼');
@@ -3827,6 +3831,32 @@ async function pollOne(id, i, topic, statusEl){
   return false;
 }
 
+/* 换了一组图型/风格/主题色后，把自动拼出来的提示词按新组合重拼一遍。
+   手改过的（it.hand）不动：那是用户逐字调过的版本，覆盖等于抢劫。
+   静默执行不打断推荐流程，失败也不影响选型——出图时还会按当前组合再拼一次。 */
+async function recomposeAllQuiet(){
+  const targets = [];
+  (state.items || []).forEach((it, i)=>{
+    if (!(it.title || '').trim() && !(it.body || '').trim()) return;   // 空行没原料，跳过
+    if (it.hand) return;                                               // 手写的保留
+    targets.push({it, i});
+  });
+  if (!targets.length) return;
+  try{
+    const d = await postCompose(targets.map(x => x.it));
+    d.items.forEach((x, k)=>{
+      const t = targets[k]; if (!t || !state.items[t.i]) return;
+      state.items[t.i].prompt = leadFor(state.items[t.i]) + x.prompt;
+      if (x.scene) state.items[t.i].scene = x.scene;
+      state.items[t.i].hand = false;
+    });
+    renderItems();
+    const kept = state.items.filter(it => it.hand).length;
+    toast('提示词已按新组合重拼' + (kept ? '，' + kept + ' 条手改的保留原样' : ''),
+      {type:'ok', title:'组合已更新'});
+  }catch(e){ /* 重拼失败不影响选型 */ }
+}
+
 async function composeAll(){
   markSrc('multi');                 // 生成提示词是多图这一侧的动作，推荐组合之后读左侧正文
   if (!state.items.length){
@@ -3854,6 +3884,7 @@ async function composeAll(){
     d.items.forEach((x, i)=>{
       if (!state.items[i]) return;
       state.items[i].prompt = leadFor(state.items[i]) + x.prompt;
+      state.items[i].hand = false;   // 确认覆盖后就是自动拼的版本，换组合要跟着走
       // 把后端自动挑的小道具写回输入框，让用户看见「中层小图辅助」填了什么（之前被丢弃）
       if (x.scene) state.items[i].scene = x.scene;
     });
