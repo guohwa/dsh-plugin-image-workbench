@@ -794,6 +794,8 @@
   .pill{display:inline-flex;align-items:center;gap:6px;background:#f7f5ff;border:1px solid var(--line);
     border-radius:12px;padding:3px 9px;font-size:11px;color:var(--ink-2)}
   .footer-note{margin-top:12px;font-size:10.5px;color:var(--ink-3);line-height:1.6}
+  /* 单图页右侧最下面那段号池说明不要，多图页保留 */
+  main.single-mode .footer-note{display:none}
   /* 左栏底部版本号：跟在内容正下方，不与别的栏对齐。
      升级提示做成同一行的小胶囊，绝不另起一行——多一行就会把整页顶出右侧滚动条 */
   .ver-foot{display:flex;align-items:center;gap:8px;margin-top:9px;font-size:13px;
@@ -1291,9 +1293,9 @@
 </head>
 <body>
 <nav class="rail" id="rail" aria-label="功能分组">
+  <button class="rail-item" type="button" data-nav="single" title="单图"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h4"/></svg><span>单图</span></button>
   <button class="rail-item" type="button" data-nav="hot" title="热榜"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l1.9 5.4L19 9.3l-5.1 1.9L12 16.6l-1.9-5.4L5 9.3l5.1-1.9L12 2z"/><path d="M18.5 15l.8 2.3 2.3.8-2.3.8-.8 2.3-.8-2.3-2.3-.8 2.3-.8.8-2.3z"/></svg><span>热榜</span></button>
   <button class="rail-item" type="button" data-nav="copy" title="文案"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 12h6M10 16h6"/></svg><span>文案</span></button>
-  <button class="rail-item" type="button" data-nav="single" title="单图"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h4"/></svg><span>单图</span></button>
   <button class="rail-item" type="button" data-nav="multi" title="多图"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>多图</span></button>
   <button class="rail-item" type="button" data-nav="history" title="历史"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.6"/><path d="M4 4v5h5M12 8v5l3 2"/></svg><span>历史</span></button>
   <button class="rail-item" type="button" data-nav="monitor" title="监控"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h18v12H3z"/><path d="M8 20h8M12 16v4"/></svg><span>监控</span></button>
@@ -8945,6 +8947,7 @@ setInterval(refreshPool, 10000);
       headActs.classList.toggle('single-mode', name === 'single');
     }
     main.classList.toggle('solo', !work);
+    main.classList.toggle('single-mode', name === 'single');
     main.classList.toggle('hot-full', name === 'hot');
     if (name === 'hot') fitHot();
     document.querySelectorAll('.rail-item').forEach(b=>{
