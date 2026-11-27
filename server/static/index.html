@@ -96,6 +96,12 @@
   main{display:grid;grid-template-columns:minmax(0,1fr) 440px;gap:14px;padding:14px;align-items:start}
   /* 热榜 / 历史 / 监控 / 号池不显示右侧预览，主区不能替隐藏的预览留 440px 空列 */
   main.solo{grid-template-columns:minmax(0,1fr)}
+  /* 热榜分组整页：上接页头、下接窗口底，去掉卡片外框与四周留白 */
+  main.hot-full{padding:0}
+  main.hot-full #pageHot{height:calc(100vh - var(--hot-top,69px))}
+  main.hot-full dialog.inline-dlg.hb-dlg{height:100%;border-radius:0;background:transparent;box-shadow:none}
+  main.hot-full dialog.inline-dlg.hb-dlg .inner{height:100%;min-height:0;padding:0 16px}
+  main.hot-full dialog.inline-dlg.hb-dlg .scroller{padding-bottom:0}
   @media (max-width:1180px){main{grid-template-columns:minmax(0,1fr)}.panel.right{grid-column:1/-1}}
   @media (max-width:860px){main{grid-template-columns:1fr}}
   @media (max-width:640px){body{padding-left:0}.rail{position:static;width:100%;height:auto;
@@ -8815,7 +8821,12 @@ setInterval(refreshPool, 10000);
   const studio = $('studioPanel');
   const aside = document.querySelector('aside.panel.right');
   const headActs = document.querySelector('.head-acts');
+  const header = document.querySelector('header');
   if (!main || !left || !studio) return;
+  function fitHot(){
+    if (header) main.style.setProperty('--hot-top', Math.round(header.offsetTop + header.offsetHeight) + 'px');
+  }
+  window.addEventListener('resize', function(){ if (window.currentNav === 'hot') fitHot(); });
 
   const P = {};
   ['hot','copy','single','multi','history','monitor','pool'].forEach(k=>{
@@ -8878,6 +8889,8 @@ setInterval(refreshPool, 10000);
     if (aside) aside.hidden = !work;
     if (headActs) headActs.style.display = work ? '' : 'none';
     main.classList.toggle('solo', !work);
+    main.classList.toggle('hot-full', name === 'hot');
+    if (name === 'hot') fitHot();
     document.querySelectorAll('.rail-item').forEach(b=>{
       const on = b.dataset.nav === name && b.id !== 'railSetting';
       b.classList.toggle('on', on); b.setAttribute('aria-current', on ? 'page' : 'false');

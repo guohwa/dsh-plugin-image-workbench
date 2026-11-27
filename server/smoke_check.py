@@ -2038,6 +2038,14 @@ ok('热榜独立页宽度铺满主区，卡片与榜单字号放大',
    and 'dialog.inline-dlg.hb-dlg .hb-pitem{font-size:13px;gap:8px;line-height:1.8}' in _html
    and 'dialog.inline-dlg.hb-dlg .hb-table{font-size:13px}' in _html
    and 'dialog.inline-dlg.hb-dlg .hb-pcard{padding:14px 16px;gap:6px;min-height:180px;border-radius:14px}' in _html)
+# 2026-11-27：热榜分组页上下贴边，去掉卡片外框；高度按页头位置动态计算
+ok('热榜分组页上下贴边，不再有卡片外框',
+   'main.hot-full{padding:0}' in _html
+   and 'main.hot-full #pageHot{height:calc(100vh - var(--hot-top,69px))}' in _html
+   and 'main.hot-full dialog.inline-dlg.hb-dlg{height:100%;border-radius:0;background:transparent;box-shadow:none}' in _html
+   and 'main.hot-full dialog.inline-dlg.hb-dlg .inner{height:100%;min-height:0;padding:0 16px}' in _html
+   and "main.classList.toggle('hot-full', name === 'hot');" in _html
+   and "header.offsetTop + header.offsetHeight" in _html)
 
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')
