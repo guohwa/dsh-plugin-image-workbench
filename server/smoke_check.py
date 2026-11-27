@@ -2072,6 +2072,15 @@ ok('抓一次热榜按钮移到工具栏右侧',
    and '<input id="hbSearch" type="search" placeholder="搜索热榜话题…" aria-label="搜索热榜话题">\n      <button class="btn ghost mini" id="hbRefresh"' in _html
    and 'dialog.inline-dlg.hb-dlg .hb-toolbar input{min-width:240px;flex-basis:320px}' in _html
    and 'if(hbRefresh) hbRefresh.onclick = function(){ hbLoad(1); };' in _html)
+# 2026-11-27：搜索框按第二张卡实测坐标对齐，按钮紧跟其后；窄屏退回普通排布
+ok('热榜搜索框与第二张卡对齐，按钮紧跟其后',
+   'function hbAlignToolbar()' in _html
+   and "const c = cards[1] || cards[0];" in _html
+   and "const left = Math.round(cr.left - br.left), w = Math.round(cr.width);" in _html
+   and "'position:absolute;top:50%;transform:translateY(-50%);left:' + left + 'px;width:' + w + 'px" in _html
+   and "(left + w + 12) + 'px'" in _html
+   and 'window.addEventListener(\'resize\', hbAlignToolbar);' in _html
+   and 'dialog.inline-dlg.hb-dlg .hb-toolbar{font-size:12.5px;gap:12px;position:relative}' in _html)
 # 2026-11-27：热榜已独立成页，文案页不再显示 AI 热点 / 推荐话题两张重复卡
 ok('文案页去掉 AI 热点与推荐话题两张卡',
    "const aihot = left.querySelector('.aihot');\n  if (aihot) aihot.remove();" in _html

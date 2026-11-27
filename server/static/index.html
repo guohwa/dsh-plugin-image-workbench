@@ -558,7 +558,7 @@
   dialog.inline-dlg.hb-dlg .dlg-head h3{font-size:18px}
   dialog.inline-dlg.hb-dlg .dlg-head h3 span{font-size:12px}
   dialog.inline-dlg.hb-dlg .dlg-head .btn{font-size:12.5px}
-  dialog.inline-dlg.hb-dlg .hb-toolbar{font-size:12.5px;gap:12px}
+  dialog.inline-dlg.hb-dlg .hb-toolbar{font-size:12.5px;gap:12px;position:relative}
   dialog.inline-dlg.hb-dlg .hb-toolbar select,
   dialog.inline-dlg.hb-dlg .hb-toolbar input{min-width:160px;padding:7px 11px;font-size:12.5px}
   dialog.inline-dlg.hb-dlg .hb-toolbar input{min-width:240px;flex-basis:320px}
@@ -8082,6 +8082,22 @@ setInterval(refreshPool, 10000);
       if(hbRefresh){ hbRefresh.disabled = false; hbRefresh.textContent = old || '抓一次热榜'; }
     }
   }
+  /* 整页热榜：搜索框对齐第二张卡，按钮紧跟其后。用实测坐标对齐，
+     卡片列数 / 窗口宽度变化时自动重算；窄屏退回普通 flex 排布。 */
+  function hbAlignToolbar(){
+    const bar = document.querySelector('#hotBoardDlg .hb-toolbar');
+    if(!bar || !hbSearchEl || !hbRefresh) return;
+    if(!hbDlg || !hbDlg.classList.contains('inline-dlg') || window.innerWidth <= 820){
+      hbSearchEl.style.cssText = ''; hbRefresh.style.cssText = ''; return;
+    }
+    const cards = hbListEl ? hbListEl.querySelectorAll('.hb-pcard') : [];
+    const c = cards[1] || cards[0];
+    if(!c) return;
+    const cr = c.getBoundingClientRect(), br = bar.getBoundingClientRect();
+    const left = Math.round(cr.left - br.left), w = Math.round(cr.width);
+    hbSearchEl.style.cssText = 'position:absolute;top:50%;transform:translateY(-50%);left:' + left + 'px;width:' + w + 'px;min-width:0';
+    hbRefresh.style.cssText = 'position:absolute;top:50%;transform:translateY(-50%);left:' + (left + w + 12) + 'px';
+  }
   function hbRender(){
     if(!hbData) return;
     const d = hbData;
@@ -8125,6 +8141,7 @@ setInterval(refreshPool, 10000);
       c.onclick = pickTab;
       c.onkeydown = function(e){ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); pickTab(); } };
     });
+    hbAlignToolbar();   // 搜索框按第二张卡的宽度与位置对齐，按钮紧跟其后
     hbTabsEl.innerHTML = (d.platforms || []).map(function(p){
       const n = rows.filter(function(r){ return r.platform === p; }).length;
       const ok = hbSourceOk(p);
@@ -8178,6 +8195,7 @@ setInterval(refreshPool, 10000);
   if(pageEl) pageEl.onclick = window.hbOpenHot;
   if(hbRefresh) hbRefresh.onclick = function(){ hbLoad(1); };
   if(hbClose && hbDlg) hbClose.onclick = function(){ hbDlg.close(); };
+  window.addEventListener('resize', hbAlignToolbar);
 })();
 
 /* AI 热点选题：左栏小卡片 + 放大弹窗。
