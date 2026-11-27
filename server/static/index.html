@@ -67,9 +67,38 @@
   @keyframes poolMarquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
   .dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
   .dot.off{background:var(--err)}
-  main{display:grid;grid-template-columns:20% minmax(0,1fr) 440px;gap:14px;padding:14px;align-items:start}
-  @media (max-width:1280px){main{grid-template-columns:280px minmax(0,1fr);}.panel.right{grid-column:1/-1}}
+  /* 左侧分组导航（对齐成稿台的窄栏）：常驻 78px，主区只留工作区 + 预览。
+     节点不复制：切分组时把同一份 DOM 挂到对应页面下，事件绑定与状态都只有一份。 */
+  body{padding-left:78px}
+  .rail{position:fixed;left:0;top:0;bottom:0;width:78px;z-index:40;background:#fff;
+    border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;
+    gap:2px;padding:12px 6px 10px}
+  .rail-item{width:66px;min-height:58px;border:0;background:transparent;border-radius:11px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    color:var(--ink-3);font:inherit;font-size:11px;line-height:1.2;cursor:pointer;transition:.14s}
+  .rail-item svg{width:19px;height:19px;flex:none}
+  .rail-item:hover{background:#f5f2ff;color:var(--primary)}
+  .rail-item.on{background:#ebe7ff;color:var(--primary);font-weight:600}
+  .rail-item .rail-dot{position:absolute;width:6px;height:6px;border-radius:50%;background:var(--pink)}
+  .rail-gap{flex:1}
+  .rail-bottom{width:100%;border-top:1px solid var(--line);padding-top:8px;margin-top:6px;
+    display:flex;flex-direction:column;align-items:center}
+  .page[hidden]{display:none}
+  .rail-page-h{display:none}
+  /* 历史 / 监控 / 号池：同一份弹窗节点挂进主区当页面用，不再弹 modal */
+  dialog.inline-dlg{display:block;position:static;width:auto;max-width:none;height:auto;max-height:none;
+    margin:0;padding:0;overflow:visible;box-shadow:none;background:transparent}
+  dialog.inline-dlg::backdrop{display:none}
+  dialog.inline-dlg #hbClose,dialog.inline-dlg #historyClose,
+  dialog.inline-dlg #monClose,dialog.inline-dlg #cfgClose{display:none}
+  dialog.inline-dlg.hb-dlg .inner{display:flex;flex-direction:column;height:min(72vh,760px);padding:14px 4px}
+  dialog.inline-dlg.hb-dlg .scroller{flex:1 1 auto;min-height:0;overflow:auto;padding-right:4px}
+  main{display:grid;grid-template-columns:minmax(0,1fr) 440px;gap:14px;padding:14px;align-items:start}
+  @media (max-width:1180px){main{grid-template-columns:minmax(0,1fr)}.panel.right{grid-column:1/-1}}
   @media (max-width:860px){main{grid-template-columns:1fr}}
+  @media (max-width:640px){body{padding-left:0}.rail{position:static;width:100%;height:auto;
+    flex-direction:row;overflow-x:auto;padding:8px}.rail-gap,.rail-bottom{display:none}
+    .rail-item{flex:0 0 auto;width:auto;padding:6px 10px;min-height:0}}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;
     box-shadow:0 6px 22px rgba(80,60,160,.05);padding:14px}
   .panel h2{font-size:13px;margin:0 0 2px;display:flex;align-items:center;gap:6px}
@@ -1211,6 +1240,19 @@
 </script>
 </head>
 <body>
+<nav class="rail" id="rail" aria-label="功能分组">
+  <button class="rail-item" type="button" data-nav="hot" title="热榜"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l1.9 5.4L19 9.3l-5.1 1.9L12 16.6l-1.9-5.4L5 9.3l5.1-1.9L12 2z"/><path d="M18.5 15l.8 2.3 2.3.8-2.3.8-.8 2.3-.8-2.3-2.3-.8 2.3-.8.8-2.3z"/></svg><span>热榜</span></button>
+  <button class="rail-item" type="button" data-nav="copy" title="文案"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 12h6M10 16h6"/></svg><span>文案</span></button>
+  <button class="rail-item" type="button" data-nav="single" title="单图"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h4"/></svg><span>单图</span></button>
+  <button class="rail-item" type="button" data-nav="multi" title="多图"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>多图</span></button>
+  <button class="rail-item" type="button" data-nav="history" title="历史"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.6"/><path d="M4 4v5h5M12 8v5l3 2"/></svg><span>历史</span></button>
+  <button class="rail-item" type="button" data-nav="monitor" title="监控"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h18v12H3z"/><path d="M8 20h8M12 16v4"/></svg><span>监控</span></button>
+  <button class="rail-item" type="button" data-nav="pool" title="号池"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg><span>号池</span></button>
+  <div class="rail-gap"></div>
+  <div class="rail-bottom">
+    <button class="rail-item" type="button" data-nav="pool" id="railSetting" title="设置 / 接口与号池"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.1 2.1-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21h-3v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1L6.6 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H5v-3h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9L6.2 7 8.3 4.9l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V3h3v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1H21v3h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>设置</span></button>
+  </div>
+</nav>
 <header>
   <div>
     <h1><span id="appName">Bluxe手绘工坊 · 生图工作台</span><a class="gh-link" href="https://mp.weixin.qq.com/s/dQ48uZSEurgBD3py1YwPNQ"
@@ -2725,6 +2767,8 @@ let hotFactsPending = null;
 function applyHotTopic(item, btn){
   const t = $('#topic');
   if(!t || !item || !item.title) return Promise.resolve(null);
+  // 从热榜分组页点话题时，把选题填好并切回文案页，不然填完了却看不见
+  if (window.navTo && window.currentNav && window.currentNav !== 'copy') navTo('copy');
   const title = String(item.title).trim();
   const old = btn ? btn.textContent : '';
   t.value = title;
@@ -4846,7 +4890,11 @@ $('#pPurgeDead').onchange = async ()=>{
 };
 
 async function openConfig(){
+  if ($('#configDlg').dataset.inline){ if (window.navTo && window.currentNav !== 'pool') navTo('pool'); return; }
   $('#configDlg').showModal();
+  await loadConfigPage();
+}
+async function loadConfigPage(){
   $('#cfgResult').textContent = '';
   showCfgTab('iface');
   try{
@@ -5371,7 +5419,7 @@ $('#cfgOpenDir').onclick = async ()=>{
     else { r.style.color = '#d4380d'; r.textContent = (d.message || '打不开') + '：' + d.path; }
   }catch(e){ r.style.color = '#d4380d'; r.textContent = '打开目录失败：' + e.message; }
 };
-$('#openConfig').onclick = openConfig;
+$('#openConfig').onclick = ()=> navTo('pool');
 $('#cfgClose').onclick = ()=> $('#configDlg').close();
 $('#cfgTest').onclick = testConn;
 $('#cfgSave').onclick = saveConfig;
@@ -6457,6 +6505,7 @@ async function deleteHistoryTask(task){
 }
 
 async function openHistory(){
+  if ($('#historyDlg').dataset.inline){ if (window.navTo) navTo('history'); return; }
   $('#historyDlg').showModal();
   await loadTasks(1);
 }
@@ -6733,6 +6782,7 @@ async function refreshMonitor(){
 
 async function openMonitor(){
   bindWorkersCtl();
+  if ($('#monitorDlg').dataset.inline){ if (window.navTo) navTo('monitor'); return; }
   $('#monitorDlg').showModal();
   await refreshMonitor();
   scheduleMonitor();
@@ -6994,7 +7044,7 @@ document.addEventListener('paste', e=>{
 $('#resetAll').onclick = resetAll;
 $('#demoNoteX').onclick = hideDemoNote;
 
-$('#openHistory').onclick = openHistory;
+$('#openHistory').onclick = ()=> navTo('history');
 $('#historyClose').onclick = ()=> $('#historyDlg').close();
 $('#historyRefresh').onclick = ()=> loadTasks(state.tasks.page || 1);
 $('#taskPrev').onclick = ()=> loadTasks((state.tasks.page || 1) - 1);
@@ -7440,7 +7490,7 @@ $('#openDrafts').onclick = openDrafts;
 $('#draftsClose').onclick = ()=> $('#draftsDlg').close();
 $('#draftNew').onclick = ()=>{ $('#draftsDlg').close(); saveDraft(true); };
 
-$('#openMonitor').onclick = openMonitor;
+$('#openMonitor').onclick = ()=> navTo('monitor');
 $('#stopGen').onclick = stopAllJobs;
 $('#monStop').onclick = stopAllJobs;
 $('#monClose').onclick = closeMonitor;
@@ -7916,6 +7966,8 @@ setInterval(refreshPool, 10000);
 
   function hbOpen(){
     if(!hbDlg) return;
+    /* 热榜已挂进「热榜」分组页时不再弹 modal，直接在外面加载 / 渲染 */
+    if(hbDlg.dataset.inline){ if(hbData){ hbRender(); return; } hbLoad(0); return; }
     if(!hbDlg.open) hbDlg.showModal();
     // 已经读过一次就直接复用内存里的榜单：打开弹窗不联网、不重复请求。
     // 想要最新数据由用户自己点「抓一次热榜」。
@@ -8713,6 +8765,107 @@ setInterval(refreshPool, 10000);
   renderTabs();
   loadChannels();
   load(false);
+})();
+</script>
+
+<script>
+/* 左侧分组导航：把现有节点挂到不同页面下，不复制 DOM、不重复绑事件。
+   历史 / 监控 / 号池 把原来的 dialog 挂进主区（加 inline-dlg），从下拉打开时仍能正常弹窗。 */
+(()=>{
+  const $ = id => document.getElementById(id);
+  const main = document.querySelector('main');
+  const left = document.querySelector('section.panel.left');
+  const studio = $('studioPanel');
+  const aside = document.querySelector('aside.panel.right');
+  const headActs = document.querySelector('.head-acts');
+  if (!main || !left || !studio) return;
+
+  const P = {};
+  ['hot','copy','single','multi','history','monitor','pool'].forEach(k=>{
+    const e = document.createElement('div');
+    e.className = 'page'; e.id = 'page' + k[0].toUpperCase() + k.slice(1); e.hidden = true;
+    P[k] = e; main.insertBefore(e, aside);
+  });
+
+  /* 热榜：把原来挤在文案页的 AI 热点 / 推荐话题搬到独立页 */
+  const hotPanel = document.createElement('section');
+  hotPanel.className = 'panel';
+  hotPanel.innerHTML = '<h2>每日热榜</h2><p class="hint">热点选题与推荐话题，点一条带进文案页的选题框。</p>';
+  const aihot = document.querySelector('section.panel.left .aihot');
+  if (aihot) hotPanel.appendChild(aihot);
+  if ($('recTopics')) hotPanel.appendChild($('recTopics'));
+  P.hot.appendChild(hotPanel);
+  P.copy.appendChild(left);
+
+  /* 配图工坊拆三块：公共的四张卡 + 单图快出 + 多图流程 */
+  const kids = Array.from(studio.children);
+  const qi = kids.findIndex(e => e.id === 'quickSingle');
+  const mi = kids.findIndex(e => e.id === 'omodeRow');
+  const shared = document.createElement('div'); shared.id = 'studioShared';
+  const single = document.createElement('div'); single.id = 'singleBlock';
+  const multi  = document.createElement('div'); multi.id  = 'multiBlock';
+  kids.forEach((el, i)=> (i < qi ? shared : (i < mi ? single : multi)).appendChild(el));
+  studio.remove();   // 空壳留着会白占主区第一列，页面被挤到右侧 440px 那一列
+  const ws = document.createElement('section'); ws.className = 'panel'; P.single.appendChild(ws);
+  const wm = document.createElement('section'); wm.className = 'panel'; P.multi.appendChild(wm);
+  ws.appendChild(shared); ws.appendChild(single); wm.appendChild(multi);
+
+  /* 历史 / 监控 / 号池：弹窗节点挂进主区 */
+  const DLG = {hot:'hotBoardDlg', history:'historyDlg', monitor:'monitorDlg', pool:'configDlg'};
+  const mounted = {};
+  function mountDlg(name){
+    const dlg = $(DLG[name]); if (!dlg) return;
+    if (dlg.open) { try{ dlg.close(); }catch(e){} }
+    dlg.dataset.inline = '1'; dlg.classList.add('inline-dlg');
+    P[name].appendChild(dlg); mounted[name] = true;
+    if (name === 'hot'){ const b = $('recOpen'); if (b) b.click(); }
+    if (name === 'history' && window.loadTasks) loadTasks(1);
+    if (name === 'monitor'){
+      if (window.bindWorkersCtl) bindWorkersCtl();
+      if (window.refreshMonitor) refreshMonitor();
+      if (window.scheduleMonitor) scheduleMonitor();
+    }
+    if (name === 'pool' && window.loadConfigPage) loadConfigPage();
+  }
+  function unmountDlg(name){
+    if (!mounted[name]) return;
+    const dlg = $(DLG[name]); if (!dlg) return;
+    if (dlg.open) { try{ dlg.close(); }catch(e){} }
+    delete dlg.dataset.inline; dlg.classList.remove('inline-dlg');
+    document.body.appendChild(dlg); mounted[name] = false;
+  }
+
+  window.currentNav = '';
+  window.navTo = function navTo(name, quiet){
+    if (!P[name]) name = 'copy';
+    const prev = window.currentNav;
+    if (prev in DLG && prev !== name) unmountDlg(prev);
+    if (name === 'single') ws.insertBefore(shared, ws.firstChild);
+    if (name === 'multi')  wm.insertBefore(shared, wm.firstChild);
+    Object.keys(P).forEach(k=>{ P[k].hidden = (k !== name); });
+    const work = (name === 'single' || name === 'multi');
+    if (aside) aside.hidden = !work;
+    if (headActs) headActs.style.display = work ? '' : 'none';
+    document.querySelectorAll('.rail-item').forEach(b=>{
+      const on = b.dataset.nav === name && b.id !== 'railSetting';
+      b.classList.toggle('on', on); b.setAttribute('aria-current', on ? 'page' : 'false');
+    });
+    window.currentNav = name;
+    if (name in DLG && !mounted[name]) mountDlg(name);
+    if (work && !quiet){
+      if (window.syncInstr) syncInstr();
+      if (window.qsFitKey) qsFitKey();
+      if (window.qsPaintMode) qsPaintMode();
+    }
+    try{ sessionStorage.setItem('iw_nav', name); }catch(e){}
+  };
+
+  document.querySelectorAll('.rail-item').forEach(b=>{
+    b.onclick = ()=> navTo(b.dataset.nav || 'copy');
+  });
+  let saved = '';
+  try{ saved = sessionStorage.getItem('iw_nav') || ''; }catch(e){}
+  navTo(P[saved] ? saved : 'copy', true);
 })();
 </script>
 </body>

@@ -1999,6 +1999,28 @@ ok('缩微摄影融合默认常开，用户关过才记住',
    and "sessionStorage.setItem('iw_fusion_off'" in _html
    and "iw_fusion_by_layout" not in _html.split('function syncFusionDefault')[1][:400])
 
+# 2026-11-27：左侧分组导航，热榜 / 文案 / 单图 / 多图 / 历史 / 监控 / 号池 + 设置
+ok('左侧分组导航齐全，历史 / 监控 / 号池做成主区页面',
+   'id="rail"' in _html and 'id="railSetting"' in _html
+   and all(('data-nav="' + k + '"') in _html for k in
+           ('hot','copy','single','multi','history','monitor','pool'))
+   and "const DLG = {hot:'hotBoardDlg', history:'historyDlg', monitor:'monitorDlg', pool:'configDlg'};" in _html
+   and 'dialog.inline-dlg' in _html
+   and "$('#openHistory').onclick = ()=> navTo('history');" in _html
+   and "$('#openMonitor').onclick = ()=> navTo('monitor');" in _html
+   and "$('#openConfig').onclick = ()=> navTo('pool');" in _html)
+# 四张卡只有一份 DOM：切页时把同一份节点挂到目标页，复制一份就会出现两套 ID、状态必然不同步
+ok('配图工坊四张卡共用一份节点，切单图 / 多图时跟随移动',
+   "shared.id = 'studioShared'" in _html and 'studio.remove();' in _html
+   and "if (name === 'single') ws.insertBefore(shared, ws.firstChild);" in _html
+   and "if (name === 'multi')  wm.insertBefore(shared, wm.firstChild);" in _html
+   and "if (!P[name]) name = 'copy';" in _html)
+ok('排版预览只在单图 / 多图页常驻，其它分组隐藏',
+   "const work = (name === 'single' || name === 'multi');" in _html
+   and 'aside.hidden = !work;' in _html
+   and "headActs.style.display = work ? '' : 'none';" in _html
+   and "if(hbDlg.dataset.inline)" in _html)
+
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')
 sys.exit(0 if failed == 0 else 1)
