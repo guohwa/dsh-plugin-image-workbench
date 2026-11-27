@@ -2041,15 +2041,18 @@ ok('按内容推荐按钮已还原，配过一次变「换一组」，自动推�
    and "'/api/recommend'" in _html and 'avoid_layout' in _html)
 ok('推荐前先读原始关键字，不拿九行提示词去匹配题材',
    "(_qsOptimized && _qsRawKey) ? _qsRawKey : val('#qsKey')" in _html)
-# 2026-11-27 晚：单图 / 多图已分组，读源跟页面走（单图页读关键字、多图页读正文分镜），换边切换撤掉
-ok('推荐读源跟页面走，不再有读源切换',
-   "if (window.currentNav === 'single'){" in _html
-   and "if (_srcLast === 'single' && s)" not in _html
-   and "_comboSrc" not in _html
+# 2026-11-27 晚（用户二次纠正）：单图 / 多图完全隔离，绝不跨页读——
+# 单图页只读单图关键字，多图 / 文案页只读选题正文分镜；本页空就返回空让上层 toast 提示
+ok('推荐读源完全隔离：单图页绝不读左侧正文分镜，多图页绝不读单图关键字',
+   "if (src === 'single' || window.currentNav === 'single') return {text: s, from: 'single'};" in _html
+   and "return {text: m, from: 'multi'};" in _html
+   # 旧回退逻辑必须全部消失
+   and "return {text: m, from: 'multi'}  : {text: s, from: 'single'}" not in _html
+   and "if (s) return {text: s, from: 'single'};" not in _html
+   and "if (m) return {text: m, from: 'multi'};" not in _html
+   and 'markSrc' not in _html and '_srcLast' not in _html and '_comboSrc' not in _html
    and 'id="crSrc"' not in _html and 'class="cr-src"' not in _html
    and "e.target.closest('.cr-src')" not in _html
-   and "function markSrc(which){" in _html
-   and "markSrc('multi');                 // 生成提示词是多图这一侧的动作" in _html
    and 'function comboSrcLabel(from)' in _html
    and '<span class="cr-read">读：' in _html)
 ok('推荐后同步三张卡、记住这次风格，按钮变「换一组」',

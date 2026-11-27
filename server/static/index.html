@@ -2541,15 +2541,9 @@ function ensureStyle(){
    打分在后端（server/recommend.py），纯词表，不调模型，点一下就有结果。 */
 let _comboLast = null;      // 上一次推荐的三个 id，用来让「换一组」真的换
 let _comboBusy = false;
-/* 推荐读哪一边的内容。单图 / 多图已是两个独立分组（用户 2026-11-27 定案）：
-   各自的页面读各自的内容——单图页读单图关键字，其他页读选题 / 正文 / 分镜；
-   那边空着才回退到另一边，不再有「读：xxx ⇄」切换。 */
-let _srcLast = '';          // 'single' 单图框 / 'multi' 左侧选题正文分镜 / '' 还没动过（仅留作埋点）
-function markSrc(which){
-  if (which !== 'single' && which !== 'multi') return;
-  _srcLast = which;
-}
-
+/* 推荐读哪一边的内容。单图 / 多图完全隔离（用户 2026-11-27，两次强调）：
+   单图页只读单图关键字，多图 / 文案页只读选题 / 正文 / 分镜；
+   本页空着就返回空（上层 toast 提示先写内容），绝不跨页读另一边。 */
 function comboSource(src){
   const val = sel => { const el = $(sel); return el ? (el.value || '') : ''; };
   // 提示词已经覆盖了输入框时，要按原始关键字判断内容，别拿九行提示词去匹配题材
@@ -2560,18 +2554,9 @@ function comboSource(src){
     return parts.join('\n').replace(/\n{2,}/g, '\n').trim();
   };
   const s = singleText(), m = multiText();
-  // 返回「文字 + 这段文字从哪来」：来源决定用单图的纯图-图文，还是多图的纯图-图文-摄影
-  if (src === 'single') return s ? {text: s, from: 'single'} : {text: m, from: 'multi'};
-  if (src === 'multi')  return m ? {text: m, from: 'multi'}  : {text: s, from: 'single'};
-  // 自动档：跟着当前页面走——单图页读单图，其他页读多图；本页空着才回退另一边
-  if (window.currentNav === 'single'){
-    if (s) return {text: s, from: 'single'};
-    if (m) return {text: m, from: 'multi'};
-  } else {
-    if (m) return {text: m, from: 'multi'};
-    if (s) return {text: s, from: 'single'};
-  }
-  return {text: '', from: 'multi'};
+  // 完全隔离：手动指定 / 当前页面是单图 → 只认单图关键字；其余 → 只认多图内容
+  if (src === 'single' || window.currentNav === 'single') return {text: s, from: 'single'};
+  return {text: m, from: 'multi'};
 }
 function comboSrcLabel(from){
   if (from === 'single') return '单图关键字';
@@ -3511,7 +3496,6 @@ function qsRestoreExample(){
   state.qsMode = 'pure-image';
   state.qsModeAuto = false;
   qsPaintMode();
-  markSrc('single');
   _qsFingerprint = qsCardFingerprint();   // 记下示例这套选型，改卡后仍能按原始关键字重拼
   qsStatus('已还原示例，可直接点「直接出图」', 'ok');
   toast('已还原示例的图型、风格、主题色和关键字', {type:'ok', title:'示例已还原'});
@@ -3589,7 +3573,6 @@ async function qsCompose(keyword){
   return (d.items && d.items[0] && d.items[0].prompt) || '';
 }
 async function qsPolish(){
-  markSrc('single');
   const kw = qsCurrentKeyword();
   if (!kw){ toast('先写关键字'); $('#qsKey').focus(); return; }
   ensureStyle();                 // 只选了图型就点这里：先把画风补上，别出空壳提示词
@@ -3608,7 +3591,6 @@ async function qsPolish(){
   finally{ qsBusy(false); }
 }
 async function qsGenerate(){
-  markSrc('single');
   let text = ($('#qsKey').value || '').trim();
   if (!text){ toast('先写关键字，或先点「优化提示词」'); $('#qsKey').focus(); return; }
   ensureStyle();                   // 同上：出图前也要有画风，否则出来的图跟选型无关
@@ -3911,7 +3893,6 @@ async function recomposeAllQuiet(){
 }
 
 async function composeAll(){
-  markSrc('multi');                 // 生成提示词是多图这一侧的动作，推荐组合之后读左侧正文
   if (!state.items.length){
     // 清单为空但有选型 / 参考图 / 手改指令：自动补一条空白分镜，直接按出图指令拼
     const hasSel = state.sel.style || state.sel.layout || state.sel.color;
@@ -5803,12 +5784,6 @@ $('#qsRestore').onclick = qsRestoreExample;
 /* 按内容推荐按钮：没配过叫「按内容推荐」，配过一次变「换一组」；读源跟当前页面走 */
 if ($('#comboRecBtn')) $('#comboRecBtn').onclick = ()=> comboRecommend('auto');
 /* 谁最后动过内容，推荐组合就按哪一边读：单图框 → 单图；选题/标题/正文/小说/分镜 → 多图 */
-document.addEventListener('input', (e)=>{
-  const t = e.target; if (!t) return;
-  if (t.id === 'qsKey') markSrc('single');
-  else if (t.id === 'topic' || t.id === 'docTitle' || t.id === 'docBody' || t.id === 'novelBody') markSrc('multi');
-  else if (t.closest && t.closest('#itemList')) markSrc('multi');
-});
 if ($('#qsKey')) $('#qsKey').addEventListener('input', qsFitKey);
 /* 单图纯图 / 图文切换：只影响单图拼词，多图模式保持自己的选择 */
 document.querySelectorAll('#qsModeSeg button').forEach(b=>{
@@ -6134,7 +6109,6 @@ function splitDoc(title, body, withNo = true){
 }
 
 async function splitToItems(){
-  markSrc('multi');
   const title = $('#docTitle').value.trim();
   const body  = $('#docBody').value.trim();
   if (!title && !body){
@@ -9393,6 +9367,9 @@ setInterval(refreshPool, 10000);
       if (window.syncPreview) syncPreview();
       if (name === 'multi' && window.refitItems) refitItems();   // 节点刚挂进多图页，重新量正文 / 提示词高度
       if (window.renderStrip) renderStrip();   // 预览按当前页取单图或多图那份结果，别串
+      /* 推荐带是三个分组共用的一行 DOM：切页时把上一页留下的「读：xxx」结果清掉，
+         否则单图页会挂着多图页配的「读：左侧正文与分镜」，误导（用户 2026-11-27） */
+      if (!_comboBusy && window.comboNote) comboNote('写了内容就会自动配一套图型 · 风格 · 主题色；也可以点右边手动配。');
       if (!quiet) autoComboSoon();             // 进分组页内容在、卡全空就自动配一套组合
       if (!quiet){
         if (window.syncInstr) syncInstr();
