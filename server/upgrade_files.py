@@ -18,6 +18,10 @@ TOP_CODE = {"host.js", "client.js", "cordis.patch.yml", "install.mjs", "package.
 KEEP_ANY = {"vendor", "node_modules", ".venv", "__pycache__", "workbench", "images",
             "thumbs", "refs", "repo_images", ".pytest_cache", ".git"}
 KEEP_FILES = {"config.local.json", "app.db", "history.db"}
+# 备份 / 编辑器临时文件：npm 按 .gitignore 打包，这些根本不在包里。一旦被收进清单，
+# 客户端每次都判「本地缺这个文件」→ 去 CDN 拉 → 404 → 整个增量升级退回整包下载。
+# 1.1.120 就是这样：server/static/index.html.bak_xxx 混进清单，增量形同虚设。
+JUNK_MARKS = (".bak", ".orig", ".rej", ".swp", ".tmp", ".upnew", ".crdownload")
 # server/ 下一层里允许跟随升级的非 py 文件
 SERVER_EXTRA = {"catalog.json", "changelog.json", "requirements.txt", "update-manifest.json"}
 TEXT_EXT = {".py", ".html", ".css", ".js", ".mjs", ".json", ".txt", ".yml", ".yaml", ".md"}
@@ -32,6 +36,8 @@ def upgrade_rel(rel: str) -> str | None:
         return None
     name = parts[-1]
     if any(p in KEEP_ANY for p in parts[:-1]):
+        return None
+    if name.startswith(".") or any(m in name for m in JUNK_MARKS):
         return None
     if name in KEEP_FILES or name.endswith((".db", ".log", ".pyc", ".upnew")):
         return None

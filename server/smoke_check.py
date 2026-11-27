@@ -508,6 +508,27 @@ ok('清单覆盖白名单且不含 vendor / 数据',
    'server/app.py' in _man_files and 'server/static/index.html' in _man_files
    and 'server/update-manifest.json' not in _man_files
    and not any(k.startswith(('vendor/', 'server/workbench/')) for k in _man_files))
+# 清单里的每个文件都必须真的在 npm 包里。漏一个 → 客户端去 CDN 拉 404 →
+# 整个增量升级退回整包下载（1.1.120 踩过：static 下的 .bak_ 备份文件混进清单）。
+import fnmatch as _fnm
+_pkg_files = json.loads((ROOT.parent / 'package.json').read_text(encoding='utf-8')).get('files') or []
+
+
+def _packed(rel: str) -> bool:
+    # npm 无条件打包 package.json / README / LICENSE，不必出现在 files 里
+    if rel in ('package.json', 'README.md', 'LICENSE', 'LICENSE.md'):
+        return True
+    for pat in _pkg_files:
+        pat = pat.rstrip('/')
+        if _fnm.fnmatch(rel, pat) or rel.startswith(pat + '/'):
+            return True
+    return False
+
+
+_junk = [k for k in _man_files if any(m in k.rsplit('/', 1)[-1] for m in _uf.JUNK_MARKS)]
+ok('清单不含备份 / 临时文件', not _junk, _junk[:4])
+_notpacked = [k for k in _man_files if not _packed(k)]
+ok('清单里的文件全部在 npm 包内（否则增量必退整包）', not _notpacked, _notpacked[:4])
 ok('增量升级接口齐备（先增量，失败回退整包）',
    all(hasattr(app, n) for n in ('_delta_plan', '_download_delta', '_apply_delta',
                                  '_apply_full', '_write_code_files'))
