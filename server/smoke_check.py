@@ -2121,6 +2121,14 @@ ok('排版预览卡片悬停仅限多图 / 文案页，单图页原生布局',
    and 'main:not(.single-mode) aside.panel.right > *{flex:0 0 auto}' in _html
    and 'position:static;max-height:none;overflow:visible' in _html
    and 'fitHot();\n  window.addEventListener(\'resize\', fitHot);' in _html)
+# 2026-11-27：单图页右栏与左栏底对齐——右栏 stretch + 手机预览封面区吃掉多余高度
+ok('单图页左右两栏底部对齐（右栏拉伸，封面区弹性填充）',
+   'main.single-mode aside.panel.right{align-self:stretch;display:flex;flex-direction:column}' in _html
+   and 'main.single-mode aside.panel.right > .phone{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}' in _html
+   and 'main.single-mode aside.panel.right .phone .body > .cover-wrap{flex:1 1 auto;min-height:220px}' in _html
+   and 'main.single-mode aside.panel.right .phone .cover{aspect-ratio:auto;height:100%}' in _html
+   # 多图 / 文案页的 sticky 悬停不受影响
+   and 'main:not(.single-mode) aside.panel.right{position:sticky' in _html)
 # 2026-11-27：出图中的分组图标加呼吸动效——单图挂 qsWorking，多图挂 setBatchRunning（两条批量路径共用）
 ok('左栏分组图标有出图工作态动效',
    '.rail-item.busy{position:relative;color:var(--primary)}' in _html

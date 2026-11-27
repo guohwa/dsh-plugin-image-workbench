@@ -138,6 +138,19 @@
   main:not(.single-mode) aside.panel.right > .phone{flex:1 1 auto;min-height:220px;display:flex;flex-direction:column}
   main:not(.single-mode) aside.panel.right .phone .bar{flex:0 0 auto}
   main:not(.single-mode) aside.panel.right .phone .body{flex:1 1 auto;min-height:0;max-height:none}
+  /* 单图页右栏与左栏底对齐（用户 2026-11-27）：右栏拉伸占满整行高度，
+     多余高度给手机预览的封面区吃掉，下载行和提示行沉到与左栏相同的底部。
+     只在两栏布局（>1180px）生效；窄屏右栏换行堆叠，不做拉伸 */
+  @media (min-width:1181px){
+    main.single-mode aside.panel.right{align-self:stretch;display:flex;flex-direction:column}
+    main.single-mode aside.panel.right > *{flex:0 0 auto}
+    main.single-mode aside.panel.right > .phone{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+    main.single-mode aside.panel.right .phone .bar{flex:0 0 auto}
+    main.single-mode aside.panel.right .phone .body{flex:1 1 auto;min-height:0;max-height:none;display:flex;flex-direction:column}
+    main.single-mode aside.panel.right .phone .body > .cover-wrap{flex:1 1 auto;min-height:220px}
+    main.single-mode aside.panel.right .phone .cover{aspect-ratio:auto;height:100%}
+    main.single-mode aside.panel.right .phone .cover img{object-fit:cover}
+  }
   /* 热榜分组整页：上接页头、下接窗口底，去掉卡片外框与四周留白 */
   main.hot-full{padding:0}
   main.hot-full #pageHot{height:calc(100vh - var(--hot-top,69px))}
@@ -158,8 +171,10 @@
   #configDlg.pool-only .cfg-tabs,#configDlg.pool-only #tabIface,#configDlg.pool-only #cfgFoot{display:none}
   /* 弹窗模式的 660px 高度上限在整页会留下大块空白，整页时撑满剩余高度 */
   #configDlg.pool-only #tabPool{flex:1 1 auto;height:auto}
-  @media (max-width:1180px){main{grid-template-columns:minmax(0,1fr)}.panel.right{grid-column:1/-1;
-    position:static;max-height:none;overflow:visible}}
+  @media (max-width:1180px){main{grid-template-columns:minmax(0,1fr)}
+    /* 与 main:not(.single-mode) aside.panel.right 的 sticky 规则同特异性，窄屏才能真正退回文档流 */
+    main:not(.single-mode) aside.panel.right,main.single-mode aside.panel.right{
+      grid-column:1/-1;position:static;max-height:none;overflow:visible;align-self:auto}}
   @media (max-width:860px){main{grid-template-columns:1fr}}
   @media (max-width:640px){body{padding-left:0}.rail{position:static;width:100%;height:auto;
     flex-direction:row;overflow-x:auto;padding:8px}.rail-gap,.rail-bottom{display:none}
