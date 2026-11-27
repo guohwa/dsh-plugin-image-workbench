@@ -252,23 +252,19 @@
      题材改用一枚小胶囊强调，后面的组合用普通字重，读起来更稳 */
   .combo-rec .cr-tag{display:inline-block;margin:0 7px 0 2px;padding:1px 7px;border-radius:7px;
     background:#efe9ff;color:#5b49d6;font-weight:600;letter-spacing:.2px}
-  /* 读的是哪一边：一枚可点的小胶囊，点一下换另一边重配（用户 2026-11-27 反馈读错来源） */
-  .combo-rec .cr-src{display:inline-block;margin:0 7px 0 0;padding:1px 7px;border-radius:7px;
-    border:1px solid #d8cbff;background:#fff;color:#5b49d6;font:inherit;font-size:11.5px;
-    line-height:1.7;cursor:pointer;transition:.14s;white-space:nowrap}
-  .combo-rec .cr-src:hover{background:#f3edff;border-color:#bda6ff}
-  /* 手动按钮已撤（2026-11-27：单图 / 多图分组后推荐改自动），只留一个轻量「换一组」文字链 */
-  .combo-rec .cr-again{flex:none;border:0;background:none;color:#5b49d6;font:inherit;font-size:12px;
-    cursor:pointer;padding:4px 6px;border-radius:8px;white-space:nowrap}
-  .combo-rec .cr-again:hover{background:#f3edff}
-  .combo-rec .cr-again[hidden]{display:none}
+  /* 读的是哪一边：一枚小胶囊说明，跟页面走不可点（用户 2026-11-27：单图多图分开后无需切换） */
+  .combo-rec .cr-read{display:inline-block;margin:0 7px 0 0;padding:1px 7px;border-radius:7px;
+    background:#f4f1fb;color:#6b6280;font-size:11.5px;line-height:1.7;white-space:nowrap}
+  /* 手动按钮回归（2026-11-27 晚：按内容推荐还原），配过一次变「换一组」 */
+  .combo-rec .cr-btn{flex:none;padding:7px 13px;font-size:12.5px;border-radius:9px}
+  .combo-rec .cr-btn[disabled]{opacity:.55;cursor:default}
   .combo-rec.busy .cr-ic{animation:crspin 1s linear infinite}
   @keyframes crspin{to{transform:rotate(360deg)}}
   @media (max-width:860px){
     .combo-rec{flex-wrap:wrap;gap:8px}
     .combo-rec .cr-ic{display:none}
     .combo-rec .cr-txt{order:1;flex:1 1 100%}
-    .combo-rec .cr-again{order:2;flex:0 0 auto;margin-left:auto}
+    .combo-rec .cr-btn{order:2;flex:0 0 auto;margin-left:auto}
   }
   /* 图型 / 风格 / 主题色 / 参考图：四张严格一行等宽对齐（用户 2026-11-26 要求参考图和上面对齐）
      之前参考图因 flex-basis 被挤到第二行铺满，视觉上跟前三张不齐；现在四张同宽同高。 */
@@ -1569,11 +1565,12 @@
   <section class="panel" id="studioPanel">
     <h2>配图工坊 <span class="pill">handraw-style</span></h2>
     <p class="hint">先定组合拿到出图指令，再逐条补说明，程序拼好提示词后一次出图。提示词可手改。</p>
-    <!-- 按内容推荐（自动）：进单图 / 多图页且三张卡还空着就自动配一套；换一组走右侧文字链 -->
+    <!-- 按内容推荐：进单图 / 多图页且三张卡还空着就自动配一套；右侧按钮手动再配，配过一次变「换一组」。
+         读源跟着页面走：单图页读单图关键字，多图页读选题 / 正文 / 分镜，不再切换（用户 2026-11-27） -->
     <div class="combo-rec" id="comboRec">
       <span class="cr-ic"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.9 5.4L19 9.3l-5.1 1.9L12 16.6l-1.9-5.4L5 9.3l5.1-1.9L12 2z"/><path d="M18.5 15l.8 2.3 2.3.8-2.3.8-.8 2.3-.8-2.3-2.3-.8 2.3-.8.8-2.3z"/></svg></span>
-      <span class="cr-txt" id="comboRecNote">写了内容就会自动配一套图型 · 风格 · 主题色；想再换点右边的「换一组」。</span>
-      <button class="cr-again" id="comboAgain" type="button" hidden title="按同样内容换一套组合，上一组不会被再用">换一组</button>
+      <span class="cr-txt" id="comboRecNote">写了内容就会自动配一套图型 · 风格 · 主题色；也可以点右边手动配。</span>
+      <button class="btn primary cr-btn" id="comboRecBtn" type="button" title="按本页内容（单图读关键字，多图读选题/正文/分镜）推荐一套组合，直接替换上面三张卡">按内容推荐</button>
     </div>
     <div class="demo-note" id="demoNote" hidden>
       <span id="demoNoteText"></span>
@@ -2543,15 +2540,13 @@ function ensureStyle(){
    打分在后端（server/recommend.py），纯词表，不调模型，点一下就有结果。 */
 let _comboLast = null;      // 上一次推荐的三个 id，用来让「换一组」真的换
 let _comboBusy = false;
-/* 推荐读哪一边的内容。以前是「有分镜就多图，否则单图框有字就读单图」，
-   结果单图框里留着一句旧示例、左侧又写好了正文时，换一组一直吃单图那段旧词
-   （用户 2026-11-27 截图）。改成看「最后动过哪边」，并且把读的是哪边写在推荐带上。 */
-let _srcLast = '';          // 'single' 单图框 / 'multi' 左侧选题正文分镜 / '' 还没动过
-let _comboSrc = '';         // '' 跟随 _srcLast；'single' / 'multi' 用户点了推荐带上的切换
+/* 推荐读哪一边的内容。单图 / 多图已是两个独立分组（用户 2026-11-27 定案）：
+   各自的页面读各自的内容——单图页读单图关键字，其他页读选题 / 正文 / 分镜；
+   那边空着才回退到另一边，不再有「读：xxx ⇄」切换。 */
+let _srcLast = '';          // 'single' 单图框 / 'multi' 左侧选题正文分镜 / '' 还没动过（仅留作埋点）
 function markSrc(which){
   if (which !== 'single' && which !== 'multi') return;
   _srcLast = which;
-  _comboSrc = '';           // 一动内容就回到自动跟随，别让上次的手动指定粘住
 }
 
 function comboSource(src){
@@ -2567,13 +2562,14 @@ function comboSource(src){
   // 返回「文字 + 这段文字从哪来」：来源决定用单图的纯图-图文，还是多图的纯图-图文-摄影
   if (src === 'single') return s ? {text: s, from: 'single'} : {text: m, from: 'multi'};
   if (src === 'multi')  return m ? {text: m, from: 'multi'}  : {text: s, from: 'single'};
-  if (_comboSrc === 'single' && s) return {text: s, from: 'single'};
-  if (_comboSrc === 'multi'  && m) return {text: m, from: 'multi'};
-  if (_srcLast === 'single' && s) return {text: s, from: 'single'};
-  if (_srcLast === 'multi'  && m) return {text: m, from: 'multi'};
-  // 没动过、或那一边是空的：左侧有正文/分镜就按多图（那是主内容），都没有才用单图关键字
-  if (m) return {text: m, from: 'multi'};
-  if (s) return {text: s, from: 'single'};
+  // 自动档：跟着当前页面走——单图页读单图，其他页读多图；本页空着才回退另一边
+  if (window.currentNav === 'single'){
+    if (s) return {text: s, from: 'single'};
+    if (m) return {text: m, from: 'multi'};
+  } else {
+    if (m) return {text: m, from: 'multi'};
+    if (s) return {text: s, from: 'single'};
+  }
   return {text: '', from: 'multi'};
 }
 function comboSrcLabel(from){
@@ -2597,10 +2593,10 @@ async function comboRecommend(src){
     toast('上面还没有内容：单图先写关键字，多图先写选题或拆好分镜', {type:'err', title:'没有可读的内容'});
     return;
   }
-  const again = $('#comboAgain');
+  const btn = $('#comboRecBtn');
   const prevHtml = $('#comboRecNote') ? $('#comboRecNote').innerHTML : '';
   _comboBusy = true;
-  if (again) again.disabled = true;
+  if (btn) btn.disabled = true;
   const bar = $('#comboRec');
   if (bar) bar.classList.add('busy');
   comboNote('正在读' + comboSrcLabel(picked.from) + '，给 170 个图型、372 种风格和 36 个配色打分…');
@@ -2657,10 +2653,7 @@ async function comboRecommend(src){
       recomposeAllQuiet();
     }
 
-    const other = picked.from === 'single' ? 'multi' : 'single';
-    comboNote('<button class="cr-src" id="crSrc" type="button" data-src="' + other +
-      '" title="这次读的是' + esc(comboSrcLabel(picked.from)) + '，点一下换成' +
-      esc(comboSrcLabel(other)) + '重新配">读：' + esc(comboSrcLabel(picked.from)) + ' ⇄</button>' +
+    comboNote('<span class="cr-read">读：' + esc(comboSrcLabel(picked.from)) + '</span>' +
       '<i class="cr-tag">' + esc(tagTxt) + '</i> ' +
       esc(L.id + ' ' + L.title) + ' · ' + esc(styleName) + ' · ' + esc(C.name) +
       (d.note ? '　（' + esc(d.note) + '）' : ''));
@@ -2671,9 +2664,9 @@ async function comboRecommend(src){
     toast('推荐失败：' + e.message, {type:'err'});
   }finally{
     _comboBusy = false;
-    if (again) again.disabled = false;
-    /* 配过一套之后才亮「换一组」；还没配过就没有可换的东西 */
-    if (again) again.hidden = !_comboLast;
+    if (btn) btn.disabled = false;
+    /* 配过一套之后按钮变「换一组」，再点就换下一套 */
+    if (btn) btn.textContent = _comboLast ? '换一组' : '按内容推荐';
     if (bar) bar.classList.remove('busy');
   }
 }
@@ -5806,16 +5799,8 @@ $('#qsStop').onclick = async ()=>{
   }
 };
 $('#qsRestore').onclick = qsRestoreExample;
-/* 手动推荐按钮已撤；推荐带右边的「换一组」负责同一份内容换一套搭配 */
-if ($('#comboAgain')) $('#comboAgain').onclick = ()=> comboRecommend('auto');
-/* 推荐带上的「读：xxx ⇄」：点一下换成另一边重新配 */
-if ($('#comboRecNote')) $('#comboRecNote').addEventListener('click', (e)=>{
-  const t = e.target.closest ? e.target.closest('.cr-src') : null;
-  if (!t) return;
-  e.preventDefault();
-  _comboSrc = t.dataset.src || '';
-  comboRecommend('auto');
-});
+/* 按内容推荐按钮：没配过叫「按内容推荐」，配过一次变「换一组」；读源跟当前页面走 */
+if ($('#comboRecBtn')) $('#comboRecBtn').onclick = ()=> comboRecommend('auto');
 /* 谁最后动过内容，推荐组合就按哪一边读：单图框 → 单图；选题/标题/正文/小说/分镜 → 多图 */
 document.addEventListener('input', (e)=>{
   const t = e.target; if (!t) return;

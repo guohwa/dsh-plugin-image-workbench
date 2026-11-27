@@ -2027,12 +2027,12 @@ _rj = _rp.json() if _rp.status_code == 200 else {}
 ok('推荐接口可用，返回三件套 / 题材 / 标签',
    _rp.status_code == 200 and (_rj.get('layout') or {}).get('id') in _LAY_IDS
    and isinstance(_rj.get('tags'), list))
-# 2026-11-27：单图 / 多图分组后手动推荐按钮撤掉，改自动推荐 + 换一组文字链
-ok('手动推荐按钮已撤，改自动推荐 + 换一组文字链',
-   'id="comboRecBtn"' not in _html and 'id="comboTop"' not in _html
-   and 'id="qsRec"' not in _html and 'id="randomCombo"' not in _html
-   and 'id="comboAgain"' in _html
-   and "if ($('#comboAgain')) $('#comboAgain').onclick = ()=> comboRecommend('auto');" in _html
+# 2026-11-27 晚：「按内容推荐」按钮还原（配过一次变「换一组」），自动推荐保留
+ok('按内容推荐按钮已还原，配过一次变「换一组」，自动推荐保留',
+   'id="comboRecBtn"' in _html and 'id="comboAgain"' not in _html
+   and 'id="comboTop"' not in _html and 'id="qsRec"' not in _html and 'id="randomCombo"' not in _html
+   and "if ($('#comboRecBtn')) $('#comboRecBtn').onclick = ()=> comboRecommend('auto');" in _html
+   and "if (btn) btn.textContent = _comboLast ? '换一组' : '按内容推荐';" in _html
    and 'function selUntouched(){' in _html
    and 'function snapshotSelInit(){' in _html
    and 'snapshotSelInit();       // 自动推荐以此为「用户没动过」的基线' in _html
@@ -2041,23 +2041,21 @@ ok('手动推荐按钮已撤，改自动推荐 + 换一组文字链',
    and "'/api/recommend'" in _html and 'avoid_layout' in _html)
 ok('推荐前先读原始关键字，不拿九行提示词去匹配题材',
    "(_qsOptimized && _qsRawKey) ? _qsRawKey : val('#qsKey')" in _html)
-# 2026-11-27：单图框留着旧提示词时，换一组一直吃单图，左侧正文被无视
-ok('推荐按「最后动过哪一边」读内容，并写明读的是哪边、可一键换边',
-   "if (_srcLast === 'single' && s) return {text: s, from: 'single'};" in _html
-   and "if (_srcLast === 'multi'  && m) return {text: m, from: 'multi'};" in _html
-   and "if (m) return {text: m, from: 'multi'};" in _html
+# 2026-11-27 晚：单图 / 多图已分组，读源跟页面走（单图页读关键字、多图页读正文分镜），换边切换撤掉
+ok('推荐读源跟页面走，不再有读源切换',
+   "if (window.currentNav === 'single'){" in _html
+   and "if (_srcLast === 'single' && s)" not in _html
+   and "_comboSrc" not in _html
+   and 'id="crSrc"' not in _html and 'class="cr-src"' not in _html
+   and "e.target.closest('.cr-src')" not in _html
    and "function markSrc(which){" in _html
    and "markSrc('multi');                 // 生成提示词是多图这一侧的动作" in _html
-   and "markSrc('single');" in _html
-   and "if (t.id === 'qsKey') markSrc('single');" in _html
-   and "t.closest('#itemList')" in _html
-   and 'id="crSrc"' in _html and 'class="cr-src"' in _html
-   and "e.target.closest('.cr-src')" in _html
-   and 'function comboSrcLabel(from)' in _html)
-ok('推荐后同步三张卡、记住这次风格，配过才亮「换一组」',
+   and 'function comboSrcLabel(from)' in _html
+   and '<span class="cr-read">读：' in _html)
+ok('推荐后同步三张卡、记住这次风格，按钮变「换一组」',
    'state.sel.layout = L;' in _html and 'state.sel.color  = C;' in _html
    and "_comboLast = {layout: L.id, style: S.id, color: C.id};" in _html
-   and "if (again) again.hidden = !_comboLast;" in _html)
+   and "if (btn) btn.textContent = _comboLast ? '换一组' : '按内容推荐';" in _html)
 # 2026-11-27：缩微摄影融合默认常开，只有用户自己关过才记住「关」
 ok('缩微摄影融合默认常开，用户关过才记住',
    '<input type="checkbox" id="fusion" checked>' in _html
