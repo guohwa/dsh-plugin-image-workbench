@@ -2043,7 +2043,7 @@ ok('热榜分组页上下贴边，不再有卡片外框',
    'main.hot-full{padding:0}' in _html
    and 'main.hot-full #pageHot{height:calc(100vh - var(--hot-top,69px))}' in _html
    and 'main.hot-full dialog.inline-dlg.hb-dlg{height:100%;border-radius:0;background:transparent;box-shadow:none}' in _html
-   and 'main.hot-full dialog.inline-dlg.hb-dlg .inner{height:100%;min-height:0;padding:0 16px}' in _html
+   and 'main.hot-full dialog.inline-dlg.hb-dlg .inner{height:100%;min-height:0;padding:3px 16px 0}' in _html
    and "main.classList.toggle('hot-full', name === 'hot');" in _html
    and "header.offsetTop + header.offsetHeight" in _html)
 
