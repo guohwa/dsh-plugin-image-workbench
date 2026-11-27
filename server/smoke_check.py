@@ -2069,7 +2069,8 @@ ok('热榜分组页上下贴边，不再有卡片外框',
 # 2026-11-27：「抓一次热榜」放在工具栏右端，标题行只留关闭（分组页隐藏）
 ok('抓一次热榜按钮移到工具栏右侧',
    'id="hbClose" type="button">关闭</button>\n    </div>\n    <div class="hb-toolbar">' in _html
-   and '<span class="spacer"></span>\n      <button class="btn ghost mini" id="hbRefresh"' in _html
+   and '<input id="hbSearch" type="search" placeholder="搜索热榜话题…" aria-label="搜索热榜话题">\n      <button class="btn ghost mini" id="hbRefresh"' in _html
+   and 'dialog.inline-dlg.hb-dlg .hb-toolbar input{min-width:240px;flex-basis:320px}' in _html
    and 'if(hbRefresh) hbRefresh.onclick = function(){ hbLoad(1); };' in _html)
 # 2026-11-27：热榜已独立成页，文案页不再显示 AI 热点 / 推荐话题两张重复卡
 ok('文案页去掉 AI 热点与推荐话题两张卡',
