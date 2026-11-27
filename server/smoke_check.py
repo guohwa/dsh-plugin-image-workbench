@@ -2119,10 +2119,12 @@ ok('文案页一键清空只清右侧内容，草稿箱和配图设置保留',
    and "左侧草稿箱会原样保留。" in _html
    and 'toast(\'右侧内容已清空，草稿箱保留\');' in _html)
 # 2026-11-27：拆成分镜缩小，与 AI 润色 / 复制 / 标题编号同一行
-ok('拆成分镜按钮缩小并并入底部操作行',
+ok('拆成分镜按钮与 AI 生成文章同尺寸并并入底部操作行',
    '<div class="row doc-actions" style="margin-top:8px">' in _html
-   and '<button class="btn primary mini" id="splitToItems" type="button">拆成分镜 →</button>' in _html
-   and '<button class="btn ghost mini" id="polishText">AI 润色</button>' in _html
+   and '<button class="btn primary" id="splitToItems" type="button">拆成分镜 →</button>' in _html
+   and '<button class="btn ghost" id="polishText">AI 润色</button>' in _html
+   and '<button class="btn ghost" id="copyText">复制</button>' in _html
+   and '.doc-actions .btn.ghost{border:0;box-shadow:inset 0 0 0 1px var(--line)}' in _html
    and 'class="btn primary full" id="splitToItems"' not in _html)
 # 2026-11-27：拆成分镜成功就跳多图并同步左侧导航，失败 / 取消不跳
 ok('拆成分镜成功即跳多图，左侧分组同步定位',
