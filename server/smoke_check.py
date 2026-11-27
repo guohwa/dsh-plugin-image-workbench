@@ -1686,7 +1686,34 @@ ok('漫画模式下拆成分镜按钮被拦，不重建清单不丢承接',
    'state.comicBible && state.items.length' in _html
    and '漫画分镜已拆好 ' in _html)
 ok('一键清空连漫画角色锚点一起清',
-   "state.comicBible = '';          // 角色锚点也要清" in _html)
+   "state.comicBible = '';          // 角色锚点也要清，否则下一批手写内容会串到上一部漫画的人物" in _html)
+# 2026-11-27：一键清空按分组拆分，只清当前页面内容，不跨分组
+ok('一键清空按分组拆成三个函数，按当前页路由',
+   'async function resetMulti(){' in _html
+   and 'function resetSingle(){' in _html
+   and 'function resetCopyOnly(){' in _html
+   and "if (window.currentNav === 'copy') return resetCopyOnly();" in _html
+   and "if (window.currentNav === 'single') return resetSingle();" in _html
+   and 'async function resetAll' not in _html)
+ok('单图清空不动多图内容，多图清空不动单图关键字',
+   "['#topic', '#docTitle', '#docBody', '#novelBody', '#note'].forEach(id=>{ $(id).value = ''; });" in _html
+   and "'#topic', '#docTitle', '#docBody', '#novelBody', '#note', '#qsKey'].forEach" not in _html
+   and 'state.singleResults = []; state.singleIdx = 0;' in _html
+   and 'toast(\'多图页已清空，单图关键字和单图结果保留\');' in _html
+   and 'toast(\'单图页已清空，多图内容和草稿箱不受影响\');' in _html)
+_reset_region = _html[_html.index('function patchSession'): _html.index('/* ---------- 参考图：点击')]
+ok('清空不再动选型卡 / 参考图 / 设置，会话快照只抹自己名下字段',
+   'function patchSession(patch){' in _html
+   and 'Object.assign(s, patch);' in _html
+   and "localStorage.removeItem('wb_session')" not in _html
+   and 'state.sel.style' not in _reset_region
+   and 'state.ref = null' not in _reset_region
+   and 'state.selTouched' not in _reset_region)
+ok('文案页一键清空只清右侧内容，草稿箱和配图设置保留',
+   'function resetCopyOnly(){' in _html
+   and "if (window.currentNav === 'copy') return resetCopyOnly();" in _html
+   and "patchSession({topic: '', title: '', body: '', novel: '', items: [], results: []," in _html
+   and 'toast(\'右侧内容已清空，草稿箱保留\');' in _html)
 ok('分镜写入后状态栏给出下一步指引',
    '不用再点「拆成分镜」，直接点右上「批量出图」' in _html)
 ok('兜底分镜抽小标题，不再一律第N格',
@@ -2126,11 +2153,7 @@ ok('AI 生成文章点下就有转圈动效，任务结束才恢复',
    and '@keyframes iwSpin{to{transform:rotate(360deg)}}' in _html
    and "btn.textContent = '生成中…';" in _html
    and 'await poll(job_id, statusEl, mode, waitTxt);   // 等任务真正结束再收按钮动效' in _html)
-ok('文案页一键清空只清右侧内容，草稿箱和配图设置保留',
-   'function resetCopyOnly(){' in _html
-   and "$('#resetAll').onclick = ()=> (window.currentNav === 'copy' ? resetCopyOnly() : resetAll());" in _html
-   and "左侧草稿箱会原样保留。" in _html
-   and 'toast(\'右侧内容已清空，草稿箱保留\');' in _html)
+# 2026-11-27：文案页一键清空断言并入上方「按分组拆分」一组，旧断言删除
 # 2026-11-27：拆成分镜缩小，与 AI 润色 / 复制 / 标题编号同一行
 ok('拆成分镜按钮与 AI 生成文章同尺寸并并入底部操作行',
    '<div class="row doc-actions" style="margin-top:8px">' in _html

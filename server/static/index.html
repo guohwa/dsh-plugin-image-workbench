@@ -1438,7 +1438,7 @@
   <div class="head-acts">
     <span class="status-marquee" id="imageStatusWrap" title=""><span class="status-track" id="imageStatusTrack"><span class="status" id="imageStatus"></span><span class="msep">　　</span><span class="status status-dup" id="imageStatusDup"></span><span class="msep">　　</span></span></span>
     <button class="btn ghost mini" id="resetAll" type="button"
-      title="清掉选题、标题、正文、分镜清单、补充要求和参考图；图型 / 风格 / 主题色变成不限。画幅、情绪、留白、出图模式保留">一键清空</button>
+      title="只清空当前分组的内容：单图清关键字和单图结果，文案清右侧内容工坊，多图清选题正文分镜和多图结果；其他分组、选型和参考图都不动">一键清空</button>
     <button class="btn" id="composeAll" type="button">生成提示词</button>
     <button class="btn primary" id="genImage" type="button">批量出图</button>
     <button class="btn stop" id="stopGen" type="button" title="停止当前正在出图与排队中的任务" disabled>停止生图</button>
@@ -7226,59 +7226,72 @@ $('#splitToItems').onclick = function(){
     }
   });
 })();
-/* ---------- 一键清空：回到刚打开页面时的状态 ---------- */
-async function resetAll(){
-  const touched = state.items.some(x=> (x.title || '').trim() || (x.body || '').trim())
-    || ['#topic', '#docTitle', '#docBody', '#novelBody', '#note', '#qsKey'].some(id=> ($(id).value || '').trim())
-    || !!state.sel.style || !!state.sel.layout || !!state.sel.color
-    || !!state.ref;
-  if (touched && !confirm('清空当前所有内容？\n\n选题、标题、正文、小说原文、分镜清单、补充要求、参考图都会清掉，'
-    + '图型 / 风格 / 主题色变成「不限」。\n画幅、情绪、留白、出图模式这些设置保留不动。')) return;
+/* ---------- 一键清空：每个分组只清自己页面上的内容，绝不跨分组（用户 2026-11-27） ----------
+   单图 / 文案 / 多图三个页面共用一个按钮，但清的东西完全分开：
+   单图只清单图侧（关键字 + 单图结果），多图只清多图侧（选题正文分镜 + 多图结果），
+   文案只清右侧内容工坊。选型卡、参考图、画幅情绪是两个出图页面共用的
+   工作台级配置，哪个页面的清空都不碰它们——清了必然串到另一页。 */
+function patchSession(patch){
+  /* 会话快照是三个页面共用的存储：整条删掉会把别的页面的内容一起冲掉，
+     改成只改自己名下的字段，其余原样保留 */
+  try{
+    const raw = localStorage.getItem('wb_session');
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    Object.assign(s, patch);
+    localStorage.setItem('wb_session', JSON.stringify(s));
+  }catch(e){}
+}
 
+function resetSingle(){
+  const touched = ($('#qsKey').value || '').trim() || state.singleResults.length;
+  if (touched && !confirm('清空单图页内容？\n\n关键字和单图结果会清掉；选题正文、分镜清单、'
+    + '多图结果、草稿箱都不动；图型 / 风格 / 主题色、参考图保留。')) return;
+  $('#qsKey').value = '';
+  _qsOptimized = false; _qsRawKey = ''; _qsFingerprint = '';
+  qsStatus('');
+  state.demoPending = false; hideDemoNote();
+  state.singleResults = []; state.singleIdx = 0;
+  renderStrip();
+  const st = $('#imageStatus');
+  if (st){ st.className = 'status'; st.textContent = ''; }
+  patchSession({singleResults: []});
+  toast('单图页已清空，多图内容和草稿箱不受影响');
+}
+
+async function resetMulti(){
+  const touched = state.items.some(x=> (x.title || '').trim() || (x.body || '').trim())
+    || ['#topic', '#docTitle', '#docBody', '#novelBody', '#note'].some(id=> ($(id).value || '').trim())
+    || state.results.length;
+  if (touched && !confirm('清空多图页内容？\n\n选题、标题、正文、小说原文、分镜清单、补充要求和'
+    + '多图结果会清掉；单图关键字和单图结果、草稿箱都不动；图型 / 风格 / 主题色、参考图保留。')) return;
   state.items = [];
-  state.hotStory = null;          // 一键清空连热点资料一起断掉
-  state.hotRef = null;
+  state.hotStory = null; state.hotRef = null;
   state.comicBible = '';          // 角色锚点也要清，否则下一批手写内容会串到上一部漫画的人物
   state.comicNovel = false;
   const cn = $('#comicNovel'); if(cn) cn.checked = false;
   renderItems();
   state.group = ''; $('#groupTag').textContent = '';
-  ['#topic', '#docTitle', '#docBody', '#novelBody', '#note', '#qsKey'].forEach(id=>{ $(id).value = ''; });
-  _qsOptimized = false; _qsRawKey = ''; _qsFingerprint = ''; qsStatus('');
+  ['#topic', '#docTitle', '#docBody', '#novelBody', '#note'].forEach(id=>{ $(id).value = ''; });
+  state.instrCustom = null;
   setDocTab('doc', true);
   $('#docRaw').textContent = '';
-  syncPreview();
-
-  state.instrCustom = null;
-
-  // 三张卡清成「不限」：不选也照样能出图（有参考图就照参考图，没参考图就按文案拼）
-  state.sel.style = null;
-  state.sel.color = null;
-  state.sel.layout = null;
-  state.selTouched = true;      // 用户主动清过，别在空手出图时又给他随机选一套
-  state.demoPending = false;
-  syncPicks();
-  state.ref = null; syncRef();
   state.redo = null; renderRedoBar();
-  hideDemoNote();
-
   state.results = []; state.idx = 0;
-  state.singleResults = []; state.singleIdx = 0;
-  renderStrip(); clearCover();
+  renderStrip();
   ['#imageStatus', '#textStatus', '#splitStatus'].forEach(id=>{
     const el = $(id); if (el){ el.className = 'status'; el.textContent = ''; }
   });
-
-  // 断开和上一份草稿的关系：清空后再「暂存」应该是一份新的，别写进旧草稿
-  state.draftId = null;
-  state.draftKey = '';
+  // 分镜清了，和上一份草稿的关系也断开：再「暂存」应该是新的，别写进旧草稿
+  state.draftId = null; state.draftKey = '';
   try{
     localStorage.removeItem('wb_draft_id'); localStorage.removeItem('wb_draft_key');
-    localStorage.removeItem('wb_session');   // 清空就是真清空，刷新不该再把内容捞回来
   }catch(e){}
+  patchSession({topic: '', title: '', body: '', novel: '', items: [], results: [],
+    hot_story: null, hot_ref: null, comic_bible: '', comic_novel: false});
   markContentClean();          // 空白页不算改动，别让自动暂存把空壳存进草稿箱
   refreshDraftCount();
-  toast('已清空，图型 / 风格 / 主题色都变成不限');
+  toast('多图页已清空，单图关键字和单图结果保留');
 }
 
 /* ---------- 文案页「一键清空」：只清右侧内容工坊，左侧草稿箱和配图设置都不动 ---------- */
@@ -7299,12 +7312,14 @@ function resetCopyOnly(){
   ['#textStatus', '#splitStatus'].forEach(id=>{
     const el = $(id); if (el){ el.className = 'status'; el.textContent = ''; }
   });
-  // 断开和上一份草稿的关系，但草稿箱里的那条本身不删
+  // 断开和上一份草稿的关系，但草稿箱里的那条本身不删；
+  // 会话快照只抹文案侧字段，单图关键字和单图结果原样保留（跨分组不清）
   state.draftId = null; state.draftKey = '';
   try{
     localStorage.removeItem('wb_draft_id'); localStorage.removeItem('wb_draft_key');
-    localStorage.removeItem('wb_session');
   }catch(e){}
+  patchSession({topic: '', title: '', body: '', novel: '', items: [], results: [],
+    hot_story: null, hot_ref: null, comic_bible: '', comic_novel: false});
   markContentClean();
   toast('右侧内容已清空，草稿箱保留');
 }
@@ -7354,7 +7369,11 @@ document.addEventListener('paste', e=>{
     }
   }
 });
-$('#resetAll').onclick = ()=> (window.currentNav === 'copy' ? resetCopyOnly() : resetAll());
+$('#resetAll').onclick = ()=>{
+  if (window.currentNav === 'copy') return resetCopyOnly();
+  if (window.currentNav === 'single') return resetSingle();
+  return resetMulti();
+};
 $('#demoNoteX').onclick = hideDemoNote;
 
 $('#openHistory').onclick = ()=> navTo('history');
