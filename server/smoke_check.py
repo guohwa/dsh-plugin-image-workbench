@@ -2108,18 +2108,16 @@ ok('热榜分组直接铺满页面，不再重复 AI 热点与推荐话题',
    and "const b = $('recOpen'); if (b) b.click();" not in _html
    and 'if(recOpen) recOpen.onclick = window.hbOpenHot;' in _html
    and _html.count('id="hotBoardDlg"') == 1)
-# 2026-11-27：排版预览卡片悬停（sticky 而非 fixed），窗口太矮面板内部自己滚；窄屏退回文档流
-ok('排版预览卡片悬停：滚动时贴页头停住，窄屏退回普通文档流',
-   'aside.panel.right{position:sticky;top:calc(var(--hot-top,69px) + 14px);align-self:start;'
+# 2026-11-27：排版预览卡片悬停（sticky 而非 fixed），只作用于多图 / 文案页；
+# 单图页预览保持原生布局不悬停（用户 2026-11-27 晚纠正）；窄屏退回文档流
+ok('排版预览卡片悬停仅限多图 / 文案页，单图页原生布局',
+   'main:not(.single-mode) aside.panel.right{position:sticky;top:calc(var(--hot-top,69px) + 14px);align-self:start;'
    in _html
    and 'max-height:calc(100vh - var(--hot-top,69px) - 28px);overflow-y:auto;' in _html
+   and 'main:not(.single-mode) aside.panel.right > .phone{flex:1 1 auto' in _html
+   and 'main:not(.single-mode) aside.panel.right > *{flex:0 0 auto}' in _html
    and 'position:static;max-height:none;overflow:visible' in _html
    and 'fitHot();\n  window.addEventListener(\'resize\', fitHot);' in _html)
-# 2026-11-27：面板改纵向 flex，手机预览弹性收缩吃掉高度差，空态不再出现纵向滚动条
-ok('排版预览面板空态无纵向滚动条（手机预览弹性收缩）',
-   'aside.panel.right > *{flex:0 0 auto}' in _html
-   and 'aside.panel.right > .phone{flex:1 1 auto;min-height:220px;display:flex;flex-direction:column}' in _html
-   and 'aside.panel.right .phone .body{flex:1 1 auto;min-height:0;max-height:none}' in _html)
 # 2026-11-27：出图中的分组图标加呼吸动效——单图挂 qsWorking，多图挂 setBatchRunning（两条批量路径共用）
 ok('左栏分组图标有出图工作态动效',
    '.rail-item.busy{position:relative;color:var(--primary)}' in _html

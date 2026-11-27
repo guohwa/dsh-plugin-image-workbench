@@ -128,15 +128,16 @@
   /* 热榜 / 历史 / 监控 / 号池不显示右侧预览，主区不能替隐藏的预览留 440px 空列 */
   main.solo{grid-template-columns:minmax(0,1fr)}
   /* 排版预览卡片悬停（不是死固定）：往下滚时预览贴着页头停住、像浮起来的卡片；
-     窗口太矮放不下整块时，面板内部自己出滚动条，不跟着页面滚丢 */
-  aside.panel.right{position:sticky;top:calc(var(--hot-top,69px) + 14px);align-self:start;
+     窗口太矮放不下整块时，面板内部自己出滚动条，不跟着页面滚丢。
+     只作用于多图 / 文案页（用户 2026-11-27：单图页预览要保持原生布局，不悬停） */
+  main:not(.single-mode) aside.panel.right{position:sticky;top:calc(var(--hot-top,69px) + 14px);align-self:start;
     max-height:calc(100vh - var(--hot-top,69px) - 28px);overflow-y:auto;
     display:flex;flex-direction:column}
   /* 面板内手机预览弹性收缩：吃掉高度差，空态也不会把面板顶出滚动条（用户 2026-11-27） */
-  aside.panel.right > *{flex:0 0 auto}
-  aside.panel.right > .phone{flex:1 1 auto;min-height:220px;display:flex;flex-direction:column}
-  aside.panel.right .phone .bar{flex:0 0 auto}
-  aside.panel.right .phone .body{flex:1 1 auto;min-height:0;max-height:none}
+  main:not(.single-mode) aside.panel.right > *{flex:0 0 auto}
+  main:not(.single-mode) aside.panel.right > .phone{flex:1 1 auto;min-height:220px;display:flex;flex-direction:column}
+  main:not(.single-mode) aside.panel.right .phone .bar{flex:0 0 auto}
+  main:not(.single-mode) aside.panel.right .phone .body{flex:1 1 auto;min-height:0;max-height:none}
   /* 热榜分组整页：上接页头、下接窗口底，去掉卡片外框与四周留白 */
   main.hot-full{padding:0}
   main.hot-full #pageHot{height:calc(100vh - var(--hot-top,69px))}
