@@ -548,7 +548,7 @@
   /* 热榜独立分组页：宽屏下铺满主区，字号跟着放大；从文案页打开的小弹窗保持原样。
      必须写在 dialog.hb-dlg 之后，宽度 / 高度要压过弹窗上的 1240px、92vh 限制。 */
   dialog.inline-dlg.hb-dlg{width:100%;max-width:none;height:auto;max-height:none;margin:0}
-  dialog.inline-dlg.hb-dlg .inner{height:min(calc(100vh - 150px),980px);min-height:560px;padding:16px 4px}
+  dialog.inline-dlg.hb-dlg .inner{height:calc(100vh - 96px);min-height:560px;padding:16px 4px}
   dialog.inline-dlg.hb-dlg .dlg-head h3{font-size:18px}
   dialog.inline-dlg.hb-dlg .dlg-head h3 span{font-size:12px}
   dialog.inline-dlg.hb-dlg .dlg-head .btn{font-size:12.5px}

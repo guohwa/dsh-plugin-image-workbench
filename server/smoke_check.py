@@ -2033,6 +2033,7 @@ ok('热榜分组直接铺满页面，不再重复 AI 热点与推荐话题',
 # 2026-11-27：分组页要压过弹窗的 1240px 宽度上限，并在大屏放大卡片 / 榜单字号
 ok('热榜独立页宽度铺满主区，卡片与榜单字号放大',
    'dialog.inline-dlg.hb-dlg{width:100%;max-width:none;height:auto;max-height:none;margin:0}' in _html
+   and 'dialog.inline-dlg.hb-dlg .inner{height:calc(100vh - 96px);min-height:560px;padding:16px 4px}' in _html
    and 'dialog.inline-dlg.hb-dlg .hb-pname{font-size:15px}' in _html
    and 'dialog.inline-dlg.hb-dlg .hb-pitem{font-size:13px;gap:8px;line-height:1.8}' in _html
    and 'dialog.inline-dlg.hb-dlg .hb-table{font-size:13px}' in _html
