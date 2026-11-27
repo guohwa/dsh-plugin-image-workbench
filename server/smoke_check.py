@@ -187,6 +187,14 @@ ok('版本比较：按数字段比，预发布版低于同号正式版',
 _src_pool = (ROOT / 'pool.py').read_text(encoding='utf-8')
 _src_html = (ROOT / 'static' / 'index.html').read_text(encoding='utf-8')
 _src_app = (ROOT / 'app.py').read_text(encoding='utf-8')
+# 多开会话时两个执行层会把同一批任务各跑一遍、进度文件互相覆盖（2026-11-27 事故）
+ok('执行层单实例互斥（端口占位，第二个实例不接任务）',
+   '_acquire_instance_lock' in _src_app
+   and '_INSTANCE_LOCK_PORT' in _src_app
+   and 'EXEC_LAYER_TRIED and not EXEC_LAYER_OWNER' in _src_app)
+# 切换档案不等于「使用」：旧文案会让人以为当前这套很久没用了
+ok('接口档案区分「当前使用中」与「上次启用」',
+   '上次启用 ' in _src_html and '最近使用' not in _src_html)
 ok('已停止状态不落盘', 'not in ("done", "error", "cancelled")' in _src_pool)
 ok('取消后不再换号重试', 'if job.get("status") == "cancelled":' in _src_pool)
 ok('前端两个停止按钮齐全', 'id="stopGen"' in _src_html and 'id="monStop"' in _src_html)
@@ -213,6 +221,15 @@ ok('poll 认识 cancelled 状态立即收尾（单图停止卡死根因）',
    and 'else if (result === \'cancelled\') qsStatus(\'已停止本次出图\');' in _src_html)
 ok('后端支持按 job_id 精确停止', 'async def cancel_one' in _src_pool
    and 'POOL.cancel_one' in _src_app and 'body.get("job_ids")' in _src_app)
+# 2026-11-27：上游 400 内容审核（版权相似）跟账号无关——不能换号重试、不能记到账号失败账本，
+# 否则监控页「今日失败账号」一片红，好号被冤枉、额度白耗 3 次
+ok('内容审核 400 单独归类：不换号重试、不记账号失败',
+   'class PromptRejected(RuntimeError)' in _src_pool
+   and 'def is_prompt_reject(' in _src_pool
+   and 'if is_prompt_reject(r):' in _src_pool
+   and 'soft = isinstance(e, PromptRejected)' in _src_pool
+   and 'if email and not soft:' in _src_pool
+   and 'attempt["prompt_rejected"] = 1' in _src_pool)
 # AI 热点选题：卡片必须真的落在「选题」输入框上方，节点顺序错了会跑到下面去
 ok('前端 AI 热点选题节点齐全',
    all(x in _src_html for x in ('id="aihotList"', 'id="aihotDlg"', 'id="aihotDList"',
@@ -476,6 +493,43 @@ ok('升级白名单带上 changelog.json',
    and app._upgrade_rel('server/other.json') is None)
 ok('升级面板有更新说明区块',
    all(x in _src_html for x in ('id="upNotes"', 'id="upNotesBody"', 'function renderNotes')))
+
+# 增量升级：靠包里那份 update-manifest.json 只拉变化的文件，清单过期会静默漏更新，
+# 所以「版本号对得上」是硬门槛；全量模式再逐文件核对指纹（发版前必须重跑生成脚本）
+import upgrade_files as _uf
+_man_p = ROOT / 'update-manifest.json'
+_man = json.loads(_man_p.read_text(encoding='utf-8')) if _man_p.is_file() else {}
+_man_files = _man.get('files') or {}
+_pkg_ver = str(json.loads((ROOT.parent / 'package.json').read_text(encoding='utf-8')).get('version') or '')
+ok('增量升级清单存在且版本与 package.json 一致',
+   bool(_man_files) and str(_man.get('version') or '') == _pkg_ver,
+   f"清单 {_man.get('version') or '缺'} / 包 {_pkg_ver} —— 改完版本记得跑 scripts/make_manifest.py")
+ok('清单覆盖白名单且不含 vendor / 数据',
+   'server/app.py' in _man_files and 'server/static/index.html' in _man_files
+   and 'server/update-manifest.json' not in _man_files
+   and not any(k.startswith(('vendor/', 'server/workbench/')) for k in _man_files))
+ok('增量升级接口齐备（先增量，失败回退整包）',
+   all(hasattr(app, n) for n in ('_delta_plan', '_download_delta', '_apply_delta',
+                                 '_apply_full', '_write_code_files'))
+   and 'await _apply_delta(latest)' in _src_app)
+ok('有新版本时两处红点 + 主动推一次',
+   all(x in _src_html for x in ('id="railSetDot"', 'id="setUpdateDot"',
+                                'function setDots(on)', 'function pushOnce(v)',
+                                'setDots(true)', 'lastDelta')))
+ok('已是最新时「立即升级」置灰，不让人点出 400',
+   "goBtn.textContent = '已是最新'" in _src_html
+   and 'if (newer === false){' in _src_html)
+if not QUICK:
+    _drift = []
+    for _r, _m in _man_files.items():
+        _p = ROOT.parent / _r
+        try:
+            _raw = _p.read_bytes()
+        except OSError:
+            _drift.append(_r); continue
+        if _uf.sha_norm(_raw, _r) != str(_m.get('sha1') or ''):
+            _drift.append(_r)
+    ok('清单指纹与当前代码一致（发版前跑 make_manifest.py）', not _drift, _drift[:4])
 ok('access 无 fcntl 依赖', not hasattr(access, 'fcntl'))
 ok('工作台目录可用', (ROOT / 'app.py').is_file())
 ok('AUTH 为空(本地全放行)', app.AUTH is None)
@@ -678,6 +732,19 @@ ok('纯图/图文/摄影三种模式指令各自独立',
    and '图型：SC-002' not in composer.build_instruction({'layout': _L[0]}, '3:4', [], False, 'normal', False, 'pure-image', '')
    and '图文模式' in composer.build_instruction({}, '3:4', [], False, 'normal', False, 'graphic-text', '')
    and '摄影写真模式' in composer.build_instruction({}, '3:4', [], False, 'normal', False, 'photo', ''))
+# 2026-11-27 晚（用户拿官方 skill 截图对比）：摄影模式以前把图型吞了，选了等于没选
+_photo_instr = composer.build_instruction({'layout': _L[0], 'style': {'id': 'FE-005'},
+                                          'color': {'id': 'C-31'}},
+                                         '3:4', [], False, 'normal', False, 'photo', '情侣')
+_photo_prompt = composer.build_prompt(
+    {'title': '周末', 'body': '把手机放远'}, {'layout': _L[0]}, '3:4', [], False, 'normal',
+    image_mode='photo', shoot='情侣')
+ok('摄影模式带图型：指令有「图型：SC-002」，提示词有构图版式且明确不排字',
+   '图型：SC-002' in _photo_instr
+   and _photo_instr.startswith('摄影写真模式')
+   # 字段顺序对齐官方：模式 → 图型 → 风格 → 主题色 → 画幅
+   and _photo_instr.index('图型') < _photo_instr.index('风格') < _photo_instr.index('主题色')
+   and '构图版式' in _photo_prompt and '画面里不排任何文字' in _photo_prompt)
 _pure_c = asyncio.run(composer.compose({'image_mode': 'pure-image', 'ratio': '3:4',
                                         'items': [{'title': '猫', 'body': '窗台'}]}, [], _L, []))
 ok('拼词接口接受 pure-image，模式集合齐全',
@@ -1211,6 +1278,13 @@ ok('新增必填三项、地址格式与唯一性校验齐全',
    all(x in _src_html for x in ('请填名称（用于列表展示）',
        '需以 http:// 或 https:// 开头', '新增接口必须填 API Key', '该地址已有档案')))
 ok('保存失败保留表单与已填内容', '改动仍留在表单里' in _src_html)
+# 用户 2026-11-27：目录框要直接回显真实路径，别留空让人猜；原样存回默认目录不能变成自定义
+ok('保存目录回显实际路径 + 默认路径存回不落自定义',
+   "$('#cfgOutDir').value = d.output_dir || def;" in _src_html
+   and 'output_dir_is_default ? \'\' :' not in _src_html
+   and 'function refreshWsPane()' in _src_html
+   and "if (tab === 'ws'){" in _src_html
+   and '"" if d.resolve() == OUT_DIR.resolve() else str(d)' in _src_app)
 ok('档案保存走新增 / 编辑独立接口', "'POST':'PATCH'" in _src_html)
 ok('老全局控件搬进设置弹窗后仍一个不少',
    all(x in _src_html for x in ('id="cfgBase"', 'id="cfgWxGateway"',
@@ -2032,7 +2106,7 @@ ok('按内容推荐按钮已还原，配过一次变「换一组」，自动推�
    'id="comboRecBtn"' in _html and 'id="comboAgain"' not in _html
    and 'id="comboTop"' not in _html and 'id="qsRec"' not in _html and 'id="randomCombo"' not in _html
    and "if ($('#comboRecBtn')) $('#comboRecBtn').onclick = ()=> comboRecommend('auto');" in _html
-   and "if (btn) btn.textContent = _comboLast ? '换一组' : '按内容推荐';" in _html
+   and "btn.textContent = _comboLastByPage[pageKey] ? '换一组' : '按内容推荐';" in _html
    and 'function selUntouched(){' in _html
    and 'function snapshotSelInit(){' in _html
    and 'snapshotSelInit();       // 自动推荐以此为「用户没动过」的基线' in _html
@@ -2054,11 +2128,15 @@ ok('推荐读源完全隔离：单图页绝不读左侧正文分镜，多图页�
    and 'id="crSrc"' not in _html and 'class="cr-src"' not in _html
    and "e.target.closest('.cr-src')" not in _html
    and 'function comboSrcLabel(from)' in _html
-   and '<span class="cr-read">读：' in _html)
+   # 用户 2026-11-27：别写「左侧」「读：」，直接显示「正文与分镜（x 条）」
+   and "'正文与分镜（' + n + ' 条）'" in _html
+   and "return n ? '正文与分镜" in _html
+   and "'<span class=\"cr-read\">' + esc(comboSrcLabel(picked.from))" in _html
+   and '读：' not in _html and '左侧正文' not in _html)
 ok('推荐后同步三张卡、记住这次风格，按钮变「换一组」',
    'state.sel.layout = L;' in _html and 'state.sel.color  = C;' in _html
-   and "_comboLast = {layout: L.id, style: S.id, color: C.id};" in _html
-   and "if (btn) btn.textContent = _comboLast ? '换一组' : '按内容推荐';" in _html)
+   and "_comboLastByPage[pageKey] = {layout: L.id, style: S.id, color: C.id};" in _html
+   and "btn.textContent = _comboLastByPage[pageKey] ? '换一组' : '按内容推荐';" in _html)
 # 2026-11-27：缩微摄影融合默认常开，只有用户自己关过才记住「关」
 ok('缩微摄影融合默认常开，用户关过才记住',
    '<input type="checkbox" id="fusion" checked>' in _html
@@ -2076,6 +2154,19 @@ ok('左侧分组导航齐全，历史 / 监控 / 号池做成主区页面',
    and "$('#openHistory').onclick = ()=> navTo('history');" in _html
    and "$('#openMonitor').onclick = ()=> navTo('monitor');" in _html
    and "$('#openConfig').onclick = ()=> navTo('pool');" in _html)
+# 2026-11-27 晚（用户报障）：改单图的图型 / 风格 / 主题色，多图跟着一起变——
+# 三张卡是同一份 DOM，但状态必须按页存两份，切页把 state.sel 指过去再重绘
+ok('单图与多图选型隔离：sel / 手改指令 / 推荐历史都按页存',
+   'selByPage:{single:{style:null, layout:null, color:null},' in _html
+   and 'instrCustomByPage:{single:null, content:null}' in _html
+   and "const selKey = name === 'single' ? 'single' : 'content';" in _html
+   and 'state.sel = selBox;' in _html
+   and 'syncPicks(true);   // 静默重绘：切页不算改内容' in _html
+   and 'if (!silent) noteContentChanged();' in _html
+   and 'sel_single: selIds(state.selByPage.single),' in _html
+   and 'sel_content: selIds(state.selByPage.content),' in _html
+   and 'const comboPageKey = () => (window.currentNav' in _html
+   and '_comboLastByPage[pageKey] = {layout: L.id, style: S.id, color: C.id};' in _html)
 # 2026-11-27：单图置顶；排版预览底部只留常驻下载行与一行提示，
 # 提示词回显行 / 号池明细行 / 号池说明段全部移除，下载按钮无图时置灰
 ok('单图导航放第一位，排版预览底部只留下载与提示',
@@ -2129,6 +2220,11 @@ ok('单图页左右两栏底部对齐（右栏拉伸，封面区弹性填充）'
    and 'main.single-mode aside.panel.right .phone .cover{aspect-ratio:auto;height:100%}' in _html
    # 多图 / 文案页的 sticky 悬停不受影响
    and 'main:not(.single-mode) aside.panel.right{position:sticky' in _html)
+# 2026-11-27 晚：监控 / 历史 / 号池页预览漏出——sticky 规则里的 display:flex 压过 UA 的 [hidden]，
+# 必须显式兜底 hidden，否则 aside.hidden=true 也不收起来，被挤到页面下方
+ok('非单图/多图分组彻底隐藏右侧预览（hidden 覆盖 display:flex）',
+   'main:not(.single-mode) aside.panel.right[hidden],' in _html
+   and 'main.single-mode aside.panel.right[hidden]{display:none!important}' in _html)
 # 2026-11-27：出图中的分组图标加呼吸动效——单图挂 qsWorking，多图挂 setBatchRunning（两条批量路径共用）
 ok('左栏分组图标有出图工作态动效',
    '.rail-item.busy{position:relative;color:var(--primary)}' in _html
@@ -2249,7 +2345,7 @@ ok('设置弹窗三分组：工作台设置 / 接口配置 / 检查更新',
    '<dialog id="settingsDlg">' in _html
    and 'data-set="ws">工作台设置</button>' in _html
    and 'data-set="iface">接口配置</button>' in _html
-   and 'data-set="update">检查更新</button>' in _html
+   and 'data-set="update">检查更新<span class="dot-new" id="setUpdateDot" hidden></span></button>' in _html
    and 'id="setPaneWs"' in _html and 'id="setPaneIface"' in _html and 'id="setPaneUpdate"' in _html
    and '<div class="set-foot"><span id="cfgResult"></span></div>' in _html)
 ok('左下角设置打开弹窗而不是切到号池整页',

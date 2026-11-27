@@ -595,8 +595,9 @@ def build_instruction(sel: dict, ratio: str, moods: list[str], fusion: bool, whi
     layout = sel.get("layout")
     style = sel.get("style")
     color = sel.get("color")
-    # 摄影 / 纯图都不套图型版式：图型模板写的是「主标题/小辅助图/副标题」的位置，和不出字冲突
-    if layout and image_mode not in ("photo", "pure-image"):
+    # 纯图不排字、也不套版式，所以不带图型；摄影带图型——官方 skill 的摄影指令同样写
+    # 「图型：SC-008」，漏了等于选了没用（用户 2026-11-27 对比官方截图发现）
+    if layout and image_mode != "pure-image":
         bits.append(f"图型：{layout['id']}")
     if style:
         bits.append(f"风格：{style['id']}")
@@ -633,6 +634,28 @@ def _ids_to_names(instr: str, sel: dict) -> str:
     if color:
         instr = instr.replace(f"主题色：{color['id']}", f"主题色：{(color.get('name') or '').strip()}")
     return instr
+
+
+def _photo_layout_line(layout: dict | None) -> str:
+    """摄影模式下的图型：只留构图分区，把所有排字要求剥掉。
+
+    摄影不排字，但图型仍要影响画面（上/下分区、留白多少、主体占比）。
+    直接搬 layout.prompt 会要求画标题/标签，跟「画面里不出现任何文字」打架，
+    所以按逗号切句、丢掉含标题/文案/标签/排版的分句（用户 2026-11-27 对比官方 skill）。
+    """
+    if not layout:
+        return ""
+    name = str(layout.get("title") or layout.get("id") or "").strip()
+    raw = str(layout.get("prompt") or "").strip()
+    parts = [p.strip() for p in re.split(r"[，。；,;]", raw) if p.strip()]
+    drop = ("标题", "文案", "文字", "标签", "字号", "一行", "排版", "标注", "对白")
+    keep = [p for p in parts if not any(k in p for k in drop)]
+    body = "，".join(keep)
+    # 有的图型描述通篇都在讲排什么字（三层标题卡之类），剥完一句不剩：
+    # 那就只留版式名，让模型按这个名字的分区意识构图，别把整行吞掉
+    if body:
+        return f"构图版式：{name}。{body}。画面里不排任何文字。"
+    return f"构图版式：{name}。按这个版式的分区组织画面，画面里不排任何文字。" if name else ""
 
 
 def build_prompt(item: dict, sel: dict, ratio: str, moods: list[str],
@@ -695,6 +718,10 @@ def build_prompt(item: dict, sel: dict, ratio: str, moods: list[str],
             blocks.append(PHOTO_LEAD)
             if shoot:
                 blocks.append(f"拍摄类型：{shoot}。")
+            # 图型选了就得在画面里生效：给构图分区，但不许排字（用户 2026-11-27）
+            layout_line = _photo_layout_line(layout)
+            if layout_line:
+                blocks.append(layout_line)
             blocks.append(PHOTO_KEYWORDS)
         # 纯图：「纯图模式。」这种系统术语模型读不懂，直接由下面那条「不要出现任何文字」说话
         subject = re.sub(r"^0*\d{1,3}[\s.．、,，:：｜|\-—]+", "", title).strip() or title

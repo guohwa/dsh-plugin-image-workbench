@@ -1,5 +1,6 @@
 # 开发备份
 *.bak_*
+*.bak
 *.orig
 *.rej
 

@@ -21,6 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 要读上一个 tag：连续几版没发版时，Release 说明需要把中间所有版本合并
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -67,7 +70,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          node scripts/release-notes.mjs
+          # 上一版没发过 tag 时（比如 1.1.110~1.1.119），只写最新一版会把中间改动全丢掉。
+          # 这里取父提交上最近的可达 tag，让脚本把这段区间的条目合并成一份说明。
+          PREV=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          if [ -n "$PREV" ]; then
+            echo "::notice::合并 $PREV 之后的全部改动"
+            node scripts/release-notes.mjs --since "$PREV"
+          else
+            node scripts/release-notes.mjs
+          fi
           TAG="$GITHUB_REF_NAME"
           TITLE=$(cat release-title.txt)
           if gh release view "$TAG" >/dev/null 2>&1; then

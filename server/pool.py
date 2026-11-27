@@ -17,6 +17,7 @@ import io
 import json
 import os
 import re
+import socket
 import threading
 import time
 from datetime import datetime
@@ -566,6 +567,66 @@ def _err_text(j: dict) -> str:
     return str(e)
 
 
+class PromptRejected(RuntimeError):
+    """提示词被上游内容审核拒绝（版权相似 / 内容政策 / 只回文字）。
+
+    这类失败跟账号无关：换号重试照样被拒，只会白耗 3 次额度，还把好号记成「失败账号」。
+    单独一个类型，上层据此不重试、不记账（用户 2026-11-27 报障）。
+    """
+
+
+# 上游 400 里出现这些词，基本都是内容审核，不是接口坏了。
+# 实测原文：「非常抱歉，该提示可能违反了关于与第三方内容相似性的防护限制」——
+# 千万别只认「版权」两个字（用户 2026-11-27 报障的那批就是这么漏的）
+_REJECT_HINTS = ("版权", "内容政策", "内容相似", "内容审核", "防护限制", "第三方内容",
+                 "copyright", "content policy", "content_policy", "similar to",
+                 "moderation", "safety", "violat")
+
+
+def is_prompt_reject(r: httpx.Response | None) -> bool:
+    if r is None or r.status_code != 400:
+        return False
+    low = _err_text(_json_of(r)).lower()
+    return any(k in low for k in _REJECT_HINTS)
+
+
+# 号池的出口代理不通时，内核会把「连不上上游」也包成 429 no available image quota，
+# 和真的没配额长得一模一样。用户看到的就成了「额度已用完、换号」——方向完全错了。
+# 所以命中 429 时顺手探一次号池配的代理端口，不通就直接点明是代理没开。
+_PROXY_CACHE = {"at": 0.0, "dead": ""}
+
+
+def _tcp_alive(host: str, port: int, timeout: float = 0.4) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def pool_proxy_dead(cfg: dict | None = None) -> str:
+    """号池自己配的出口代理在本机通不通。返回不通的地址，通/没配返回空串。
+
+    3 秒缓存：并发失败时只探一次，不至于每张图都多等半秒。
+    """
+    now = time.time()
+    if now - float(_PROXY_CACHE["at"]) < 3.0:
+        return str(_PROXY_CACHE["dead"])
+    url = ""
+    try:
+        p = pool_home(cfg) / "source" / "config.json"
+        url = str((json.loads(p.read_text(encoding="utf-8")) or {}).get("proxy") or "").strip()
+    except Exception:
+        url = ""
+    dead = ""
+    if url:
+        m = re.match(r"^(?:socks5h?|http|https)://([^/:@]+):(\d+)", url, re.I)
+        if m and not _tcp_alive(m.group(1), int(m.group(2))):
+            dead = url
+    _PROXY_CACHE.update({"at": now, "dead": dead})
+    return dead
+
+
 def raise_for_response(r: httpx.Response) -> None:
     """把接口的各种失败翻译成用户能看懂、能自己动手解决的提示。"""
     j = _json_of(r)
@@ -579,13 +640,23 @@ def raise_for_response(r: httpx.Response) -> None:
         raise RuntimeError(
             "接口地址不存在（404）：确认 Base URL 是否以 /v1 结尾、路径是否为 OpenAI 兼容接口")
     if r.status_code == 429 or "no available image quota" in low or "quota" in low and "exceed" in low:
+        dead = pool_proxy_dead()
+        if dead:
+            raise RuntimeError(
+                f"号池出口代理连不上（{dead}）：本机没有程序在这个端口监听。"
+                "先把代理客户端打开（或在号池设置里换成正在用的端口）再重试；"
+                "账号没被限流，换号没用")
         raise RuntimeError("接口额度已用完或触发限流，等配额恢复或换一个接口 / 密钥")
     if r.status_code == 502 or "proxy" in low or "failed to connect" in low or "timed out" in low or "socks" in low:
         raise RuntimeError("接口不可达：确认 Base URL、本机网络或出口代理（号池需能访问 OpenAI / ChatGPT）")
     if "unsupported image model" in low or "model_not_found" in low or "does not exist" in low:
         raise RuntimeError(f"接口不支持该出图模型：{msg[:120]}，请在「接口设置」里换一个模型名")
     if "content_policy_violation" in low or "text reply" in low:
-        raise RuntimeError("上游没返回图片（只回了文字），把画面描述写得更具体后重试")
+        raise PromptRejected("上游没返回图片（只回了文字）：画面描述写具体些、少让图里排字，改完重试；换号无效")
+    if is_prompt_reject(r):
+        raise PromptRejected(
+            "提示词被上游内容审核拒了（400）：换号没用。把画面里的具体 IP、名人、品牌、"
+            "影视角色换成泛化描述，或减少图里要排的文字，改完再点一次")
     raise RuntimeError(f"接口 HTTP {r.status_code}: {msg}")
 
 
@@ -1404,10 +1475,13 @@ class PoolManager:
             except Exception as e:
                 if job.get("status") == "cancelled":
                     return
-                err = mask(f"{type(e).__name__}: {e}")[:300]
-                acc["fails"] += 1
-                acc["last_error_at"] = time.time()
-                acc["error"] = err[:160]
+                # 内容审核拒绝是提示词问题，不是账号问题：不加失败数、不记账、不换号重试
+                soft = isinstance(e, PromptRejected)
+                err = mask(str(e) if soft else f"{type(e).__name__}: {e}")[:300]
+                if not soft:
+                    acc["fails"] += 1
+                    acc["last_error_at"] = time.time()
+                    acc["error"] = err[:160]
                 # 先查清楚是哪个号失败的，再排队重试（重新入队＝号池换下一个号）
                 email = await self._attribute_call(job, t_call)
                 attempt = {
@@ -1418,10 +1492,18 @@ class PoolManager:
                     "at": int(time.time()),
                 }
                 job.setdefault("attempts", []).append(attempt)
-                if email:
+                if email and not soft:
                     attempt["count_today"] = record_account_fail(email, err)
                 log(f"job {job_id}: attempt #{attempt['n']} failed on {attempt['account']}: "
                     f"{err[:120]}")
+                if soft:
+                    # 提示词被拒：直接把原因交给用户改词，别浪费另外几个号的额度
+                    job["status"] = "error"
+                    job["will_retry"] = 0
+                    job["error"] = err
+                    attempt["prompt_rejected"] = 1
+                    log(f"job {job_id}: prompt rejected, no retry")
+                    return
                 self._schedule_retry(job, err)
         finally:
             job["finished"] = int(time.time())
@@ -1535,7 +1617,10 @@ class PoolManager:
                 if ref_bytes and p["supports_edits"] and p["edits_style"] != "off":
                     r, via = await self._post_edits(c, p, headers, payload, ref_bytes)
                     if r is None or r.status_code >= 400:
-                        # 参考图走 edits 失败：不静默降级，明确告诉用户怎么改
+                        # 参考图走 edits 失败：不静默降级，明确告诉用户怎么改。
+                        # 先把内容审核挑出来——那是提示词问题，误报成「不支持参考图」会带偏人
+                        if is_prompt_reject(r):
+                            raise_for_response(r)
                         if r is not None and r.status_code in (400, 404, 405, 415, 422, 501):
                             raise RuntimeError(
                                 "当前接口不支持参考图（/v1/images/edits 不可用）。"

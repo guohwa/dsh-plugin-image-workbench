@@ -1,0 +1,133 @@
+{
+"files": {
+"client.js": {
+"sha1": "c0f66182b970cb4b88ddbf43913c8eec4c0e4fb8",
+"size": 15436
+},
+"cordis.patch.yml": {
+"sha1": "880756acbe315f988ed1037a71f45ec84067d995",
+"size": 638
+},
+"host.js": {
+"sha1": "855596ec30dbf618354e6cd91eff91f64e48eba3",
+"size": 32092
+},
+"install.mjs": {
+"sha1": "2605c34c6baaa18bd039d94d3b4f1905f0c4ceae",
+"size": 15516
+},
+"package.json": {
+"sha1": "8e68ebe0b008c4e78c9da2a32ca1114b7768c30e",
+"size": 1695
+},
+"scripts/fetch-style-images.mjs": {
+"sha1": "f92e839f08a95cc0f6023c172841ee71f88415d8",
+"size": 4630
+},
+"scripts/make_manifest.py": {
+"sha1": "5162813cdc8edd2e4fbe0d00a82ca1ec36d3bf5b",
+"size": 1476
+},
+"scripts/release-notes.mjs": {
+"sha1": "10051678cf9e5b967cfacce266e1fe80db6a0028",
+"size": 3670
+},
+"scripts/style-sync-scheduler.mjs": {
+"sha1": "7727c5dd56a1f456362026eb2555edd797e982e8",
+"size": 8965
+},
+"scripts/sync-handraw-style.mjs": {
+"sha1": "cedd5e13f4d8ec4e3f8d3e9cf83aa46fd2c4fcdb",
+"size": 6981
+},
+"scripts/vendor-snapshot.py": {
+"sha1": "9a0f4b10c14b641cf60f919375b51ac3e61f2bf0",
+"size": 6713
+},
+"server/access.py": {
+"sha1": "a1fe8ff8c1215b38a37648746507725b16d2d94e",
+"size": 902
+},
+"server/app.py": {
+"sha1": "04dc93a3f9f79dc00e63976b144b8e12ff19a6f1",
+"size": 241352
+},
+"server/catalog.json": {
+"sha1": "f3a77686b7c7aac3c9f9b65a7c2602fcbbb1d0ca",
+"size": 260867
+},
+"server/catalog.py": {
+"sha1": "c9c74d216786036dcc6bbd0d8d0f4cdcdc96eb75",
+"size": 4986
+},
+"server/changelog.json": {
+"sha1": "927e1a6d94c356c5fe9a46111f600b026bc6181e",
+"size": 58669
+},
+"server/composer.py": {
+"sha1": "3ab584a197efa70a935f6b8bac67388a4eb3042c",
+"size": 49091
+},
+"server/drafts.py": {
+"sha1": "0e94e8f162a98a40a0e172014d01dc265ebeaedb",
+"size": 8105
+},
+"server/history.py": {
+"sha1": "c6fbd91fa9db82bd50de00197f3ed39cca181747",
+"size": 31165
+},
+"server/hot_facts.py": {
+"sha1": "c6c87e5be3ca1b9bac42c959fa6fe20e5464465a",
+"size": 14137
+},
+"server/imaging.py": {
+"sha1": "bf894c4b766c1e97683d4fe5bfd9c542d6e4786d",
+"size": 6620
+},
+"server/novel_overlay.py": {
+"sha1": "c546451cde695293e0efece8bf6d9898ef1dce79",
+"size": 4920
+},
+"server/pool.py": {
+"sha1": "451db2c59176c83930bd3b66ded615e72645b359",
+"size": 82811
+},
+"server/pool_admin.py": {
+"sha1": "fcb138922c1a42fb9280074ac096efa4fe288d49",
+"size": 44144
+},
+"server/pool_service.py": {
+"sha1": "5390450dc833b489cda6b60576ccbc81dd94ba5c",
+"size": 47153
+},
+"server/recommend.py": {
+"sha1": "138efa2f7daa2e303f74fb437f5fbc0ac09ea948",
+"size": 24584
+},
+"server/requirements.txt": {
+"sha1": "b39174ab10a1241848b899044e6aa4b846fdebd6",
+"size": 61
+},
+"server/smoke_check.py": {
+"sha1": "8f41d796c199300aa4ea393361b633180b116baa",
+"size": 155972
+},
+"server/static/access.html": {
+"sha1": "277bcca42bb5ba255547ff2572c9777a8ea930f2",
+"size": 10369
+},
+"server/static/index.html": {
+"sha1": "02b9e129d8488b818c62e8e625bff659ef09111f",
+"size": 522573
+},
+"server/static/index.html.bak_20261128_profuxtime": {
+"sha1": "1e83c2393125da5f5062149225a705df8d69c1b8",
+"size": 522424
+},
+"server/upgrade_files.py": {
+"sha1": "3aef4e75d15d271ba0a83808dbc57b65e817dec6",
+"size": 3999
+}
+},
+"version": "1.1.120"
+}

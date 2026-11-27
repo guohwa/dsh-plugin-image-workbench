@@ -73,7 +73,7 @@
   .rail{position:fixed;left:0;top:0;bottom:0;width:78px;z-index:40;background:#fff;
     border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;
     gap:2px;padding:12px 6px 10px}
-  .rail-item{width:66px;min-height:58px;border:0;background:transparent;border-radius:11px;
+  .rail-item{position:relative;width:66px;min-height:58px;border:0;background:transparent;border-radius:11px;
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
     color:var(--ink-3);font:inherit;font-size:11px;line-height:1.2;cursor:pointer;transition:.14s}
   .rail-item svg{width:19px;height:19px;flex:none}
@@ -87,6 +87,14 @@
   @keyframes railPulse{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.18);opacity:1}}
   @keyframes railGlow{0%,100%{box-shadow:0 0 0 0 rgba(106,90,224,.30)}50%{box-shadow:0 0 0 5px rgba(106,90,224,0)}}
   .rail-item .rail-dot{position:absolute;width:6px;height:6px;border-radius:50%;background:var(--pink)}
+  /* 有新版本的小红点：设置按钮右上角 + 设置弹窗「检查更新」分组各挂一个（用户 2026-11-27）。
+     白描边是必须的：两个位置底下都是浅色面板，不描边看着像块脏点。 */
+  .dot-new{width:8px;height:8px;border-radius:50%;background:#f43f5e;flex:none;
+    box-shadow:0 0 0 2px #fff,0 0 6px rgba(244,63,94,.5);display:inline-block}
+  .dot-new[hidden]{display:none!important}
+  .rail-item .dot-new{position:absolute;top:8px;right:12px;
+    animation:dotBreath 2.2s ease-in-out infinite}
+  @keyframes dotBreath{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.25);opacity:.75}}
   .rail-gap{flex:1}
   .rail-bottom{width:100%;border-top:1px solid var(--line);padding-top:8px;margin-top:6px;
     display:flex;flex-direction:column;align-items:center}
@@ -138,6 +146,11 @@
   main:not(.single-mode) aside.panel.right > .phone{flex:1 1 auto;min-height:220px;display:flex;flex-direction:column}
   main:not(.single-mode) aside.panel.right .phone .bar{flex:0 0 auto}
   main:not(.single-mode) aside.panel.right .phone .body{flex:1 1 auto;min-height:0;max-height:none}
+  /* 危险：上面 sticky 规则带了 display:flex，作者样式会压过浏览器默认的 [hidden]{display:none}，
+     导致监控 / 历史 / 号池把 aside.hidden=true 后预览仍以 flex 显示、被挤到页面下方（用户 2026-11-27 报障）。
+     hidden 必须真的隐藏，单列出来兜底。 */
+  main:not(.single-mode) aside.panel.right[hidden],
+  main.single-mode aside.panel.right[hidden]{display:none!important}
   /* 单图页右栏与左栏底对齐（用户 2026-11-27）：右栏拉伸占满整行高度，
      多余高度给手机预览的封面区吃掉，下载行和提示行沉到与左栏相同的底部。
      只在两栏布局（>1180px）生效；窄屏右栏换行堆叠，不做拉伸 */
@@ -1193,8 +1206,9 @@
   #settingsDlg .set-body{display:grid;grid-template-columns:190px minmax(0,1fr);gap:16px;flex:1 1 auto;min-height:0}
   #settingsDlg .set-menu{display:flex;flex-direction:column;gap:6px;padding:12px 10px;min-height:0;
     background:#f7f8fa;border:1px solid var(--line);border-radius:12px}
-  #settingsDlg .set-item{display:block;width:100%;text-align:left;border:0;border-radius:9px;
+  #settingsDlg .set-item{display:flex;align-items:center;gap:8px;width:100%;text-align:left;border:0;border-radius:9px;
     padding:9px 11px;font:inherit;font-size:13px;color:var(--ink-2);background:transparent;cursor:pointer}
+  #settingsDlg .set-item .dot-new{margin-left:auto}
   #settingsDlg .set-item:hover{background:#ebe7ff;color:var(--primary)}
   #settingsDlg .set-item.on{background:#ebe7ff;color:var(--primary);font-weight:600}
   #settingsDlg .set-ver{margin-top:auto;padding:10px 6px 0;font-size:11.5px;color:var(--ink-3);line-height:1.6}
@@ -1449,7 +1463,7 @@
   <button class="rail-item" type="button" data-nav="pool" title="号池"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg><span>号池</span></button>
   <div class="rail-gap"></div>
   <div class="rail-bottom">
-    <button class="rail-item" type="button" data-nav="pool" id="railSetting" title="设置 / 接口与号池"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.1 2.1-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21h-3v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1L6.6 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H5v-3h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9L6.2 7 8.3 4.9l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V3h3v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1H21v3h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>设置</span></button>
+    <button class="rail-item" type="button" data-nav="pool" id="railSetting" title="设置 / 接口与号池"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.1 2.1-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21h-3v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1L6.6 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H5v-3h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9L6.2 7 8.3 4.9l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V3h3v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1H21v3h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>设置</span><span class="dot-new" id="railSetDot" hidden></span></button>
   </div>
 </nav>
 <header>
@@ -1844,7 +1858,7 @@
       <nav class="set-menu" aria-label="设置分组">
         <button class="set-item on" type="button" data-set="ws">工作台设置</button>
         <button class="set-item" type="button" data-set="iface">接口配置</button>
-        <button class="set-item" type="button" data-set="update">检查更新</button>
+        <button class="set-item" type="button" data-set="update">检查更新<span class="dot-new" id="setUpdateDot" hidden></span></button>
         <div class="set-ver" id="setVersion"></div>
       </nav>
       <div class="set-panes">
@@ -1985,8 +1999,8 @@
             <div class="cfg-sec up-plan">
               <div class="cfg-sec-t">升级流程</div>
               <ol class="up-list up-steps">
-                <li>下载安装包并核对版本号。</li>
-                <li>逐个覆盖代码文件（后端 py、前端页面、插件外壳）。</li>
+                <li>核对最新版本号，比对本地文件指纹。</li>
+                <li>只下载有变化的那几个文件，就地替换（不重装、不整包下载）。</li>
                 <li>服务自动重启，大约十秒，页面会自己刷新。</li>
               </ol>
             </div>
@@ -1994,8 +2008,8 @@
               <div class="cfg-sec-t">不会动的数据</div>
               <ul class="up-list">
                 <li>草稿、历史、图片、账号配置一律不动。</li>
-                <li>号池内核 vendor/ 不随本次升级替换；出图进行中会拒绝升级。</li>
-                <li>覆盖前旧代码打包到 server/workbench/backup/，出问题能解回去。</li>
+                <li>没变化的文件一个字节都不碰；号池内核 vendor/ 不随升级替换；出图进行中会拒绝升级。</li>
+                <li>被替换的旧文件先打包到 server/workbench/backup/，出问题能解回去。</li>
               </ul>
             </div>
           </div>
@@ -2394,6 +2408,12 @@ const $ = s => document.querySelector(s);
 })();
 
 const state = {styles:[], layouts:[], colors:[], sel:{style:null, layout:null, color:null},
+  /* 单图 / 内容侧（文案 + 多图）各存一份选型（用户 2026-11-27：改单图图型，多图也跟着变）。
+     三张卡是同一份 DOM，切页时把 state.sel 指到当前页那份就行——改哪页只动哪页。
+     state.instrCustom 同理按页存，手改的出图指令不跨页串。 */
+  selByPage:{single:{style:null, layout:null, color:null},
+             content:{style:null, layout:null, color:null}},
+  instrCustomByPage:{single:null, content:null},
   picker:{kind:'style', group:'全部'},
   /* 单图和多图各存一份结果：预览只看当前模式出的图，互不串图。
      写入端固定写 state.results（多图）或 state.singleResults（单图），读取端按当前页取。 */
@@ -2462,10 +2482,13 @@ async function loadCatalog(){
   $('#cntLayout').textContent = `(${state.layouts.length})`;
   $('#cntStyle').textContent  = `(${state.styles.length})`;
   $('#cntColor').textContent  = `(${state.colors.length})`;
-  // 默认选择一组有辨识度的组合
-  state.sel.style  = state.styles.find(s=>s.id==='FA-018')  || state.styles[0];
-  state.sel.color  = state.colors.find(c=>c.id==='C-26')    || state.colors[0];
-  state.sel.layout = state.layouts.find(l=>l.id==='SC-006') || state.layouts[0];
+  // 默认选择一组有辨识度的组合；单图 / 内容侧各一份，独立对象（同一批默认值）
+  const dStyle  = state.styles.find(s=>s.id==='FA-018')  || state.styles[0];
+  const dColor  = state.colors.find(c=>c.id==='C-26')    || state.colors[0];
+  const dLayout = state.layouts.find(l=>l.id==='SC-006') || state.layouts[0];
+  state.selByPage.content = {style:dStyle, color:dColor, layout:dLayout};
+  state.selByPage.single  = {style:dStyle, color:dColor, layout:dLayout};
+  state.sel = state.selByPage.content;   // 启动默认在内容侧（页面本身也默认落文案页）
   syncPicks();
 }
 
@@ -2479,7 +2502,7 @@ function pickMeta(kind, it){
   return {id: it.id, name: it.name || ''};
 }
 
-function syncPicks(){  CARD_KINDS.forEach(([k, sfx])=>{
+function syncPicks(silent){  CARD_KINDS.forEach(([k, sfx])=>{
     const it = state.sel[k];
     const m = pickMeta(k, it);
     $('#card'+sfx).classList.toggle('on', !!it);
@@ -2503,7 +2526,8 @@ function syncPicks(){  CARD_KINDS.forEach(([k, sfx])=>{
   syncInstr();
   qsAutoMode();                // 图型换了，单图快出的纯图/图文跟着切（手动切过则不动）
   syncFusionDefault();         // 融合默认也跟着图型走，别再一刀切
-  noteContentChanged();        // 换图型 / 风格 / 主题色也算内容改动
+  // 切页只是把状态换过去，不是改内容：别把它记成「待保存」
+  if (!silent) noteContentChanged();
 }
 
 /* ---------- 缩微摄影融合的默认值（用户 2026-11-26 问「为什么默认没勾上」） ----------
@@ -2551,10 +2575,13 @@ function ensureStyle(){
 }
 
 /* ---------- 按内容推荐组合（图型 / 风格 / 主题色），用户 2026-11-27 需求 ----------
-   内容从「当前在用的地方」读：单图读关键字（优化过就读原始关键字），多图读选题 / 标题 / 正文 / 分镜。
+   内容取自当前页：单图取关键字（优化过就取原始关键字），多图取选题 / 标题 / 正文 / 分镜。
    第一次按内容配一组；再点就是「换一组」——上一组放进 avoid，同一段内容也能换到同档的其他搭配。
    打分在后端（server/recommend.py），纯词表，不调模型，点一下就有结果。 */
-let _comboLast = null;      // 上一次推荐的三个 id，用来让「换一组」真的换
+/* 上一次推荐的三个 id，用来让「换一组」真的换。
+   单图 / 内容侧各记一份：单图配过的 avoid 不能拿去影响多图那组（用户 2026-11-27 隔离） */
+const comboPageKey = () => (window.currentNav === 'single' ? 'single' : 'content');
+let _comboLastByPage = {single:null, content:null};
 let _comboBusy = false;
 /* 推荐读哪一边的内容。单图 / 多图完全隔离（用户 2026-11-27，两次强调）：
    单图页只读单图关键字，多图 / 文案页只读选题 / 正文 / 分镜；
@@ -2576,7 +2603,8 @@ function comboSource(src){
 function comboSrcLabel(from){
   if (from === 'single') return '单图关键字';
   const n = (state.items || []).filter(it => (it.title || '').trim() || (it.body || '').trim()).length;
-  return n ? '左侧正文与分镜（' + n + ' 条）' : '左侧正文';
+  /* 用户 2026-11-27：文案里别出现「左侧」，页面只有一份内容，直接叫「正文与分镜（x 条）」 */
+  return n ? '正文与分镜（' + n + ' 条）' : '正文';
 }
 
 function comboNote(html){
@@ -2596,6 +2624,8 @@ async function comboRecommend(src){
   }
   const btn = $('#comboRecBtn');
   const prevHtml = $('#comboRecNote') ? $('#comboRecNote').innerHTML : '';
+  const pageKey = comboPageKey();
+  const lastCombo = _comboLastByPage[pageKey];
   _comboBusy = true;
   if (btn) btn.disabled = true;
   const bar = $('#comboRec');
@@ -2609,9 +2639,9 @@ async function comboRecommend(src){
       mode: useSingle ? (state.qsMode === 'pure-image' ? 'graphic-text' : state.qsMode)
                       : (state.omode || 'graphic-text'),
       seed: Math.floor(Math.random() * 1e9),
-      avoid_layout: _comboLast ? [_comboLast.layout] : [],
-      avoid_style:  _comboLast ? [_comboLast.style]  : [],
-      avoid_color:  _comboLast ? [_comboLast.color]  : []
+      avoid_layout: lastCombo ? [lastCombo.layout] : [],
+      avoid_style:  lastCombo ? [lastCombo.style]  : [],
+      avoid_color:  lastCombo ? [lastCombo.color]  : []
     };
     const r = await fetch('/api/recommend', {method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify(body)});
@@ -2628,7 +2658,7 @@ async function comboRecommend(src){
     state.selTouched = true;
     state.styleOptOut = false;                       // 推荐就是要画风，别留着「明确不要」
     try{ localStorage.setItem('iw_style_last', S.id); }catch(e){}
-    _comboLast = {layout: L.id, style: S.id, color: C.id};
+    _comboLastByPage[pageKey] = {layout: L.id, style: S.id, color: C.id};
     syncPicks();                                     // 三张卡、出图指令、纯图/图文模式一起刷新
 
     // 单图这边推了图型却停在纯图，图型等于没用：明确切到图文（用户再点纯图才算手动锁定）
@@ -2654,7 +2684,7 @@ async function comboRecommend(src){
       recomposeAllQuiet();
     }
 
-    comboNote('<span class="cr-read">读：' + esc(comboSrcLabel(picked.from)) + '</span>' +
+    comboNote('<span class="cr-read">' + esc(comboSrcLabel(picked.from)) + '</span>' +
       '<i class="cr-tag">' + esc(tagTxt) + '</i> ' +
       esc(L.id + ' ' + L.title) + ' · ' + esc(styleName) + ' · ' + esc(C.name) +
       (d.note ? '　（' + esc(d.note) + '）' : ''));
@@ -2666,8 +2696,8 @@ async function comboRecommend(src){
   }finally{
     _comboBusy = false;
     if (btn) btn.disabled = false;
-    /* 配过一套之后按钮变「换一组」，再点就换下一套 */
-    if (btn) btn.textContent = _comboLast ? '换一组' : '按内容推荐';
+    /* 配过一套之后按钮变「换一组」，再点就换下一套；文案也按当前页那份走 */
+    if (btn) btn.textContent = _comboLastByPage[pageKey] ? '换一组' : '按内容推荐';
     if (bar) bar.classList.remove('busy');
   }
 }
@@ -3312,7 +3342,7 @@ function syncOmode(){
   });
   $('#shootWrap').hidden = !photo;
   const hint = $('#omodeHint');
-  if (hint) hint.textContent = photo ? '按拍摄类型出写真：画里不排文字，也不套图型版式'
+  if (hint) hint.textContent = photo ? '按拍摄类型出写真：画面里不排文字，构图按图型的分区走'
     : state.omode === 'pure-image' ? '只出画面，不排标题和标签，也不套图型版式'
     : '图里排标题和正文文字';
   // 缩微摄影融合三种模式都可用，不再随摄影模式隐藏
@@ -3326,7 +3356,8 @@ function buildInstr(){
     : state.omode === 'pure-image' ? '纯图模式' : '图文模式';
   const bits = [modeName];
   if (state.ref) bits.push('参考图：已上传');
-  if (state.sel.layout && state.omode !== 'photo' && state.omode !== 'pure-image')
+  // 摄影也带图型：官方 skill 的摄影模式指令同样写「图型：SC-008」，我们漏了（用户 2026-11-27）
+  if (state.sel.layout && state.omode !== 'pure-image')
     bits.push('图型：' + state.sel.layout.id);
   if (state.sel.style) bits.push('风格：' + state.sel.style.id);
   if (state.sel.color) bits.push('主题色：' + state.sel.color.id);
@@ -3344,6 +3375,13 @@ function buildInstr(){
   if (state.ws === 'moderate') bits.push('留白：大量');
   else if (state.ws === 'high') bits.push('留白：极简');
   return bits.join('，');
+}
+
+/* 手改的出图指令也按页存：单图改过的别串到多图页去（用户 2026-11-27） */
+function setInstrCustom(v){
+  state.instrCustom = v;
+  const k = window.currentNav === 'single' ? 'single' : 'content';
+  state.instrCustomByPage[k] = v;
 }
 
 function syncInstr(){
@@ -4674,13 +4712,14 @@ function cfgFill(d){
   $('#cfgKeyHint').textContent = d.api_key_set ? ('当前：' + (d.api_key_masked || '已配置')) : '尚未配置密钥';
   $('#cfgModelImage').value = d.model_image || '';
   $('#cfgModelText').value = d.model_text || '';
-  // 默认目录不回填到输入框，留空表示「用默认」，占位符里给出真实路径
+  // 直接把实际生效的绝对路径摆出来：工作台就装在本机，路径没什么好藏的，
+  // 留个空框反而得多点一次「打开目录」才知道图存哪（用户 2026-11-27）
   const def = d.output_dir_default || '';
-  $('#cfgOutDir').value = d.output_dir_is_default ? '' : (d.output_dir || '');
-  $('#cfgOutDir').placeholder = def ? '默认：' + def : '留空 = 工作台默认目录';
+  $('#cfgOutDir').value = d.output_dir || def;
+  $('#cfgOutDir').placeholder = def ? '默认：' + def : '绝对路径，例如 D:\\DH_Picture';
   $('#cfgOutHint').textContent = d.output_dir_is_default
-    ? '当前存到默认目录；改成别的绝对路径（例如 D:\\DH_Picture）后，新图会存到那里，旧图仍可正常打开。'
-    : '当前：' + (d.output_dir || '') + '（留空保存即回到默认目录）';
+    ? '图就存在这个目录；想换地方改成别的绝对路径（例如 D:\\DH_Picture），旧图在历史里仍打得开。'
+    : '改回 ' + def + ' 即回到默认目录；旧图在历史里仍打得开。';
   $('#cfgEdits').checked = !!d.supports_edits;
   $('#cfgFormat').value = d.image_response_format || 'auto';
   $('#cfgEditsStyle').value = d.edits_style || 'auto';
@@ -4739,7 +4778,7 @@ function pRenderList(){
     <button class="prof-item ${PROF.sel===p.id && PROF.mode!=='create'?'on':''}" data-pid="${pEsc(p.id)}" type="button">
       <div class="n">${pEsc(p.name)} ${p.id===PROF.active?'<em>● 当前使用中</em>':''}</div>
       <div class="u">${pEsc(p.base_url)}</div>
-      <div class="k">Key ${pEsc(p.api_key_masked||'未设置')}${p.last_used?' · '+pEsc(profWhen(p.last_used)):''}</div>
+      <div class="k">Key ${pEsc(p.api_key_masked||'未设置')}${p.id===PROF.active?'':(p.last_used?' · 上次启用 '+pEsc(profWhen(p.last_used)):'')}</div>
     </button>`).join('');
   h += `<button class="prof-add ${PROF.mode==='create'?'on':''}" data-padd="1" type="button">＋ 新增接口</button>`;
   box.innerHTML = h;
@@ -4997,7 +5036,7 @@ async function pRenderDetail(){
         ${row('号池数据目录', d.pool_dir)}
         ${row('参考图 / 返回格式', (d.supports_edits?'支持':'不支持') + ' / ' + (d.image_response_format||'auto'))}
         ${row('参考图方式', d.edits_style||'auto')}
-        ${row('最近使用', d.last_used ? profWhen(d.last_used) : '—')}
+        ${d.active ? row('状态', '当前使用中（正在用它出图）') : row('上次启用', d.last_used ? profWhen(d.last_used) : '—')}
       </div>
       <div class="prof-foot">
         <button class="btn primary mini" id="pEdit" type="button">编辑</button>
@@ -5156,7 +5195,7 @@ async function loadProfiles(activeId){
       const o = document.createElement('option'); o.value = p.id;
       const bits = [p.name, p.base_url];
       if (p.api_key_masked) bits.push('Key ' + p.api_key_masked);
-      const w = profWhen(p.last_used); if (w) bits.push(w);
+      const w = profWhen(p.last_used); if (w && p.id !== d.active_id) bits.push('上次启用 ' + w);
       o.textContent = bits.join(' · ');
       sel.appendChild(o);
     });
@@ -5798,7 +5837,7 @@ $('#qsStop').onclick = async ()=>{
 $('#qsRestore').onclick = qsRestoreExample;
 /* 按内容推荐按钮：没配过叫「按内容推荐」，配过一次变「换一组」；读源跟当前页面走 */
 if ($('#comboRecBtn')) $('#comboRecBtn').onclick = ()=> comboRecommend('auto');
-/* 谁最后动过内容，推荐组合就按哪一边读：单图框 → 单图；选题/标题/正文/小说/分镜 → 多图 */
+/* 推荐读源：跟当前页面走，单图页只认单图框，其余页只认选题/标题/正文/小说/分镜 */
 if ($('#qsKey')) $('#qsKey').addEventListener('input', qsFitKey);
 /* 单图纯图 / 图文切换：只影响单图拼词，多图模式保持自己的选择 */
 document.querySelectorAll('#qsModeSeg button').forEach(b=>{
@@ -5887,9 +5926,9 @@ $('#copyText').onclick = async ()=>{
 $('#addItem').onclick = ()=> addItem();
 $('#importItems').onclick = ()=> openImport('list');
 $('#copyInstr').onclick = ()=> copyText($('#instrOut').textContent.trim(), '出图指令已复制');
-$('#resetInstr').onclick = ()=>{ state.instrCustom = null; syncInstr(); toast('已还原为自动拼接的指令'); };
+$('#resetInstr').onclick = ()=>{ setInstrCustom(null); syncInstr(); toast('已还原为自动拼接的指令'); };
 $('#instrOut').addEventListener('input', ()=>{
-  state.instrCustom = $('#instrOut').textContent.trim() || null;
+  setInstrCustom($('#instrOut').textContent.trim() || null);
   instrUi();
 });
 $('#composeAll').onclick = composeAll;
@@ -7358,7 +7397,7 @@ async function resetMulti(){
   state.group = ''; $('#groupTag').textContent = '';
   ['#topic', '#docTitle', '#docBody', '#novelBody', '#note'].forEach(id=>{ $(id).value = ''; });
   state.instrCustom = null;
-  setDocTab('doc', true);
+  state.instrCustomByPage.content = null;   // 只清内容侧，单图页手改的指令留着  setDocTab('doc', true);
   $('#docRaw').textContent = '';
   state.redo = null; renderRedoBar();
   state.results = []; state.idx = 0;
@@ -7473,6 +7512,13 @@ $('#historyFilter').addEventListener('input', ()=>{
 
 /* ---------- 暂存 / 草稿箱 ---------- */
 let _draftT = null;
+function selIds(s){
+  s = s || {};
+  return {style: (s.style && s.style.id) || '',
+          layout: (s.layout && s.layout.id) || '',
+          color: (s.color && s.color.id) || ''};
+}
+
 function draftSnapshot(){
   return {
     topic: $('#topic').value, title: $('#docTitle').value, body: $('#docBody').value,
@@ -7480,9 +7526,11 @@ function draftSnapshot(){
     group: state.group || '', note: $('#note').value, mood: $('#mood').value,
     ws: state.ws, ratio: $('#ratio').value, mode: state.mode || 'image',
     image_mode: state.omode || 'graphic-text', shoot_type: $('#shootType').value || '',
-    sel: {style: (state.sel.style && state.sel.style.id) || '',
-          layout: (state.sel.layout && state.sel.layout.id) || '',
-          color: (state.sel.color && state.sel.color.id) || ''},
+    /* 选型分两套存（用户 2026-11-27）：sel 仍写当前页，旧版读取不受影响；
+       sel_single / sel_content 是单图页与内容侧各自的，切页不会互相覆盖 */
+    sel: selIds(state.sel),
+    sel_single: selIds(state.selByPage.single),
+    sel_content: selIds(state.selByPage.content),
     ref: state.ref ? {id: state.ref.id, url: state.ref.url, w: state.ref.w, h: state.ref.h} : null,
     comic_bible: state.comicBible || '',
     comic_novel: !!state.comicNovel,
@@ -7530,11 +7578,15 @@ function applySnapshot(d){
     link: it.link || '', ...(String(it.caption || '').trim() ? {caption: it.caption} : {})}));
   const sel = d.sel || {};
   // 存的是空串＝当时就是「不限」，得真的清回 null，否则会沿用页面上的默认组合
-  const pick1 = (kind, id) => {
+  const pick = (kind, id) => {
     const pool = state[kind + 's'] || [];
-    state.sel[kind] = (id && pool.find(x=>x.id === id)) || null;
+    return (id && pool.find(x=>x.id === id)) || null;
   };
-  pick1('style', sel.style); pick1('layout', sel.layout); pick1('color', sel.color);
+  const fill = (box, ids) => { ['style','layout','color'].forEach(k => { box[k] = pick(k, (ids || {})[k]); }); };
+  // 新版快照单图 / 内容侧各存一套；旧草稿只有一份 sel，两边都按它还原
+  fill(state.selByPage.single,  d.sel_single  || sel);
+  fill(state.selByPage.content, d.sel_content || sel);
+  state.sel = state.selByPage[window.currentNav === 'single' ? 'single' : 'content'];
   state.ref = d.ref && d.ref.id ? d.ref : null;
   state.redo = null; renderRedoBar();
   syncPicks(); renderMoodChips(); syncRef(); syncInstr(); renderItems();
@@ -8109,6 +8161,8 @@ setInterval(refreshPool, 10000);
   var notesEl = document.getElementById('upNotes');
   var notesBody = document.getElementById('upNotesBody');
   var curVer = '', latestVer = '';
+  var lastDelta = null;   // 最近一次检查到的增量规模，面板拿它说「只换几个文件」
+  var newer = null;       // null=还没查到 / true=有新版本 / false=已是最新
 
   /* 更新说明来自新版本包里的 server/changelog.json，由后端 /api/upgrade 带回来。
      拿不到就整块不显示——宁可少一块，也不要在升级按钮旁边挂个「暂无说明」。 */
@@ -8145,27 +8199,55 @@ setInterval(refreshPool, 10000);
      必须与版本号同一行：另起一行会把整页顶出右侧滚动条。
      工作台常年开着，只在首屏查一次就永远等不到提示，所以切回页面和每 10 分钟各复查一次；
      复查拿到的结果如果已经没有新版本，要把胶囊收回去，不能挂着过期提示。 */
+  /* 有新版本就在两个位置挂红点：左栏「设置」按钮 + 设置弹窗里的「检查更新」分组。
+     工作台常年开着，光靠人点进去查是等不到的，所以查到了要主动亮出来。 */
+  function setDots(on){
+    ['railSetDot', 'setUpdateDot'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) el.hidden = !on;
+    });
+    var gear = document.getElementById('railSetting');
+    if (gear) gear.title = on ? '有新版本可升级（点开 → 检查更新）' : '设置 / 接口与号池';
+  }
+
+  /* 主动推一次：同一个版本只说一次，关掉就不再啰嗦（刷新也不重复） */
+  function pushOnce(v){
+    try {
+      var k = 'iw_upd_tip_' + v;
+      if (sessionStorage.getItem(k) === '1') return;
+      sessionStorage.setItem(k, '1');
+      toast('有新版本 v' + v + '，点这里增量升级（只换有变化的文件）',
+        {title: '发现新版本', ms: 9000,
+         click: function(){ if (window.openSettings) window.openSettings('update'); }});
+    } catch (e) {}
+  }
+
   function render(d){
     /* 服务端报回来的版本号先落卡。本地比 npm 新时（发版前的日常），latest 是个倒退的
        旧号，「最新版本」卡镜像当前版本；只有真有新版本才显示 npm 的版本号。 */
     if (d && d.current) curVer = d.current;
     if (d && d.has_new && d.latest) latestVer = d.latest;
     else if (d && d.current) latestVer = d.current;
+    if (d) newer = !!d.has_new;
+    lastDelta = (d && d.delta) || null;
     prepPanel();
     /* 设置弹窗「检查更新」分组的状态行：查完给一句明确结果，别让人对着按钮猜 */
     var cs = document.getElementById('setCheckState');
     if (cs) cs.textContent = (d && d.has_new && d.latest)
       ? '发现新版本 v' + d.latest : '当前已是最新版本';
     if (!d || !d.has_new || !d.latest){
+      setDots(false);
       note.hidden = true;
       note.textContent = '';
       note.title = '';
       renderNotes([]);
       return;
     }
+    setDots(true);
+    pushOnce(d.latest);
     note.hidden = false;
     note.textContent = '新版本 v' + d.latest + ' →';
-    note.title = '点击打开升级面板，可一键升级（只换代码，不动草稿和图片）';
+    note.title = '点击打开升级面板，增量升级（只换代码，不动草稿和图片）';
     renderNotes(d.notes);
   }
 
@@ -8176,10 +8258,30 @@ setInterval(refreshPool, 10000);
   function prepPanel(){
     if (fromEl) fromEl.textContent = curVer ? 'v' + curVer : '—';
     if (toEl) toEl.textContent = latestVer ? 'v' + latestVer : '—';
+    /* 面板左下角那行版本：以前靠 verFoot 的文本，版本胶囊隐藏时就成了「版本 —」 */
+    var setVer = document.getElementById('setVersion');
+    if (setVer && curVer) setVer.textContent = '版本 v' + curVer;
+    /* 已是最新就别让人点「立即升级」——点下去只能换来一句 400 红字，很难看 */
+    if (newer === false){
+      if (goBtn){ goBtn.disabled = true; goBtn.textContent = '已是最新'; }
+      setStep('当前已是最新版本。以后有新版本，这里会写明要换几个文件，左栏设置也会亮小红点。', '');
+      return;
+    }
     if (goBtn){ goBtn.disabled = false; goBtn.textContent = '立即升级'; }
-    setStep('点「立即升级」开始：先下载安装包核对版本，再逐个覆盖代码文件。', '');
+    /* 增量规模是后端比对指纹算出来的：有多少个文件真的变了、一共多少 KB。
+       比「下载安装包」具体得多，也顺带解释了为什么不用等很久。 */
+    if (lastDelta && lastDelta.ok && lastDelta.changed){
+      var kb = Math.max(1, Math.round((lastDelta.bytes || 0) / 1024));
+      setStep('增量更新：只需替换 ' + lastDelta.changed + ' / ' + lastDelta.total
+        + ' 个文件（约 ' + kb + ' KB），不用重新下载整包。', '');
+    } else if (lastDelta && lastDelta.ok === false){
+      setStep('点「立即升级」开始：这次要整包更新（约几百 KB），因为拿不到文件清单或内容已变。', '');
+    } else {
+      setStep('点「立即升级」开始：核对版本后只下载有变化的文件，没变化的文件不碰。', '');
+    }
   }
   window.prepUpgradePanel = prepPanel;
+  window.upCurrent = function(){ return curVer; };
   function openPanel(){
     if (!dlg) return;
     prepPanel();
@@ -8207,7 +8309,7 @@ setInterval(refreshPool, 10000);
     if (!goBtn) return;
     goBtn.disabled = true;
     goBtn.textContent = '升级中…';
-    setStep('正在下载安装包并核对版本…', 'busy');
+    setStep('正在核对版本、比对文件指纹…', 'busy');
     fetch('/api/upgrade/apply', {method: 'POST', cache: 'no-store'})
       .then(function(r){
         return r.json().catch(function(){ return null; }).then(function(b){ return {r: r, b: b}; });
@@ -8219,8 +8321,10 @@ setInterval(refreshPool, 10000);
           goBtn.disabled = false; goBtn.textContent = '重试';
           return;
         }
-        setStep('代码已更新到 v' + b.to + '（' + b.files + ' 个文件，旧代码备份为 ' + b.backup
-          + '）。正在重启服务…', 'busy');
+        var kb = Math.max(1, Math.round((b.bytes || 0) / 1024));
+        setStep('代码已更新到 v' + b.to + '（' + (b.delta ? '增量替换 ' : '整包替换 ')
+          + b.files + ' 个文件 / ' + kb + ' KB，旧文件备份为 ' + b.backup + '）。正在重启服务…', 'busy');
+        setDots(false);
         // 重启会让这个请求被掐断，报错是正常的，忽略
         fetch('/api/upgrade/restart', {method: 'POST', cache: 'no-store'}).catch(function(){});
         goBtn.textContent = '等待重启…';
@@ -9357,6 +9461,18 @@ setInterval(refreshPool, 10000);
       if (multiTail) multi.insertBefore(gen, multiTail);
     }
     Object.keys(P).forEach(k=>{ P[k].hidden = (k !== name); });
+    /* 选型 / 手改指令按页隔离（用户 2026-11-27）：单图一份，文案 + 多图共用内容侧一份。
+       三张卡是同一份 DOM，切页时把 state.sel 换成那一页的对象再重绘，改哪页只动哪页。 */
+    const selKey = name === 'single' ? 'single' : 'content';
+    const selBox = state.selByPage[selKey];
+    if (selBox && state.sel !== selBox){
+      state.sel = selBox;
+      state.instrCustom = state.instrCustomByPage[selKey];
+      if (window.syncPicks) syncPicks(true);   // 静默重绘：切页不算改内容
+      // 「按内容推荐 / 换一组」也按页算：单图配过不代表多图配过
+      const cb = document.getElementById('comboRecBtn');
+      if (cb && !_comboBusy) cb.textContent = _comboLastByPage[selKey] ? '换一组' : '按内容推荐';
+    }
     const work = (name === 'single' || name === 'multi');
     if (aside) aside.hidden = !work;
     if (headActs){
@@ -9382,8 +9498,8 @@ setInterval(refreshPool, 10000);
       if (window.syncPreview) syncPreview();
       if (name === 'multi' && window.refitItems) refitItems();   // 节点刚挂进多图页，重新量正文 / 提示词高度
       if (window.renderStrip) renderStrip();   // 预览按当前页取单图或多图那份结果，别串
-      /* 推荐带是三个分组共用的一行 DOM：切页时把上一页留下的「读：xxx」结果清掉，
-         否则单图页会挂着多图页配的「读：左侧正文与分镜」，误导（用户 2026-11-27） */
+      /* 推荐带是三个分组共用的一行 DOM：切页时把上一页留下的读取结果清掉，
+         否则单图页会挂着多图页配的那套说明，误导（用户 2026-11-27） */
       if (!_comboBusy && window.comboNote) comboNote('写了内容就会自动配一套图型 · 风格 · 主题色；也可以点右边手动配。');
       if (!quiet) autoComboSoon();             // 进分组页内容在、卡全空就自动配一套组合
       if (!quiet){
@@ -9424,10 +9540,27 @@ setInterval(refreshPool, 10000);
     });
   }
 
+  /* 「工作台设置」每次打开都按服务端真实值重填一遍：目录、微信网关这些字段
+     以前只有占位符，用户得点「打开目录」才知道图存哪（用户 2026-11-27） */
+  function refreshWsPane(){
+    fetch('/api/config', {cache: 'no-store'})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (window.cfgFill) window.cfgFill(d);
+        const rn = document.getElementById('cfgRenameInput');
+        if (rn && !rn.value) rn.value = d.app_name || '';   // 别打断正在输入的新名字
+      })
+      .catch(function(){});
+  }
+
   function openSettings(tab){
     if (!PANES[tab]) tab = 'ws';
     const ver = $('verFoot'), setVer = $('setVersion');
-    if (setVer) setVer.textContent = '版本 ' + ((ver && ver.textContent) || '—');
+    /* 版本号优先取左下角胶囊；胶囊被收起来时退到升级模块里 /health 拿到的值，
+       否则一行「版本 —」看着像没装好 */
+    const vTxt = (ver && ver.textContent)
+      || (window.upCurrent && window.upCurrent() ? 'v' + window.upCurrent() : '');
+    if (setVer) setVer.textContent = '版本 ' + (vTxt || '—');
     setTab(tab);
     if (!dlg.open) dlg.showModal();
     if (tab === 'update'){
@@ -9435,6 +9568,10 @@ setInterval(refreshPool, 10000);
       const cs = $('setCheckState');
       if (cs) cs.textContent = '检查中…';
       if (window.checkUpgrade) window.checkUpgrade();
+    } else if (tab === 'ws'){
+      /* 打开就先按服务端真实值填一遍。以前这里从不主动读，目录框只剩一句占位符，
+         用户永远看不见图到底存哪——工作台在自己电脑上，没什么可藏的（用户 2026-11-27） */
+      refreshWsPane();
     } else if (tab === 'iface' && !ifaceLoaded && window.loadConfigPage){
       ifaceLoaded = true;   // 接口配置只在首次打开时读一次，之后看缓存，点「刷新」才重查
       window.loadConfigPage();
@@ -9469,6 +9606,8 @@ setInterval(refreshPool, 10000);
       } else if (b.dataset.set === 'iface' && !ifaceLoaded && window.loadConfigPage){
         ifaceLoaded = true;
         window.loadConfigPage();
+      } else if (b.dataset.set === 'ws'){
+        refreshWsPane();
       }
     };
   });

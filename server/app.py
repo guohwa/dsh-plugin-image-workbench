@@ -11,6 +11,7 @@ import hashlib
 import os
 import re
 import secrets
+import socket
 import shutil
 import subprocess
 import sys
@@ -45,6 +46,9 @@ from history import History
 from pool import (PoolManager, load_config, provider_cfg, test_connection,
                   out_dir, image_path, norm_base_url,
                   CONFIG_FILE as POOL_CONFIG_FILE)
+# 升级白名单与内容指纹只有一份（upgrade_files），发版清单生成也读它
+from upgrade_files import (TEXT_EXT, manifest_diff, sha_norm,
+                           upgrade_rel as _upgrade_rel)
 
 # 本地版：所有数据目录都在本文件所在目录，不再指向 VPS 的 /root/ai-pool-lab
 LAB = Path(__file__).resolve().parent
@@ -81,6 +85,11 @@ def _plugin_version() -> str:
 
 VERSION = _plugin_version()
 POOL = PoolManager()
+# 本进程是否持有执行层（起 worker、接任务）。多开会话时只有一个能拿到，
+# 其余的只提供页面，提交任务会明确报错而不是静默排队。
+EXEC_LAYER_OWNER = False
+# 是否已经尝试过抢锁：没跑过 lifespan 的场景（单测、脚本调用）不该被挡
+EXEC_LAYER_TRIED = False
 # 图片目录传函数：用户改「保存目录」后历史立刻按新目录找图，不用重启
 HISTORY = History(LAB / "workbench" / "history.jsonl", out_dir, THUMB_DIR,
                   finder=image_path)
@@ -114,6 +123,36 @@ if AUTH_FILE.exists():
     u, _, p = AUTH_FILE.read_text(encoding="utf-8").strip().partition(":")
     if u and p:
         AUTH = (u, p)
+
+
+# --------------------------------------------------------------- 单实例互斥
+# 同一个状态目录只能有一个进程跑执行层。两个进程同时 _restore() 会把同一批
+# 未完成任务各跑一遍，_persist() 又会互相覆盖，表现就是「日志里两个执行层交错、
+# 任务重复出图、提交了没反应」。锁是进程级的，进程一死系统自动释放，不会留死锁。
+_INSTANCE_LOCK_PORT = 38997     # 专用占位端口，不对任何请求提供服务
+_INSTANCE_LOCK_SOCK = None
+
+
+def _acquire_instance_lock() -> bool:
+    """抢占执行层单实例锁；抢不到返回 False。
+
+    用端口占位而不是文件锁：文件锁在 Windows 上受缓冲模式、追加打开、杀软/回收站
+    策略影响，实测会出现两个进程同时「加锁成功」。端口 bind 是操作系统级独占，
+    Windows 上不加 SO_REUSEADDR 就绝不会重复绑定，进程一死端口立刻释放。
+    """
+    global _INSTANCE_LOCK_SOCK
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", _INSTANCE_LOCK_PORT))
+        s.listen(1)
+    except OSError:
+        try:
+            s.close()
+        except Exception:
+            pass
+        return False
+    _INSTANCE_LOCK_SOCK = s
+    return True
 
 
 @asynccontextmanager
@@ -166,9 +205,18 @@ async def lifespan(app: FastAPI):
         _wx_cfg()
     except Exception:
         pass
-    await POOL.start()
+    # 抢不到锁说明另一个实例已经在跑执行层：这里只提供页面，不再起 worker，
+    # 否则两个执行层会把同一批任务各跑一遍、进度文件互相覆盖。
+    global EXEC_LAYER_OWNER, EXEC_LAYER_TRIED
+    EXEC_LAYER_OWNER = _acquire_instance_lock()
+    EXEC_LAYER_TRIED = True
+    if EXEC_LAYER_OWNER:
+        await POOL.start()
+    else:
+        pool_mod.log("检测到另一个实例已在运行，本进程不启动执行层（避免任务重复执行、进度互相覆盖）")
     yield
-    await POOL.stop()
+    if EXEC_LAYER_OWNER:
+        await POOL.stop()
 
 
 app = FastAPI(title="Handraw Workbench", lifespan=lifespan)
@@ -739,56 +787,178 @@ async def api_upgrade():
     else:
         lat = await _latest_version()
         has_new = bool(lat) and _ver_key(lat) > _ver_key(VERSION)
-        data = {"current": VERSION, "latest": lat, "has_new": has_new, "notes": []}
+        data = {"current": VERSION, "latest": lat, "has_new": has_new, "notes": [], "delta": None}
         if has_new:
             # 只说清了「有新版本」还不够，得让人知道新在哪：随包发的 changelog 里捞
             data["notes"] = _notes_between(VERSION, lat, await _fetch_changelog(lat))
+            # 顺手算一下增量规模，面板一打开就能说「只换几个文件」，不用等点了升级才知道
+            plan = await _delta_plan(lat)
+            if plan:
+                data["delta"] = {"ok": _delta_worth(plan), "changed": len(plan["changes"]),
+                                 "total": plan["total"], "bytes": plan["bytes"]}
         ttl = _UPGRADE_TTL_NEW if has_new else (_UPGRADE_TTL_SAME if lat else _UPGRADE_TTL_FAIL)
     _UPGRADE_CACHE.update({"at": now, "data": data, "ttl": ttl})
     return JSONResponse(data)
 
 
-# ---------- 一键升级：从 npm 拉整包，只覆盖代码文件 ----------
+# ---------- 升级：先增量，失败回退整包 ----------
 #
-# 插件的运行目录就是源码目录（DSH 用目录联接指过来），草稿、历史、图片、配置、
-# 虚拟环境都躺在同一个目录里。所以升级只做一件事：把新包的代码文件逐个盖上去，
-# 其余一律不碰——用白名单而不是黑名单，认不出来的路径直接跳过。
+# 运行目录就是源码目录（DSH 用目录联接指过来），草稿、历史、图片、配置、虚拟环境
+# 都躺在同一个目录里。所以「升级」= 只替换代码文件，白名单见 upgrade_files。
+#
+# 增量靠包里那份 server/update-manifest.json（发版时由 scripts/make_manifest.py 生成）：
+# 里面是每个可升级文件的 sha1，跟本地一比就知道哪几个真变了，只从 CDN 取那几个文件。
+# 一轮改动通常就一两个文件、几十 KB，不用再拉整包、也不用重装。
 
 PLUGIN_ROOT = LAB.parent
-# 顶层这几个是插件外壳，跟随版本一起更新
-_TOP_CODE = {"host.js", "client.js", "cordis.patch.yml", "install.mjs", "package.json"}
-# 这些目录整棵不动：虚拟环境、运行态数据、号池内核（几十 MB，升级用不到）
-_KEEP_ANY = {"vendor", "node_modules", ".venv", "__pycache__", "workbench", "images",
-             "thumbs", "refs", "repo_images", ".pytest_cache", ".git"}
-_KEEP_FILES = {"config.local.json", "app.db", "history.db"}
 _MAX_TARBALL = 120 * 1024 * 1024
 _TARBALL_BASES = (
     "https://registry.npmmirror.com/dsh-plugin-image-workbench/-/dsh-plugin-image-workbench-{}.tgz",
     "https://registry.npmjs.org/dsh-plugin-image-workbench/-/dsh-plugin-image-workbench-{}.tgz",
 )
+_MANIFEST_BASES = (
+    "https://cdn.jsdelivr.net/npm/dsh-plugin-image-workbench@{}/server/update-manifest.json",
+    "https://unpkg.com/dsh-plugin-image-workbench@{}/server/update-manifest.json",
+)
+# 单文件也走 CDN：jsdelivr 能裸取包内任意文件，比整包小两三个数量级
+_FILE_BASES = (
+    "https://cdn.jsdelivr.net/npm/dsh-plugin-image-workbench@{}/{}",
+    "https://unpkg.com/dsh-plugin-image-workbench@{}/{}",
+)
+_DELTA_WORKERS = 6          # 并发下载数：文件小、数量多，6 个够快也不至于被 CDN 限流
+# 变化太大就别走增量了：几十个文件裸下载可能比一个压缩包还慢，整包反而干脆。
+# 参照系：可升级代码一共约 1.6MB，而整包 15MB（大头是号池内核 vendor，永远不增量），
+# 所以只有「清单异常/文件数爆掉」才会真的退回整包。
+_DELTA_MAX_BYTES = 1800 * 1024
+_DELTA_MAX_FILES = 40
 
 
-def _upgrade_rel(rel: str) -> str | None:
-    """tarball 内的相对路径 -> 该不该写盘。不该写返回 None。"""
-    parts = [p for p in rel.replace("\\", "/").split("/") if p not in ("", ".")]
-    if not parts:
+async def _fetch_manifest(ver: str) -> dict:
+    """取指定版本随包发布的文件清单，两个 CDN 依次兜底，拿不到返回空。"""
+    import httpx
+
+    async with httpx.AsyncClient(trust_env=False, timeout=8, follow_redirects=True) as c:
+        for tpl in _MANIFEST_BASES:
+            try:
+                r = await c.get(tpl.format(ver))
+                if r.status_code != 200:
+                    continue
+                data = r.json()
+                # 版本号必须对得上：CDN 缓存串版本时宁可退回整包，也别拿旧清单去比
+                if (isinstance(data, dict) and isinstance(data.get("files"), dict)
+                        and str(data.get("version") or "").strip() == ver):
+                    return data
+            except Exception:
+                continue
+    return {}
+
+
+async def _delta_plan(ver: str) -> dict | None:
+    """对比远端清单与本地磁盘，得到「这次到底要换哪几个文件」。"""
+    man = await _fetch_manifest(ver)
+    if not man:
         return None
-    name = parts[-1]
-    if any(p in _KEEP_ANY for p in parts[:-1]):
+    files = man.get("files") or {}
+    changes = await run_in_threadpool(manifest_diff, files, PLUGIN_ROOT)
+    return {"total": len(files), "changes": changes,
+            "bytes": sum(int(c.get("size") or 0) for c in changes)}
+
+
+async def _fetch_one_file(c, ver: str, rel: str, sem) -> bytes:
+    async with sem:
+        for tpl in _FILE_BASES:
+            try:
+                r = await c.get(tpl.format(ver, quote(rel)))
+                if r.status_code == 200 and r.content:
+                    return r.content
+            except Exception:
+                continue
+    return b""
+
+
+async def _download_delta(ver: str, changes: list[dict]) -> dict | None:
+    """并发取变化的文件；任何一个内容对不上清单就整体放弃，交给整包兜底。"""
+    import httpx
+
+    sem = asyncio.Semaphore(_DELTA_WORKERS)
+    async with httpx.AsyncClient(trust_env=False, timeout=25, follow_redirects=True) as c:
+        blobs = await asyncio.gather(*[_fetch_one_file(c, ver, ch["rel"], sem) for ch in changes])
+    out: dict = {}
+    for ch, blob in zip(changes, blobs):
+        if not blob:
+            return None
+        # CDN 可能回一份 200 的错误页，指纹是唯一能信的东西
+        if sha_norm(blob, ch["rel"]) != ch["sha1"]:
+            return None
+        out[ch["rel"]] = blob
+    return out
+
+
+def _write_code_files(files: dict, bdir: Path) -> tuple[int, str]:
+    """先备份再逐个原子替换，返回 (写入文件数, 备份名)。越界路径一律跳过。"""
+    plans = []
+    for rel, raw in files.items():
+        dest = (PLUGIN_ROOT / rel).resolve()
+        if PLUGIN_ROOT not in dest.parents:
+            continue
+        plans.append((rel, dest, raw))
+    if not plans:
+        return 0, ""
+
+    bdir.mkdir(parents=True, exist_ok=True)
+    zpath = bdir / ("v" + VERSION + "-" + time.strftime("%Y%m%d-%H%M%S") + ".zip")
+    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+        for _rel, dest, _raw in plans:
+            if dest.exists():
+                z.write(dest, _rel)
+
+    # 先写临时文件再 os.replace，中途失败不会留下半截文件。
+    # 行尾跟着原文件走：Windows 上仓库是 CRLF 检出，包内是 LF，直接盖过去会让
+    # git status 一片 M（内容其实没变），所以文本文件保持原来的行尾风格。
+    for _rel, dest, raw in plans:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.suffix.lower() in TEXT_EXT and dest.exists():
+            try:
+                old = dest.read_bytes()
+            except OSError:
+                old = b""
+            if b"\r\n" in old and b"\r\n" not in raw:
+                raw = raw.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+        staging = dest.with_name(dest.name + ".upnew")
+        staging.write_bytes(raw)
+        os.replace(staging, dest)
+
+    # 备份只留最近 5 份：每次 200K 出头，攒一年也占不了多少，但没必要无限堆
+    try:
+        olds = sorted(bdir.glob("v*.zip"), key=lambda p: p.stat().st_mtime)
+        for p in olds[:-5]:
+            p.unlink()
+    except OSError:
+        pass
+    return len(plans), zpath.name
+
+
+def _delta_worth(plan: dict | None) -> bool:
+    """值不值得走增量：有变化、且规模没到「不如整包」的地步。"""
+    if not plan or not plan["changes"]:
+        return False
+    return plan["bytes"] <= _DELTA_MAX_BYTES and len(plan["changes"]) <= _DELTA_MAX_FILES
+
+
+async def _apply_delta(latest: str) -> JSONResponse | None:
+    """增量升级。返回 None 表示增量这条路走不通（没清单 / 太大 / 校验失败），交给整包。"""
+    plan = await _delta_plan(latest)
+    if not _delta_worth(plan):
         return None
-    if name in _KEEP_FILES or name.endswith((".db", ".log", ".pyc", ".upnew")):
+    blobs = await _download_delta(latest, plan["changes"])
+    if blobs is None:
         return None
-    if len(parts) == 1:
-        return rel if name in _TOP_CODE else None
-    top = parts[0]
-    if top == "server":
-        if len(parts) == 2:
-            ok = name.endswith(".py") or name in {"catalog.json", "requirements.txt", "changelog.json"}
-            return rel if ok else None
-        return rel if parts[1] == "static" else None
-    if top == "scripts":
-        return rel if name.endswith((".mjs", ".py")) else None
-    return None
+    n, backup = _write_code_files(blobs, LAB / "workbench" / "backup")
+    if not n:
+        return None
+    return JSONResponse({"ok": True, "from": VERSION, "to": latest, "delta": True,
+                         "files": n, "bytes": sum(len(v) for v in blobs.values()),
+                         "backup": backup, "note": "增量更新：只替换有变化的文件"})
 
 
 async def _fetch_tarball(ver: str) -> bytes:
@@ -818,7 +988,7 @@ def _extract_tarball(blob: bytes, dest: Path) -> Path | None:
 
 @app.post("/api/upgrade/apply")
 async def api_upgrade_apply():
-    """下载并覆盖代码后返回；重启由 /api/upgrade/restart 单独触发。
+    """先试增量（只换变化的文件），走不通再退回整包。重启由 /api/upgrade/restart 单独触发。
 
     出图进行中直接拒绝：重启会把在途请求掐断，宁可让用户等几十秒。
     """
@@ -832,6 +1002,24 @@ async def api_upgrade_apply():
     if _ver_key(latest) <= _ver_key(VERSION):
         return JSONResponse({"ok": False, "error": "已经是最新版本 v" + VERSION}, status_code=400)
 
+    # 增量不通（清单拿不到、CDN 文件指纹不对）就静默回退整包，用户不用知道走了哪条路
+    try:
+        resp = await _apply_delta(latest)
+    except Exception:
+        resp = None
+    if resp is None:
+        try:
+            resp = await _apply_full(latest)
+        except Exception as e:
+            return JSONResponse({"ok": False, "error": "升级中断：" + type(e).__name__ + " " + str(e)[:120]},
+                                status_code=500)
+    if resp.status_code == 200:
+        _UPGRADE_CACHE.update({"at": 0.0, "data": None, "ttl": 0.0})
+    return resp
+
+
+async def _apply_full(latest: str) -> JSONResponse:
+    """整包兜底：拉 npm tarball，只覆盖白名单里的代码文件。"""
     blob = await _fetch_tarball(latest)
     if not blob:
         return JSONResponse({"ok": False, "error": "安装包下载失败，可点「复制命令」手工升级"}, status_code=502)
@@ -851,63 +1039,21 @@ async def api_upgrade_apply():
                                 status_code=502)
 
         # 先把「要写哪些文件」算清楚，再动手，避免中途才发现路径不对
-        plans = []
+        files: dict = {}
         for f in sorted(pkg.rglob("*")):
             if not f.is_file():
                 continue
             rel = _upgrade_rel(f.relative_to(pkg).as_posix())
             if not rel:
                 continue
-            dest = (PLUGIN_ROOT / rel).resolve()
-            if PLUGIN_ROOT not in dest.parents:
-                continue   # 越界，宁可不写
-            plans.append((f, dest, rel))
-        if not plans:
+            files[rel] = f.read_bytes()
+        if not files:
             return JSONResponse({"ok": False, "error": "包里没有可覆盖的代码文件，已放弃"}, status_code=502)
 
-        # 备份：把即将被覆盖的现有文件打包，出问题可以手工解回去
-        bdir = LAB / "workbench" / "backup"
-        bdir.mkdir(parents=True, exist_ok=True)
-        zpath = bdir / ("v" + VERSION + "-" + time.strftime("%Y%m%d-%H%M%S") + ".zip")
-        with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
-            for _src, dest, rel in plans:
-                if dest.exists():
-                    z.write(dest, rel)
-
-        # 覆盖：先写临时文件再 os.replace，中途失败不会留下半截文件。
-        # 行尾跟着原文件走：Windows 上仓库是 CRLF 检出，包内是 LF，直接盖过去会让
-        # git status 一片 M（内容其实没变），所以文本文件保持原来的行尾风格。
-        _text_ext = {".py", ".html", ".css", ".js", ".mjs", ".json", ".txt",
-                     ".yml", ".yaml", ".md"}
-        for src, dest, _rel in plans:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            raw = src.read_bytes()
-            if dest.suffix.lower() in _text_ext and dest.exists():
-                try:
-                    old = dest.read_bytes()
-                except OSError:
-                    old = b""
-                if b"\r\n" in old and b"\r\n" not in raw:
-                    raw = raw.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
-            staging = dest.with_name(dest.name + ".upnew")
-            staging.write_bytes(raw)
-            os.replace(staging, dest)
-
-        # 备份只留最近 5 份：每次 200K 出头，攒一年也占不了多少，但没必要无限堆
-        try:
-            olds = sorted(bdir.glob("v*.zip"), key=lambda p: p.stat().st_mtime)
-            for p in olds[:-5]:
-                p.unlink()
-        except OSError:
-            pass
-
-        _UPGRADE_CACHE.update({"at": 0.0, "data": None, "ttl": 0.0})
-        return JSONResponse({"ok": True, "from": VERSION, "to": latest,
-                             "files": len(plans), "backup": zpath.name,
-                             "note": "号池内核 vendor/ 未替换"})
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": "升级中断：" + type(e).__name__ + " " + str(e)[:120]},
-                            status_code=500)
+        n, backup = _write_code_files(files, LAB / "workbench" / "backup")
+        return JSONResponse({"ok": True, "from": VERSION, "to": latest, "delta": False,
+                             "files": n, "bytes": sum(len(v) for v in files.values()),
+                             "backup": backup, "note": "整包更新；号池内核 vendor/ 未替换"})
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -3045,7 +3191,9 @@ async def api_config_save(body: dict):
                 probe.unlink()
             except Exception as e:
                 raise HTTPException(400, f"保存目录不可用：{d}（{e}）")
-            put("output_dir", str(d))
+            # 界面现在把默认路径直接摆在输入框里，用户原样保存回来不该变成
+            # 「自定义目录」——认回默认就存空，语义干净（用户 2026-11-27）
+            put("output_dir", "" if d.resolve() == OUT_DIR.resolve() else str(d))
         else:
             put("output_dir", "")     # 留空 = 回到默认 images/
         # 记下用过的旧目录：换走之后，老图在历史里还得打得开
@@ -3131,6 +3279,17 @@ async def api_config_profile_switch(body: dict):
     _write_cfg_file(cfg)
     await POOL.refresh_env_ids()
     await POOL.refresh_accounts(force=True)
+    # 切过去发现目标号池没在跑：auto_start 开着就顺手拉起来。
+    # 用户要的是「切一下就能用」，不该切完还看到「已手动停止」再去点启动。
+    try:
+        if EXEC_LAYER_OWNER:
+            v = pool_service.view()
+            if v.get("manageable") and not pool_service.probe(v["port"], 0.5):
+                if pool_service.auto_start(v["home"]):
+                    pool_mod.log(f"切换接口后目标号池未运行，按自动拉起设置启动端口 {v['port']}")
+                    asyncio.create_task(run_in_threadpool(pool_service.start))
+    except Exception as e:
+        pool_mod.log("切换接口后自动拉起号池失败：" + str(e)[:110])
     return JSONResponse(_cfg_view())
 
 
@@ -3687,6 +3846,10 @@ async def api_preview(req: GenRequest):
 
 @app.post("/api/generate")
 async def api_generate(req: GenRequest):
+    if EXEC_LAYER_TRIED and not EXEC_LAYER_OWNER:
+        # 任务交给没拿到执行层的进程只会排队不动，明确拒绝比静默卡住好
+        raise HTTPException(
+            409, "另一个工作台实例正在执行任务。请关掉多余的工作台窗口或标签页，只保留一个再试。")
     rid = (req.replace_id or "").strip()
     if rid and not re.fullmatch(r"[0-9a-z]{6,32}", rid):
         raise HTTPException(400, "bad replace_id")
