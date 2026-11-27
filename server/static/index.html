@@ -8216,7 +8216,7 @@ setInterval(refreshPool, 10000);
       var k = 'iw_upd_tip_' + v;
       if (sessionStorage.getItem(k) === '1') return;
       sessionStorage.setItem(k, '1');
-      toast('有新版本 v' + v + '，点这里增量升级（只换有变化的文件）',
+      toast('有新版本 v' + v + '，点这里升级（下载完整安装包，约十几秒）',
         {title: '发现新版本', ms: 9000,
          click: function(){ if (window.openSettings) window.openSettings('update'); }});
     } catch (e) {}
@@ -8247,7 +8247,7 @@ setInterval(refreshPool, 10000);
     pushOnce(d.latest);
     note.hidden = false;
     note.textContent = '新版本 v' + d.latest + ' →';
-    note.title = '点击打开升级面板，增量升级（只换代码，不动草稿和图片）';
+    note.title = '点击打开升级面板（下载完整安装包，只覆盖代码，不动草稿和图片）';
     renderNotes(d.notes);
   }
 
@@ -8264,20 +8264,17 @@ setInterval(refreshPool, 10000);
     /* 已是最新就别让人点「立即升级」——点下去只能换来一句 400 红字，很难看 */
     if (newer === false){
       if (goBtn){ goBtn.disabled = true; goBtn.textContent = '已是最新'; }
-      setStep('当前已是最新版本。以后有新版本，这里会写明要换几个文件，左栏设置也会亮小红点。', '');
+      setStep('当前已是最新版本。以后有新版本，这里会写明，左栏设置也会亮小红点。', '');
       return;
     }
     if (goBtn){ goBtn.disabled = false; goBtn.textContent = '立即升级'; }
-    /* 增量规模是后端比对指纹算出来的：有多少个文件真的变了、一共多少 KB。
-       比「下载安装包」具体得多，也顺带解释了为什么不用等很久。 */
-    if (lastDelta && lastDelta.ok && lastDelta.changed){
-      var kb = Math.max(1, Math.round((lastDelta.bytes || 0) / 1024));
-      setStep('增量更新：只需替换 ' + lastDelta.changed + ' / ' + lastDelta.total
-        + ' 个文件（约 ' + kb + ' KB），不用重新下载整包。', '');
-    } else if (lastDelta && lastDelta.ok === false){
-      setStep('点「立即升级」开始：这次要整包更新（约几百 KB），因为拿不到文件清单或内容已变。', '');
+    /* 升级一律下整包（16 MB 左右），只覆盖代码文件，草稿和图片不动。
+       不再显示「只换 N 个文件」——那种说法让人以为和整包是两条不同的路，实际用户只关心点一下能不能成。 */
+    if (lastDelta && lastDelta.ok && lastDelta.total){
+      setStep('点「立即升级」开始：下载完整安装包（约 16 MB），核对版本后覆盖 '
+        + lastDelta.total + ' 个代码文件，草稿和图片不动。', '');
     } else {
-      setStep('点「立即升级」开始：核对版本后只下载有变化的文件，没变化的文件不碰。', '');
+      setStep('点「立即升级」开始：下载完整安装包（约 16 MB），核对版本后覆盖代码文件，草稿和图片不动。', '');
     }
   }
   window.prepUpgradePanel = prepPanel;
@@ -8309,7 +8306,7 @@ setInterval(refreshPool, 10000);
     if (!goBtn) return;
     goBtn.disabled = true;
     goBtn.textContent = '升级中…';
-    setStep('正在核对版本、比对文件指纹…', 'busy');
+    setStep('正在下载安装包、核对版本…', 'busy');
     fetch('/api/upgrade/apply', {method: 'POST', cache: 'no-store'})
       .then(function(r){
         return r.json().catch(function(){ return null; }).then(function(b){ return {r: r, b: b}; });

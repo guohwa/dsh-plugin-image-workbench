@@ -946,7 +946,11 @@ def _delta_worth(plan: dict | None) -> bool:
 
 
 async def _apply_delta(latest: str) -> JSONResponse | None:
-    """增量升级。返回 None 表示增量这条路走不通（没清单 / 太大 / 校验失败），交给整包。"""
+    """增量升级。返回 None 表示增量这条路走不通（没清单 / 太大 / 校验失败），交给整包。
+
+    **当前未启用**：/api/upgrade/apply 走整包（见那只函数的注释）。代码留着是为了
+    将来包体变大时能一键切回来，别当死代码删掉——_delta_plan / 清单 / 指纹都在用。
+    """
     plan = await _delta_plan(latest)
     if not _delta_worth(plan):
         return None
@@ -988,7 +992,12 @@ def _extract_tarball(blob: bytes, dest: Path) -> Path | None:
 
 @app.post("/api/upgrade/apply")
 async def api_upgrade_apply():
-    """先试增量（只换变化的文件），走不通再退回整包。重启由 /api/upgrade/restart 单独触发。
+    """升级一律走整包：下 npm tarball，核对版本后只覆盖白名单里的代码文件。
+
+    为什么不再先试增量：增量要「清单 + 每个文件从 CDN 单独拉 + 指纹逐一对上」，
+    任何一环出问题（清单混进包外文件、CDN 缓存了旧内容、镜像滞后）都会静默退回
+    整包，而用户看到的仍是「升级失败 / 卡住」。包总共才 16 MB，十来秒的事，
+    稳妥优先。增量实现保留在下面，需要时能改回来。
 
     出图进行中直接拒绝：重启会把在途请求掐断，宁可让用户等几十秒。
     """
@@ -1002,17 +1011,11 @@ async def api_upgrade_apply():
     if _ver_key(latest) <= _ver_key(VERSION):
         return JSONResponse({"ok": False, "error": "已经是最新版本 v" + VERSION}, status_code=400)
 
-    # 增量不通（清单拿不到、CDN 文件指纹不对）就静默回退整包，用户不用知道走了哪条路
     try:
-        resp = await _apply_delta(latest)
-    except Exception:
-        resp = None
-    if resp is None:
-        try:
-            resp = await _apply_full(latest)
-        except Exception as e:
-            return JSONResponse({"ok": False, "error": "升级中断：" + type(e).__name__ + " " + str(e)[:120]},
-                                status_code=500)
+        resp = await _apply_full(latest)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": "升级中断：" + type(e).__name__ + " " + str(e)[:120]},
+                            status_code=500)
     if resp.status_code == 200:
         _UPGRADE_CACHE.update({"at": 0.0, "data": None, "ttl": 0.0})
     return resp

@@ -529,10 +529,11 @@ _junk = [k for k in _man_files if any(m in k.rsplit('/', 1)[-1] for m in _uf.JUN
 ok('清单不含备份 / 临时文件', not _junk, _junk[:4])
 _notpacked = [k for k in _man_files if not _packed(k)]
 ok('清单里的文件全部在 npm 包内（否则增量必退整包）', not _notpacked, _notpacked[:4])
-ok('增量升级接口齐备（先增量，失败回退整包）',
+ok('升级走整包（增量实现保留可切回）',
    all(hasattr(app, n) for n in ('_delta_plan', '_download_delta', '_apply_delta',
                                  '_apply_full', '_write_code_files'))
-   and 'await _apply_delta(latest)' in _src_app)
+   and 'await _apply_full(latest)' in _src_app
+   and 'await _apply_delta(latest)' not in _src_app)
 ok('有新版本时两处红点 + 主动推一次',
    all(x in _src_html for x in ('id="railSetDot"', 'id="setUpdateDot"',
                                 'function setDots(on)', 'function pushOnce(v)',
