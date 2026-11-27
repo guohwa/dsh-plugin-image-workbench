@@ -2035,10 +2035,12 @@ ok('配图工坊四张卡共用一份节点，切单图 / 多图时跟随移动'
    and "if (name === 'single'){\n      ws.insertBefore(shared, ws.firstChild);" in _html
    and "if (name === 'multi'){\n      wm.insertBefore(shared, wm.firstChild);" in _html
    and "if (!P[name]) name = 'copy';" in _html)
-ok('排版预览只在单图 / 多图页常驻，其它分组隐藏',
+ok('排版预览只在单图 / 多图页常驻，文案页页头只留清空与号池',
    "const work = (name === 'single' || name === 'multi');" in _html
    and 'aside.hidden = !work;' in _html
-   and "headActs.style.display = work ? '' : 'none';" in _html
+   and "headActs.style.display = (work || name === 'copy') ? '' : 'none';" in _html
+   and "headActs.classList.toggle('copy-mode', name === 'copy');" in _html
+   and '.head-acts.copy-mode > :not(#resetAll):not(.pool-chip){display:none}' in _html
    and "if(hbDlg.dataset.inline)" in _html)
 # 2026-11-27：热榜整页只放 8 卡 + 榜单，AI 热点 / 推荐话题留在文案页；非工作页不留 440px 空列
 ok('热榜分组直接铺满页面，不再重复 AI 热点与推荐话题',
@@ -2089,7 +2091,7 @@ ok('文案页去掉 AI 热点与推荐话题两张卡',
    and 'if ($(\'recTopics\')) hotPanel.appendChild' not in _html)
 # 2026-11-27：文案页左右分栏，草稿箱常驻左栏，点草稿直接载入右侧编辑
 ok('文案页草稿箱常驻左栏，点草稿直接载入右侧编辑',
-   '.copy-split{display:grid;grid-template-columns:330px minmax(0,1fr);gap:14px;align-items:start}' in _html
+   '.copy-split{display:grid;grid-template-columns:330px minmax(0,1fr);gap:14px;height:100%;align-items:stretch}' in _html
    and "draftsDlg.dataset.inline = '1'; draftsDlg.classList.add('inline-dlg');" in _html
    and 'copySplit.appendChild(draftsDlg);' in _html
    and 'copySplit.appendChild(left);' in _html
@@ -2098,6 +2100,24 @@ ok('文案页草稿箱常驻左栏，点草稿直接载入右侧编辑',
    and "if (name === 'copy' && window.openDrafts) openDrafts();" in _html
    and 'if ($(\'#draftsDlg\').dataset.inline) openDrafts();' in _html
    and 'if ($(\'#draftsDlg\').dataset.inline) openDrafts();   // 自动存出新草稿' in _html)
+# 2026-11-27 下午：文案页草稿箱标题不折行、两栏等高贴底、生成动效、右上角只清右侧
+ok('文案页草稿箱标题不折行，两栏等高贴底各自滚动',
+   'dialog.inline-dlg#draftsDlg .dlg-head h3{font-size:13px;flex:none;white-space:nowrap}' in _html
+   and 'dialog.inline-dlg#draftsDlg #draftHint{display:none}' in _html
+   and '#pageCopy{height:calc(100vh - var(--hot-top,69px) - 28px);min-height:0}' in _html
+   and 'dialog.inline-dlg#draftsDlg .draft-list{flex:1 1 auto;min-height:0;max-height:none}' in _html
+   and '.copy-split .panel.left{min-width:0;min-height:0;height:100%;overflow-y:auto}' in _html
+   and 'fitHot();   // 文案页整页高度按页头实测值算，两栏才能贴着窗口底' in _html)
+ok('AI 生成文章点下就有转圈动效，任务结束才恢复',
+   '#genText.busy{position:relative;padding-left:38px;pointer-events:none;opacity:.88}' in _html
+   and '@keyframes iwSpin{to{transform:rotate(360deg)}}' in _html
+   and "btn.textContent = '生成中…';" in _html
+   and 'await poll(job_id, statusEl, mode, waitTxt);   // 等任务真正结束再收按钮动效' in _html)
+ok('文案页一键清空只清右侧内容，草稿箱和配图设置保留',
+   'function resetCopyOnly(){' in _html
+   and "$('#resetAll').onclick = ()=> (window.currentNav === 'copy' ? resetCopyOnly() : resetAll());" in _html
+   and "左侧草稿箱会原样保留。" in _html
+   and 'toast(\'右侧内容已清空，草稿箱保留\');' in _html)
 # 2026-11-27：画幅 / 情绪设置块初始就挂进 DOM，否则文案页读写草稿会找不到元素
 ok('设置块初始挂载，草稿载入不缺元素',
    'wm.appendChild(gen);   // 初始就挂进 DOM' in _html

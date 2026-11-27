@@ -85,13 +85,21 @@
     display:flex;flex-direction:column;align-items:center}
   .page[hidden]{display:none}
   .rail-page-h{display:none}
-  /* 文案页左右分栏：左草稿箱常驻，右内容工坊直接编辑，点草稿就地载入右侧 */
-  .copy-split{display:grid;grid-template-columns:330px minmax(0,1fr);gap:14px;align-items:start}
+  /* 文案页左右分栏：左草稿箱常驻，右内容工坊直接编辑，点草稿就地载入右侧。
+     整页等高贴底：两栏共用同一份高度，各自内部滚动，别让一边到底一边留白。 */
+  #pageCopy{height:calc(100vh - var(--hot-top,69px) - 28px);min-height:0}
+  .copy-split{display:grid;grid-template-columns:330px minmax(0,1fr);gap:14px;height:100%;align-items:stretch}
   @media (max-width:1180px){.copy-split{grid-template-columns:1fr}}
-  dialog.inline-dlg#draftsDlg .inner{padding:14px;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 6px 22px rgba(80,60,160,.05)}
-  dialog.inline-dlg#draftsDlg .draft-list{max-height:calc(100vh - 190px);min-height:180px}
+  dialog.inline-dlg#draftsDlg{height:100%;min-height:0}
+  dialog.inline-dlg#draftsDlg .inner{height:100%;min-height:0;display:flex;flex-direction:column;
+    padding:14px;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 6px 22px rgba(80,60,160,.05)}
+  dialog.inline-dlg#draftsDlg .dlg-head{flex:none}
+  dialog.inline-dlg#draftsDlg .draft-list{flex:1 1 auto;min-height:0;max-height:none}
+  dialog.inline-dlg#draftsDlg #draftEmpty{flex:1 1 auto}
   dialog.inline-dlg#draftsDlg #draftsClose{display:none}
-  dialog.inline-dlg#draftsDlg .dlg-head h3{font-size:13px}
+  /* 标题独占一行：窄栏里藏掉长说明，h3 不换行，别把「草稿箱」拆成两行 */
+  dialog.inline-dlg#draftsDlg .dlg-head h3{font-size:13px;flex:none;white-space:nowrap}
+  dialog.inline-dlg#draftsDlg #draftHint{display:none}
   /* 左栏窄，按钮换行到标题下面，别把草稿名挤成两三个字 */
   dialog.inline-dlg#draftsDlg .draft-row{flex-wrap:wrap;gap:2px 6px;padding:6px 9px}
   dialog.inline-dlg#draftsDlg .draft-row .dc{flex:1 1 100%}
@@ -100,7 +108,7 @@
   dialog.inline-dlg#draftsDlg .draft-row .dacts{margin-left:auto;gap:4px}
   dialog.inline-dlg#draftsDlg .draft-row .dacts .btn{min-height:22px;padding:2px 7px;font-size:10.5px}
   dialog.inline-dlg#draftsDlg .draft-row .chipx{margin-left:auto}
-  .copy-split .panel.left{min-width:0}
+  .copy-split .panel.left{min-width:0;min-height:0;height:100%;overflow-y:auto}
   /* 历史 / 监控 / 号池：同一份弹窗节点挂进主区当页面用，不再弹 modal */
   dialog.inline-dlg{display:block;position:static;width:auto;max-width:none;height:auto;max-height:none;
     margin:0;padding:0;overflow:visible;box-shadow:none;background:transparent}
@@ -148,6 +156,13 @@
   .gen-count input::-webkit-outer-spin-button,
   .gen-count input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
   .gen-count input:focus{outline:2px solid var(--primary-2)}
+  /* 「AI 生成文章」工作中的动效：转圈 + 文字变「生成中…」，避免用户以为没点上 */
+  #genText.busy{position:relative;padding-left:38px;pointer-events:none;opacity:.88}
+  #genText.busy::before{content:"";position:absolute;left:14px;top:50%;width:14px;height:14px;margin-top:-7px;
+    border:2px solid rgba(255,255,255,.45);border-top-color:#fff;border-radius:50%;animation:iwSpin .7s linear infinite}
+  @keyframes iwSpin{to{transform:rotate(360deg)}}
+  /* 文案页页头只留「一键清空 + 号池」：出图按钮和更多菜单在文案页没有意义 */
+  .head-acts.copy-mode > :not(#resetAll):not(.pool-chip){display:none}
   /* 拆成分镜旁的标题编号开关：默认勾选，保持标题带 01 02 前缀的原有行为 */
   .num-chk{display:flex;align-items:center;gap:5px;margin:0 0 0 2px;font-size:11px;
     color:var(--ink-2);white-space:nowrap;cursor:pointer;user-select:none}
@@ -2951,7 +2966,7 @@ async function run(mode, statusEl){
   statusEl.className = 'status run'; statusEl.textContent = waitTxt;
   try{
     const {job_id} = await submitGenerate(p);
-    poll(job_id, statusEl, mode, waitTxt);
+    await poll(job_id, statusEl, mode, waitTxt);   // 等任务真正结束再收按钮动效
   }catch(e){ statusEl.className='status err'; statusEl.textContent = e.message; toast(e.message, 'err'); }
 }
 
@@ -5516,7 +5531,15 @@ $('#cfgSave').onclick = saveConfig;
 
 function setPoolDetail(t){ $('#poolDetail').textContent = t; }
 
-$('#genText').onclick = ()=> run('text', $('#textStatus'));
+/* 点下去立刻给按钮上转圈，任务结束（含失败、无选题）再恢复，别让用户对着静态按钮猜 */
+$('#genText').onclick = async ()=>{
+  const btn = $('#genText');
+  if (btn.dataset.busy === '1') return;
+  btn.dataset.busy = '1'; btn.disabled = true; btn.classList.add('busy');
+  btn.textContent = '生成中…';
+  try{ await run('text', $('#textStatus')); }
+  finally{ btn.dataset.busy = ''; btn.disabled = false; btn.classList.remove('busy'); btn.textContent = 'AI 生成文章'; }
+};
 $('#polishText').onclick = polishText;
 
 /* 条数框：记住用户上一次的选择，刷新不丢；非法输入拉回 1-20 */
@@ -7083,6 +7106,34 @@ async function resetAll(){
   toast('已清空，图型 / 风格 / 主题色都变成不限');
 }
 
+/* ---------- 文案页「一键清空」：只清右侧内容工坊，左侧草稿箱和配图设置都不动 ---------- */
+function resetCopyOnly(){
+  const touched = state.items.some(x=> (x.title || '').trim() || (x.body || '').trim())
+    || ['#topic', '#docTitle', '#docBody', '#novelBody'].some(id=> ($(id).value || '').trim());
+  if (touched && !confirm('只清空右侧内容？\n\n选题、标题、正文、分镜清单会清掉；左侧草稿箱会原样保留。')) return;
+  state.items = [];
+  state.hotStory = null; state.hotRef = null;
+  state.comicBible = ''; state.comicNovel = false;
+  const cn = $('#comicNovel'); if (cn) cn.checked = false;
+  renderItems();
+  state.group = ''; $('#groupTag').textContent = '';
+  ['#topic', '#docTitle', '#docBody', '#novelBody'].forEach(id=>{ $(id).value = ''; });
+  setDocTab('doc', true);
+  $('#docRaw').textContent = '';
+  syncPreview();
+  ['#textStatus', '#splitStatus'].forEach(id=>{
+    const el = $(id); if (el){ el.className = 'status'; el.textContent = ''; }
+  });
+  // 断开和上一份草稿的关系，但草稿箱里的那条本身不删
+  state.draftId = null; state.draftKey = '';
+  try{
+    localStorage.removeItem('wb_draft_id'); localStorage.removeItem('wb_draft_key');
+    localStorage.removeItem('wb_session');
+  }catch(e){}
+  markContentClean();
+  toast('右侧内容已清空，草稿箱保留');
+}
+
 /* ---------- 参考图：点击 / 拖入 / Ctrl+V 粘贴 ---------- */
 $('#emptyRef').onclick = ()=> $('#refFile').click();
 /* 参考图卡也整块可点：缩略图、名称、空白处都能换图；下拉（用法）和 X 除外（用户 2026-11-27） */
@@ -7128,7 +7179,7 @@ document.addEventListener('paste', e=>{
     }
   }
 });
-$('#resetAll').onclick = resetAll;
+$('#resetAll').onclick = ()=> (window.currentNav === 'copy' ? resetCopyOnly() : resetAll());
 $('#demoNoteX').onclick = hideDemoNote;
 
 $('#openHistory').onclick = ()=> navTo('history');
@@ -8996,13 +9047,14 @@ setInterval(refreshPool, 10000);
     const work = (name === 'single' || name === 'multi');
     if (aside) aside.hidden = !work;
     if (headActs){
-      headActs.style.display = work ? '' : 'none';
+      headActs.style.display = (work || name === 'copy') ? '' : 'none';
       headActs.classList.toggle('single-mode', name === 'single');
+      headActs.classList.toggle('copy-mode', name === 'copy');
     }
     main.classList.toggle('solo', !work);
     main.classList.toggle('single-mode', name === 'single');
     main.classList.toggle('hot-full', name === 'hot');
-    if (name === 'hot') fitHot();
+    fitHot();   // 文案页整页高度按页头实测值算，两栏才能贴着窗口底
     document.querySelectorAll('.rail-item').forEach(b=>{
       const on = b.dataset.nav === name && b.id !== 'railSetting';
       b.classList.toggle('on', on); b.setAttribute('aria-current', on ? 'page' : 'false');
