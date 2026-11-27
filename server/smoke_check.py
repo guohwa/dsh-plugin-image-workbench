@@ -2172,6 +2172,14 @@ ok('左下角设置打开弹窗而不是切到号池整页',
    and "note.onclick = function(){ if (window.openSettings) window.openSettings('update'); else openPanel(); };" in _html
    and 'window.prepUpgradePanel = prepPanel;' in _html
    and 'if (window.prepUpgradePanel) window.prepUpgradePanel();' in _html)
+ok('检查更新版本卡每次检查后回填，失败不卡在「检查中…」',
+   "if (fromEl) fromEl.textContent = curVer ? 'v' + curVer : '—';" in _html
+   and 'if (d && d.current) curVer = d.current;' in _html
+   and 'if (d && d.has_new && d.latest) latestVer = d.latest;' in _html
+   and 'else if (d && d.current) latestVer = d.current;' in _html
+   and "if (!d){ setCheckMsg('检查失败：服务没返回结果，稍后再试'); return; }" in _html
+   and "function check(){\n    /* 已经有一轮在飞就别再发请求：状态行由在飞的那轮收尾时更新，不会卡死在「检查中…」 */" in _html
+   and 'if (window.prepUpgradePanel) window.prepUpgradePanel();   // 先把当前版本卡填上，不等网络' in _html)
 
 # 2026-11-27：号池分组整页只显示本地号池，接口配置留在设置弹窗
 ok('号池分组整页只显示本地号池内容',

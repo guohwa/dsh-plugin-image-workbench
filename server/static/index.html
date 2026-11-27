@@ -8011,6 +8011,12 @@ setInterval(refreshPool, 10000);
      工作台常年开着，只在首屏查一次就永远等不到提示，所以切回页面和每 10 分钟各复查一次；
      复查拿到的结果如果已经没有新版本，要把胶囊收回去，不能挂着过期提示。 */
   function render(d){
+    /* 服务端报回来的版本号先落卡。本地比 npm 新时（发版前的日常），latest 是个倒退的
+       旧号，「最新版本」卡镜像当前版本；只有真有新版本才显示 npm 的版本号。 */
+    if (d && d.current) curVer = d.current;
+    if (d && d.has_new && d.latest) latestVer = d.latest;
+    else if (d && d.current) latestVer = d.current;
+    prepPanel();
     /* 设置弹窗「检查更新」分组的状态行：查完给一句明确结果，别让人对着按钮猜 */
     var cs = document.getElementById('setCheckState');
     if (cs) cs.textContent = (d && d.has_new && d.latest)
@@ -8022,8 +8028,6 @@ setInterval(refreshPool, 10000);
       renderNotes([]);
       return;
     }
-    if (d.current) curVer = d.current;
-    latestVer = d.latest;
     note.hidden = false;
     note.textContent = '新版本 v' + d.latest + ' →';
     note.title = '点击打开升级面板，可一键升级（只换代码，不动草稿和图片）';
@@ -8032,10 +8036,11 @@ setInterval(refreshPool, 10000);
 
   /* ---------- 面板 ---------- */
 
-  /* 版本对照和按钮状态单独抽出来：设置弹窗借走升级面板后也要照样刷新 */
+  /* 版本对照和按钮状态单独抽出来：设置弹窗借走升级面板后也要照样刷新。
+     卡片自带「当前版本 / 最新版本」标签，这里只填版本号本身，没拿到就先摆 — */
   function prepPanel(){
-    if (fromEl) fromEl.textContent = curVer ? 'v' + curVer : '当前版本';
-    if (toEl) toEl.textContent = latestVer ? 'v' + latestVer : '最新版本';
+    if (fromEl) fromEl.textContent = curVer ? 'v' + curVer : '—';
+    if (toEl) toEl.textContent = latestVer ? 'v' + latestVer : '—';
     if (goBtn){ goBtn.disabled = false; goBtn.textContent = '立即升级'; }
     setStep('点「立即升级」开始：先下载安装包核对版本，再逐个覆盖代码文件。', '');
   }
@@ -8114,13 +8119,21 @@ setInterval(refreshPool, 10000);
   };
 
   var busy = false;
+  function setCheckMsg(t){
+    var cs = document.getElementById('setCheckState');
+    if (cs) cs.textContent = t;
+  }
   function check(){
+    /* 已经有一轮在飞就别再发请求：状态行由在飞的那轮收尾时更新，不会卡死在「检查中…」 */
     if (busy || document.hidden) return;
     busy = true;
     fetch('/api/upgrade', {cache: 'no-store'})
       .then(function(r){ return r.ok ? r.json() : null; })
-      .then(render)
-      .catch(function(){})
+      .then(function(d){
+        if (!d){ setCheckMsg('检查失败：服务没返回结果，稍后再试'); return; }
+        render(d);
+      })
+      .catch(function(){ setCheckMsg('检查失败：网络异常，稍后再试'); })
       .then(function(){ busy = false; });
   }
   window.checkUpgrade = check;
@@ -9306,9 +9319,12 @@ setInterval(refreshPool, 10000);
   document.querySelectorAll('#settingsDlg .set-item').forEach(b=>{
     b.onclick = function(){
       setTab(b.dataset.set);
-      if (b.dataset.set === 'update' && window.checkUpgrade){
-        const cs = $('setCheckState'); if (cs) cs.textContent = '检查中…';
-        window.checkUpgrade();
+      if (b.dataset.set === 'update'){
+        if (window.prepUpgradePanel) window.prepUpgradePanel();   // 先把当前版本卡填上，不等网络
+        if (window.checkUpgrade){
+          const cs = $('setCheckState'); if (cs) cs.textContent = '检查中…';
+          window.checkUpgrade();
+        }
       } else if (b.dataset.set === 'iface' && !ifaceLoaded && window.loadConfigPage){
         ifaceLoaded = true;
         window.loadConfigPage();
