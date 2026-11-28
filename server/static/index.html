@@ -1263,6 +1263,9 @@
   #settingsDlg .up-step.err{background:#fdf1f3;border-color:#f3cdd5;color:#c03a52}
   #settingsDlg .up-step.ok{background:#eef8f2;border-color:#c9e9d8;color:#1f8a52}
   #settingsDlg .up-step.busy{background:#f7f5ff;border-color:#e0d8ff;color:var(--primary)}
+  #settingsDlg .up-safe{margin:7px 0 0;font-size:11.5px;line-height:1.6;color:var(--ink-3)}
+  #settingsDlg .up-branch{margin:10px 0 0;font-size:11px;line-height:1.6;color:var(--ink-3)}
+  #settingsDlg .up-note-empty{font-size:12.5px;line-height:1.7;color:var(--ink-3)}
   @media (max-width:760px){
     #settingsDlg{height:calc(100vh - 24px)}
     #settingsDlg .set-body{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}
@@ -1991,38 +1994,21 @@
               <span class="set-check-state" id="setCheckState">打开分组时自动检查一次，也可手动复查</span>
             </div>
           </div>
-          <div id="upBranch" style="margin:10px 0 0;padding:9px 12px;border-radius:9px;background:#fff7e8;border:1px solid #f0dcb4;color:#8a5f16;font-size:12px;line-height:1.7">
-            目前处在 2.0.0 大版本迭代阶段：现在发的 1.1.x 都是过渡版本，用来把日常遇到的问题一个个修掉。等功能和结构稳定下来会发布正式版 2.0.0，届时所有 1.1.x 都会收到升级提示，升级方式是同一个，不用重装。
-          </div>
+          <!-- 这块只讲「这一版修好了什么」，条目来自新版本包里的 server/changelog.json。
+               升级怎么做（下包、覆盖、重启、备份路径）是过程，用户不关心，别往这儿堆。 -->
           <div class="up-notes" id="upNotes" hidden>
-            <div class="up-notes-t">这次更新了什么</div>
+            <div class="up-notes-t">本次升级解决什么</div>
             <div id="upNotesBody"></div>
           </div>
-          <div class="up-plan-grid">
-            <div class="cfg-sec up-plan">
-              <div class="cfg-sec-t">升级流程</div>
-              <ol class="up-list up-steps">
-                <li>核对最新版本号，然后下载完整安装包（约 16 MB）。</li>
-                <li>覆盖代码文件，草稿、图片、账号配置都不动。</li>
-                <li>服务自动重启，大约十秒，页面会自己刷新。</li>
-              </ol>
-            </div>
-            <div class="cfg-sec up-plan">
-              <div class="cfg-sec-t">不会动的数据</div>
-              <ul class="up-list">
-                <li>草稿、历史、图片、账号配置一律不动。</li>
-                <li>没变化的文件一个字节都不碰；号池内核 vendor/ 与账号数据不随升级替换；出图进行中会拒绝升级。</li>
-                <li>被替换的旧文件先打包到 server/workbench/backup/，出问题能解回去。</li>
-              </ul>
-            </div>
-          </div>
-          <div class="up-step" id="upStep">点「立即升级」开始：先下载安装包核对版本，再逐个覆盖代码文件。</div>
+          <div class="up-step" id="upStep">点「立即升级」开始：下载完成后自动替换代码并重启，页面会自己刷新回来。</div>
+          <div class="up-safe">只覆盖代码文件，草稿、历史、图片、账号配置和号池账号都不动。</div>
           <div class="row up-acts">
             <button class="btn ghost mini" id="upCopy" type="button">复制命令</button>
             <span class="spacer"></span>
             <button class="btn ghost" id="upCancel" type="button">关闭</button>
             <button class="btn primary" id="upGo" type="button">立即升级</button>
           </div>
+          <div class="up-branch" id="upBranch">1.1.x 是 2.0.0 之前的过渡版本，功能和结构稳定后发正式版 2.0.0，届时照常点升级，不用重装。</div>
         </section>
 
       </div>
@@ -8164,21 +8150,23 @@ setInterval(refreshPool, 10000);
   var notesEl = document.getElementById('upNotes');
   var notesBody = document.getElementById('upNotesBody');
   var curVer = '', latestVer = '';
-  var lastDelta = null;   // 最近一次检查到的增量规模，面板拿它说「只换几个文件」
   var newer = null;       // null=还没查到 / true=有新版本 / false=已是最新
 
   /* 更新说明来自新版本包里的 server/changelog.json，由后端 /api/upgrade 带回来。
-     拿不到就整块不显示——宁可少一块，也不要在升级按钮旁边挂个「暂无说明」。 */
+     这里只放「这一版修好了什么」；下包、覆盖、重启、备份路径这些过程信息不进面板。
+     拿不到说明时给一句兜底，不让「本次升级解决什么」下面空着。 */
   function renderNotes(notes){
     if (!notesEl || !notesBody) return;
     var rows = (notes || []).filter(function(n){ return n && n.version; });
-    if (!rows.length){ notesEl.hidden = true; notesBody.innerHTML = ''; return; }
+    if (!rows.length){
+      notesBody.innerHTML = '<div class="up-note-empty">这一版没有单独写更新说明，点下面按钮就能升级。</div>';
+      return;
+    }
     notesBody.innerHTML = rows.map(function(n){
       var head = 'v' + esc(n.version) + (n.date ? ' · ' + esc(n.date) : '');
       var items = (n.items || []).map(function(t){ return '<li>' + esc(t) + '</li>'; }).join('');
       return '<div class="up-v">' + head + '</div><ul>' + items + '</ul>';
     }).join('');
-    notesEl.hidden = false;
   }
 
   function setStep(text, kind){
@@ -8219,7 +8207,7 @@ setInterval(refreshPool, 10000);
       var k = 'iw_upd_tip_' + v;
       if (sessionStorage.getItem(k) === '1') return;
       sessionStorage.setItem(k, '1');
-      toast('有新版本 v' + v + '，点这里升级（下载完整安装包，约十几秒）',
+      toast('有新版本 v' + v + '，点这里看这次修好了什么',
         {title: '发现新版本', ms: 9000,
          click: function(){ if (window.openSettings) window.openSettings('update'); }});
     } catch (e) {}
@@ -8232,7 +8220,6 @@ setInterval(refreshPool, 10000);
     if (d && d.has_new && d.latest) latestVer = d.latest;
     else if (d && d.current) latestVer = d.current;
     if (d) newer = !!d.has_new;
-    lastDelta = (d && d.delta) || null;
     prepPanel();
     /* 设置弹窗「检查更新」分组的状态行：查完给一句明确结果，别让人对着按钮猜 */
     var cs = document.getElementById('setCheckState');
@@ -8243,6 +8230,7 @@ setInterval(refreshPool, 10000);
       note.hidden = true;
       note.textContent = '';
       note.title = '';
+      if (notesEl) notesEl.hidden = true;
       renderNotes([]);
       return;
     }
@@ -8251,6 +8239,7 @@ setInterval(refreshPool, 10000);
     note.hidden = false;
     note.textContent = '新版本 v' + d.latest + ' →';
     note.title = '点击打开升级面板（下载完整安装包，只覆盖代码，不动草稿和图片）';
+    if (notesEl) notesEl.hidden = false;
     renderNotes(d.notes);
   }
 
@@ -8267,18 +8256,13 @@ setInterval(refreshPool, 10000);
     /* 已是最新就别让人点「立即升级」——点下去只能换来一句 400 红字，很难看 */
     if (newer === false){
       if (goBtn){ goBtn.disabled = true; goBtn.textContent = '已是最新'; }
-      setStep('当前已是最新版本。以后有新版本，这里会写明，左栏设置也会亮小红点。', '');
+      setStep('当前已是最新版本。以后有新版本，会在这里列出修好了什么，左栏设置也会亮小红点。', '');
       return;
     }
     if (goBtn){ goBtn.disabled = false; goBtn.textContent = '立即升级'; }
-    /* 升级一律下整包（16 MB 左右），只覆盖代码文件，草稿和图片不动。
-       不再显示「只换 N 个文件」——那种说法让人以为和整包是两条不同的路，实际用户只关心点一下能不能成。 */
-    if (lastDelta && lastDelta.ok && lastDelta.total){
-      setStep('点「立即升级」开始：下载完整安装包（约 16 MB），核对版本后覆盖 '
-        + lastDelta.total + ' 个代码文件，草稿和图片不动。', '');
-    } else {
-      setStep('点「立即升级」开始：下载完整安装包（约 16 MB），核对版本后覆盖代码文件，草稿和图片不动。', '');
-    }
+    /* 这一行只说「点下去会发生什么」。体积、文件数、覆盖范围属于过程细节，
+       面板上方的更新说明才是主角，这里不再重复一遍。 */
+    setStep('点「立即升级」开始：下载完成后自动替换代码并重启，页面会自己刷新回来。', '');
   }
   window.prepUpgradePanel = prepPanel;
   window.upCurrent = function(){ return curVer; };
@@ -8321,9 +8305,7 @@ setInterval(refreshPool, 10000);
           goBtn.disabled = false; goBtn.textContent = '重试';
           return;
         }
-        var kb = Math.max(1, Math.round((b.bytes || 0) / 1024));
-        setStep('代码已更新到 v' + b.to + '（' + (b.delta ? '增量替换 ' : '整包替换 ')
-          + b.files + ' 个文件 / ' + kb + ' KB，旧文件备份为 ' + b.backup + '）。正在重启服务…', 'busy');
+        setStep('已更新到 v' + b.to + '，正在重启服务…', 'busy');
         setDots(false);
         // 重启会让这个请求被掐断，报错是正常的，忽略
         fetch('/api/upgrade/restart', {method: 'POST', cache: 'no-store'}).catch(function(){});

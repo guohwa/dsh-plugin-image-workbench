@@ -492,7 +492,11 @@ ok('升级白名单带上 changelog.json',
    app._upgrade_rel('server/changelog.json') == 'server/changelog.json'
    and app._upgrade_rel('server/other.json') is None)
 ok('升级面板有更新说明区块',
-   all(x in _src_html for x in ('id="upNotes"', 'id="upNotesBody"', 'function renderNotes')))
+   all(x in _src_html for x in ('id="upNotes"', 'id="upNotesBody"', 'function renderNotes',
+                                '本次升级解决什么')))
+ok('升级面板不放升级过程说明（下包 / 覆盖 / 备份路径那些）',
+   '不会动的数据' not in _src_html and '>升级流程<' not in _src_html
+   and 'server/workbench/backup/' not in _src_html)
 
 # 增量升级：靠包里那份 update-manifest.json 只拉变化的文件，清单过期会静默漏更新，
 # 所以「版本号对得上」是硬门槛；全量模式再逐文件核对指纹（发版前必须重跑生成脚本）
@@ -540,7 +544,7 @@ ok('host.js 把插件包路径传给后端',
 ok('host.js 启动时不做反向覆盖（副本比包新就跳过同步）',
    'verKey(runVer) > verKey(pkgVer)' in _src_host and '跳过反向同步' in _src_host)
 ok('升级面板说明 2.0.0 迭代阶段',
-   'id="upBranch"' in _src_html and '2.0.0 大版本迭代' in _src_html)
+   'id="upBranch"' in _src_html and '2.0.0 之前的过渡版本' in _src_html)
 ok('升级走整包（增量实现保留可切回）',
    all(hasattr(app, n) for n in ('_delta_plan', '_download_delta', '_apply_delta',
                                  '_apply_full', '_write_code_files'))
@@ -549,7 +553,7 @@ ok('升级走整包（增量实现保留可切回）',
 ok('有新版本时两处红点 + 主动推一次',
    all(x in _src_html for x in ('id="railSetDot"', 'id="setUpdateDot"',
                                 'function setDots(on)', 'function pushOnce(v)',
-                                'setDots(true)', 'lastDelta')))
+                                'setDots(true)', '看这次修好了什么')))
 ok('已是最新时「立即升级」置灰，不让人点出 400',
    "goBtn.textContent = '已是最新'" in _src_html
    and 'if (newer === false){' in _src_html)
