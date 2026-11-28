@@ -498,6 +498,20 @@ ok('升级面板不放升级过程说明（下包 / 覆盖 / 备份路径那些�
    '不会动的数据' not in _src_html and '>升级流程<' not in _src_html
    and 'server/workbench/backup/' not in _src_html)
 
+# 界面风格：护眼（默认）/ 浅色 / 黑色 / 跟随系统。全站配色走 CSS 变量，
+# 任何一处写死颜色都会在换主题时变成刺眼亮块，所以这两条要守住。
+ok('界面风格四档齐备（护眼为默认）',
+   all(x in _src_html for x in (':root[data-theme="light"]', ':root[data-theme="dark"]',
+                                '--s0:', '--accent-ink:', "var mode = 'eye'",
+                                "'eye', 'light', 'dark', 'system'"))
+   and _src_html.count('data-theme-pick') >= 8)
+ok('界面风格分组挂在设置弹窗里',
+   'data-set="theme"' in _src_html and 'id="setPaneTheme"' in _src_html
+   and "theme:'setPaneTheme'" in _src_html)
+ok('换主题没有写死的白底（预览小样除外）',
+   _src_html.count('background:#fff') <= 1 and 'background: #fff' not in _src_html
+   and 'background:#ffffff' not in _src_html)
+
 # 增量升级：靠包里那份 update-manifest.json 只拉变化的文件，清单过期会静默漏更新，
 # 所以「版本号对得上」是硬门槛；全量模式再逐文件核对指纹（发版前必须重跑生成脚本）
 import upgrade_files as _uf
@@ -1958,7 +1972,7 @@ ok('下方出图模式改名为「多图模式」，与单图快出成系列',
 _mh_css = _html.split('.mode-head{')[1].split('}')[0] if '.mode-head{' in _html else ''
 ok('多图模式标题加粗、字号与单图快出一致，且带绿色图标',
    all(s in _mh_css for s in ('font-size:12.5px', 'font-weight:600', 'color:var(--ink)'))
-   and '.mode-head svg{width:15px;height:15px;color:#1f9d6b}' in _html
+   and '.mode-head svg{width:15px;height:15px;color:var(--accent-ink)}' in _html
    and 'class="plabel mode-head"><svg' in _html)
 # 2026-11-26 三次调整：单图快出与上方四张卡关联，选型变了重拼；不碰多图模式
 ok('单图快出用选型指纹和原始关键字保证与上方四张卡关联',
