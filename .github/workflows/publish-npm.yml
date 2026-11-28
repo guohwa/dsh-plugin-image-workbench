@@ -8,6 +8,13 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    # 修 latest 指针用：bypass token 发的包进审核队列，转正后 latest 不会自动跟上，
+    # 导致工作台一直读到旧版。手动填一个「已 Published 的版本号」把 latest 拨过去。
+    inputs:
+      retag_latest:
+        description: '把 latest 拨到这个已发布的版本（如 1.1.127），留空则走正常发布'
+        required: false
+        default: ''
 
 concurrency:
   group: publish-npm
@@ -43,7 +50,27 @@ jobs:
       - name: 打印包内容摘要
         run: npm pack --dry-run 2>&1 | tail -8
 
+      # 手动修 latest：版本已 Published 但 latest 还停在旧版时，用这个把指针拨过去。
+      # 只接受已存在的版本、只动本包，避免误操作。
+      - name: 修正 latest 指针
+        if: inputs.retag_latest != ''
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VER="${{ inputs.retag_latest }}"
+          if ! echo "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::版本号格式不对：$VER"; exit 1
+          fi
+          if ! npm view "$NAME@$VER" version >/dev/null 2>&1; then
+            echo "::error::$NAME@$VER 尚未发布（可能还在审核），无法设为 latest"; exit 1
+          fi
+          npm dist-tag add "$NAME@$VER" latest
+          echo "::notice::latest 已拨到 $NAME@$VER"
+
       - name: Publish
+        # 手动修 latest 时不走正常发布，避免重复 publish 卡在审核队列
+        if: inputs.retag_latest == ''
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
