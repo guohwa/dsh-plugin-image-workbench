@@ -1991,6 +1991,9 @@
               <span class="set-check-state" id="setCheckState">打开分组时自动检查一次，也可手动复查</span>
             </div>
           </div>
+          <div id="upBranch" style="margin:10px 0 0;padding:9px 12px;border-radius:9px;background:#fff7e8;border:1px solid #f0dcb4;color:#8a5f16;font-size:12px;line-height:1.7">
+            目前处在 2.0.0 大版本迭代阶段：现在发的 1.1.x 都是过渡版本，用来把日常遇到的问题一个个修掉。等功能和结构稳定下来会发布正式版 2.0.0，届时所有 1.1.x 都会收到升级提示，升级方式是同一个，不用重装。
+          </div>
           <div class="up-notes" id="upNotes" hidden>
             <div class="up-notes-t">这次更新了什么</div>
             <div id="upNotesBody"></div>
@@ -1999,8 +2002,8 @@
             <div class="cfg-sec up-plan">
               <div class="cfg-sec-t">升级流程</div>
               <ol class="up-list up-steps">
-                <li>核对最新版本号，比对本地文件指纹。</li>
-                <li>只下载有变化的那几个文件，就地替换（不重装、不整包下载）。</li>
+                <li>核对最新版本号，然后下载完整安装包（约 16 MB）。</li>
+                <li>覆盖代码文件，草稿、图片、账号配置都不动。</li>
                 <li>服务自动重启，大约十秒，页面会自己刷新。</li>
               </ol>
             </div>
@@ -2008,7 +2011,7 @@
               <div class="cfg-sec-t">不会动的数据</div>
               <ul class="up-list">
                 <li>草稿、历史、图片、账号配置一律不动。</li>
-                <li>没变化的文件一个字节都不碰；号池内核 vendor/ 不随升级替换；出图进行中会拒绝升级。</li>
+                <li>没变化的文件一个字节都不碰；号池内核 vendor/ 与账号数据不随升级替换；出图进行中会拒绝升级。</li>
                 <li>被替换的旧文件先打包到 server/workbench/backup/，出问题能解回去。</li>
               </ul>
             </div>

@@ -529,6 +529,18 @@ _junk = [k for k in _man_files if any(m in k.rsplit('/', 1)[-1] for m in _uf.JUN
 ok('清单不含备份 / 临时文件', not _junk, _junk[:4])
 _notpacked = [k for k in _man_files if not _packed(k)]
 ok('清单里的文件全部在 npm 包内（否则增量必退整包）', not _notpacked, _notpacked[:4])
+# 装在 node_modules 里时，DSH 加载的是插件包本体，后端跑的是 ~/.dsh/image-workbench
+# 的副本。升级只写副本 → 重启被旧包盖回去，界面回退（1.1.121 的故障）。这三条守住。
+_src_host = (ROOT.parent / 'host.js').read_text(encoding='utf-8')
+ok('升级双写：运行时副本 + 插件包目录一起覆盖',
+   hasattr(app, '_pkg_dirs') and hasattr(app, '_write_plans')
+   and 'for pkg in _pkg_dirs():' in _src_app)
+ok('host.js 把插件包路径传给后端',
+   'DSH_IMAGE_PLUGIN_DIR: PLUGIN_DIR' in _src_host)
+ok('host.js 启动时不做反向覆盖（副本比包新就跳过同步）',
+   'verKey(runVer) > verKey(pkgVer)' in _src_host and '跳过反向同步' in _src_host)
+ok('升级面板说明 2.0.0 迭代阶段',
+   'id="upBranch"' in _src_html and '2.0.0 大版本迭代' in _src_html)
 ok('升级走整包（增量实现保留可切回）',
    all(hasattr(app, n) for n in ('_delta_plan', '_download_delta', '_apply_delta',
                                  '_apply_full', '_write_code_files'))

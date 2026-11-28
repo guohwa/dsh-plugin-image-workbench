@@ -64,6 +64,21 @@ function syncTree(src, dst, skip) {
   }
 }
 
+/** 目录里 package.json 的版本；读不到返回空串。 */
+function dirVersion(dir) {
+  try {
+    return String(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).version || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+/** 1.1.122 -> 1001122，用于比较两个版本谁新。 */
+function verKey(v) {
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(v || ''));
+  return m ? (+m[1]) * 1e6 + (+m[2]) * 1e3 + (+m[3]) : 0;
+}
+
 /**
  * 装在 node_modules 里的插件目录会被包管理器整体替换，运行时不能留在里面：
  * 一是升级会把 .venv、生成的图片、账号数据一起冲掉；二是后端进程以该目录为
@@ -72,6 +87,15 @@ function syncTree(src, dst, skip) {
  */
 function isolatedServer(bundled) {
   const dst = join(RUNTIME_DIR, 'server');
+  // 副本比插件包新（在工作台里点过升级）就不要再同步：否则旧包会把新代码
+  // 原样盖回去，表现是「升级完重启又回到老界面」（1.1.121 踩过）。等工作台
+  // 把新代码也写进包目录、或用户在 DSH 里重装到同一版本后，两边一致再正常同步。
+  const runVer = dirVersion(RUNTIME_DIR);
+  const pkgVer = dirVersion(PLUGIN_DIR);
+  if (verKey(runVer) > verKey(pkgVer)) {
+    console.log(`[image-workbench] 运行时副本 ${runVer} 比插件包 ${pkgVer} 新，跳过反向同步`);
+    return isServerDir(dst) ? dst : bundled;
+  }
   try {
     syncTree(bundled, dst, SERVER_RUNTIME);
     // 号池源码快照放到 server 的同级 vendor/，pool_service 会从那里找
@@ -582,7 +606,7 @@ export function apply(ctx, config = {}) {
         '--port', String(state.port), '--log-level', 'warning',
       ], {
         cwd: state.serverDir, windowsHide: true, stdio: ['ignore', fd, fd],
-        env: { ...process.env, DSH_IMAGE_POOL_PORT: String(poolPort) },
+        env: { ...process.env, DSH_IMAGE_POOL_PORT: String(poolPort), DSH_IMAGE_PLUGIN_DIR: PLUGIN_DIR },
       });
       state.serverChild = child;
       const forget = message => {

@@ -894,8 +894,75 @@ async def _download_delta(ver: str, changes: list[dict]) -> dict | None:
     return out
 
 
+def _pkg_dirs() -> list[Path]:
+    """真实插件包目录 —— DSH 是从这里加载 host.js / client.js 的。
+
+    插件装进 node_modules 时，host.js 会把 server/ 拷到 ~/.dsh/image-workbench/
+    再跑（避免把 venv、图片、账号数据塞进包目录）。于是同一份代码有两处：运行时
+    副本和插件包。升级只写副本的话，重启 DSH 时 host.js 会拿包里的旧文件把它盖
+    回去——版本号是新的、界面却是旧的（1.1.121 就是这个现象）。
+
+    路径来源：新 host.js 会通过 DSH_IMAGE_PLUGIN_DIR 传；老 host.js 不传，就按
+    DSH 的安装约定扫 profiles/*/node_modules（含 pnpm 与市场安装的布局）。
+    """
+    cand: list[Path] = []
+    env = (os.environ.get("DSH_IMAGE_PLUGIN_DIR") or "").strip()
+    if env:
+        cand.append(Path(env))
+    home = Path(os.environ.get("DSH_HOME") or (Path.home() / ".dsh"))
+    prof = home / "profiles"
+    if prof.is_dir():
+        for pat in ("*/node_modules/dsh-plugin-image-workbench",
+                    "*/.dsh-market/*/node_modules/dsh-plugin-image-workbench",
+                    "*/node_modules/.pnpm/dsh-plugin-image-workbench@*/node_modules/dsh-plugin-image-workbench"):
+            try:
+                cand.extend(sorted(prof.glob(pat)))
+            except OSError:
+                pass
+    out: list[Path] = []
+    try:
+        me = PLUGIN_ROOT.resolve()
+    except OSError:
+        me = PLUGIN_ROOT
+    seen = set()
+    for p in cand:
+        try:
+            r = p.resolve()
+        except OSError:
+            continue
+        if r == me or r in seen or not (r / "package.json").is_file():
+            continue
+        seen.add(r)
+        out.append(r)
+    return out
+
+
+def _write_plans(plans: list[tuple[str, Path, bytes]]) -> int:
+    """逐个原子替换。行尾跟着原文件走：Windows 上是 CRLF 检出、包里是 LF，
+    直接盖过去会让 git status 一片 M（内容其实没变）。"""
+    n = 0
+    for _rel, dest, raw in plans:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.suffix.lower() in TEXT_EXT and dest.exists():
+            try:
+                old = dest.read_bytes()
+            except OSError:
+                old = b""
+            if b"\r\n" in old and b"\r\n" not in raw:
+                raw = raw.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+        staging = dest.with_name(dest.name + ".upnew")
+        staging.write_bytes(raw)
+        os.replace(staging, dest)
+        n += 1
+    return n
+
+
 def _write_code_files(files: dict, bdir: Path) -> tuple[int, str]:
-    """先备份再逐个原子替换，返回 (写入文件数, 备份名)。越界路径一律跳过。"""
+    """先备份再逐个原子替换，返回 (写入文件数, 备份名)。越界路径一律跳过。
+
+    写两处：运行时副本（PLUGIN_ROOT）+ 真实插件包目录（node_modules 里那份）。
+    只写副本，重启就会被旧包盖回去，升级等于没升。
+    """
     plans = []
     for rel, raw in files.items():
         dest = (PLUGIN_ROOT / rel).resolve()
@@ -912,21 +979,19 @@ def _write_code_files(files: dict, bdir: Path) -> tuple[int, str]:
             if dest.exists():
                 z.write(dest, _rel)
 
-    # 先写临时文件再 os.replace，中途失败不会留下半截文件。
-    # 行尾跟着原文件走：Windows 上仓库是 CRLF 检出，包内是 LF，直接盖过去会让
-    # git status 一片 M（内容其实没变），所以文本文件保持原来的行尾风格。
-    for _rel, dest, raw in plans:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        if dest.suffix.lower() in TEXT_EXT and dest.exists():
-            try:
-                old = dest.read_bytes()
-            except OSError:
-                old = b""
-            if b"\r\n" in old and b"\r\n" not in raw:
-                raw = raw.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
-        staging = dest.with_name(dest.name + ".upnew")
-        staging.write_bytes(raw)
-        os.replace(staging, dest)
+    _write_plans(plans)
+
+    # 插件包目录也写一遍。写不进去不算失败：副本已经是新的，用户在 DSH 插件页
+    # 重装一次同样能对齐，别因为 node_modules 只读就拦着人升级。
+    for pkg in _pkg_dirs():
+        try:
+            sub = [(rel, (pkg / rel).resolve(), raw) for rel, _d, raw in plans]
+            sub = [(rel, d, raw) for rel, d, raw in sub if pkg in d.parents]
+            if sub:
+                _write_plans(sub)
+                print(f"[升级] 已同步到插件包目录：{pkg}（{len(sub)} 个文件）")
+        except OSError as e:
+            print(f"[升级] 写插件包目录失败（{pkg}）：{e}")
 
     # 备份只留最近 5 份：每次 200K 出头，攒一年也占不了多少，但没必要无限堆
     try:
