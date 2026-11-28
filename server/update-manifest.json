@@ -17,7 +17,7 @@
 "size": 15516
 },
 "package.json": {
-"sha1": "39555ef3906f9bca35ef81d8f9b17fc041ecbcad",
+"sha1": "072ea5a69b23047455b446297e90ceeb602f3a38",
 "size": 1695
 },
 "scripts/fetch-style-images.mjs": {
@@ -61,7 +61,7 @@
 "size": 4986
 },
 "server/changelog.json": {
-"sha1": "da24b4bc17c5f60731b364f093bb7bee5f2cb994",
+"sha1": "d544d18c589b2969ac0241a976b4de0c34be6757",
 "size": 62320
 },
 "server/composer.py": {
@@ -137,5 +137,5 @@
 "size": 4709
 }
 },
-"version": "1.1.127"
+"version": "1.1.128"
 }
