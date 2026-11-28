@@ -26,6 +26,19 @@ MAX_SCAN = 4000  # 最多回读多少行，防止文件无限增长后启动变�
 _TITLE_NO = re.compile(r"^\s*0*(\d{1,3})(?=[\s、.．:：\-—_|/）)]|$)")
 
 
+def _task_title(task_id: str, g: str, title: str, topic: str) -> str:
+    """任务标题：单图（task_id 以 q 开头）绝不用多图的 group 当标题。
+
+    单图和多图绝对隔离（用户 2026-11-28）。以前单图提交共用了 payload()，
+    把多图的整组主题写进 group，历史列表里 group 优先级最高，于是单图任务
+    顶着多图标题。这里按任务来源分流：单图只认自己的 title/topic；多图照旧
+    优先用 group。对已经落盘的旧记录同样生效，不用改历史数据文件。
+    """
+    if str(task_id or "").startswith("q"):
+        return (title or topic or "未命名")
+    return (g or title or topic or "未命名")
+
+
 def _title_no(s: str) -> int | None:
     m = _TITLE_NO.match(s or "")
     return int(m.group(1)) if m else None
@@ -290,9 +303,10 @@ class History:
 
             t = groups.get(key)
             if t is None:
+                tid = key.split(":", 1)[1]
                 t = {
-                    "task_id": key.split(":", 1)[1],
-                    "title": g or r.get("title") or r.get("topic") or "未命名",
+                    "task_id": tid,
+                    "title": _task_title(tid, g, r.get("title"), r.get("topic")),
                     "group": g,
                     "created": ts or int(r.get("finished") or 0),
                     "finished": 0,
@@ -355,7 +369,7 @@ class History:
         } for r in rows]
         return {
             "task_id": task_id,
-            "title": first.get("group") or first.get("title") or first.get("topic") or "未命名任务",
+            "title": _task_title(task_id, first.get("group"), first.get("title"), first.get("topic")),
             "group": first.get("group") or "",
             "topic": first.get("topic") or "",
             # 整篇正文：同一任务内每条都一样，取最长的那条（防止个别记录没写进去）
@@ -379,7 +393,7 @@ class History:
             return None
         first = rows[0]
         return {
-            "title": first.get("group") or first.get("title") or first.get("topic") or "未命名任务",
+            "title": _task_title(task_id, first.get("group"), first.get("title"), first.get("topic")),
             "doc_body": max((r.get("doc_body") or "" for r in rows), key=len),
             "rows": rows,
         }

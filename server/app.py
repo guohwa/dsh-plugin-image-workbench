@@ -419,6 +419,18 @@ class ComposeRequest(BaseModel):
     items: list[ComposeItem] = Field(default_factory=list)
 
 
+class RandomComboRequest(BaseModel):
+    # 单图「随机一套」：不读用户内容，随机挑一个主题方向再成套配三张卡。
+    # mode 跟单图当前模式走；纯图模式不套图型（图型是排版，纯图用不上）。
+    mode: str = "graphic-text"
+    # 上一套的 id：换一套时压下去，避免连点两次抽到同一组
+    avoid_layout: str = ""
+    avoid_style: str = ""
+    avoid_color: str = ""
+    # 上一个主题 key：换套时尽量换一个主题，这才是「随机一整套」的惊喜来源
+    avoid_theme: str = ""
+
+
 class RecommendRequest(BaseModel):
     # 内容可以是一句话（单图），也可以是选题 / 标题 / 正文 / 分镜拼起来的长文本（多图）
     text: str = ""
@@ -3907,6 +3919,79 @@ async def api_compose(req: ComposeRequest):
                    "visual": it.visual} for it in req.items],
     }
     return JSONResponse(await composer.compose(payload, CATALOG["styles"], CATALOG["layouts"], CATALOG["colors"]))
+
+
+@app.post("/api/random-combo")
+async def api_random_combo(req: RandomComboRequest):
+    """单图「随机一套」：随机主题 → 成套三张卡 → AI 按真实图文信息写画面关键词。
+
+    和 /api/recommend 的区别：那边读用户写的内容打分，这边没有内容可读，
+    所以先随机挑一个主题方向，用那个主题的命中词去打分配三张卡，
+    保证图型 / 风格 / 主题色是合得来的一整套，而不是三张卡各自乱抽。
+    AI 只负责把「这套卡长什么样」写成一句能直接出图的画面描述；
+    完整提示词仍交给前端 /api/compose 拼，拼词铁律不在这里绕开。
+    """
+    import secrets as _secrets
+
+    tags = [t for t in recommend_mod.TAGS
+            if t.get("key") != "general" and t.get("key") != req.avoid_theme]
+    theme = tags[_secrets.randbelow(len(tags))]
+    seed = _secrets.randbelow(1_000_000_000)
+    # 用这个主题的命中词当内容喂给推荐器：它会按题材挑选图型 / 风格 / 配色，还带兼容判断
+    text = " ".join(theme["kw"][:14])
+    rec = recommend_mod.recommend(
+        text, seed=seed,
+        mode=req.mode if req.mode in ("pure-image", "graphic-text", "photo") else "graphic-text",
+        avoid={"layout": [req.avoid_layout] if req.avoid_layout else [],
+               "style": [req.avoid_style] if req.avoid_style else [],
+               "color": [req.avoid_color] if req.avoid_color else []},
+    )
+
+    def _full(items: list[dict], rid: str) -> dict:
+        return next((x for x in items if x.get("id") == rid), {"id": rid})
+
+    L = _full(CATALOG["layouts"], (rec.get("layout") or {}).get("id", ""))
+    S = _full(CATALOG["styles"], (rec.get("style") or {}).get("id", ""))
+    C = _full(CATALOG["colors"], (rec.get("color") or {}).get("id", ""))
+
+    style_name = str(S.get("ref") or S.get("name_en") or S.get("id") or "").strip()
+    color_name = str(C.get("name") or "").strip()
+
+    # 关键词全部本地拼：从这套卡片的真实说明文字抽取组合，不调 AI。
+    # 用户 2026-11-28 反馈「随机半天、不够丝滑」——AI 写词要等 25 秒；
+    # 还原示例是纯本地填卡填词、秒出，随机照这个来，点下去毫秒级返回。
+    def _bits(s, n=3):
+        # 有些 features 本身以句号收尾（如「错透视、鲜艳平涂、大量留白。」），
+        # 切开后末段还挂着句号，拼进关键词会读成「大量留白。，中国农民画风格」，先削掉尾标点
+        return [b.strip().rstrip("。！!；;，, ")
+                for b in re.split(r"[、；;，,]", str(s or "")) if len(b.strip()) >= 2][:n]
+
+    layout_title = str(L.get("title") or "").strip()
+    parts = []
+    theme_words = list(theme["kw"][:3])
+    if theme_words:
+        parts.append("、".join(theme_words))
+    feat_bits = _bits(S.get("features"))
+    if feat_bits:
+        parts.append("、".join(feat_bits))
+    if style_name:
+        parts.append(style_name + "风格")
+    if color_name:
+        parts.append(color_name + "为主色调")
+    if layout_title:
+        parts.append(layout_title + "版式")
+    parts.append("画面干净")
+    keyword = re.sub(r"\s+", " ", "，".join(parts)).strip()[:170]
+    ai_note = ""
+
+    return JSONResponse({
+        "theme": {"key": theme["key"], "name": theme["name"]},
+        "layout": L, "style": S, "color": C,
+        "keyword": keyword,
+        "note": rec.get("note") or "",
+        "ai_note": ai_note,
+        "summary": rec.get("summary") or "",
+    })
 
 
 @app.post("/api/recommend")

@@ -335,8 +335,20 @@
   /* 手动按钮回归（2026-11-27 晚：按内容推荐还原），配过一次变「换一组」 */
   .combo-rec .cr-btn{flex:none;padding:7px 13px;font-size:12.5px;border-radius:9px}
   .combo-rec .cr-btn[disabled]{opacity:.55;cursor:default}
+  /* 「随机推荐」用描边按钮和旁边的实心「按内容推荐」拉开层次，别让两种入口看着一样 */
+  .combo-rec .cr-random{background:var(--s0);border:1px solid var(--line-strong);color:var(--primary-ink)}
+  .combo-rec .cr-random:hover{background:var(--s2)}
   .combo-rec.busy .cr-ic{animation:crspin 1s linear infinite}
   @keyframes crspin{to{transform:rotate(360deg)}}
+  /* 点「随机推荐」时按钮自己也要动：转一圈的小图标 + 文字渐变呼吸，
+     让人一眼看出在跑，不会以为没点上又连点几次（用户 2026-11-28） */
+  .combo-rec .cr-random.busy{position:relative;padding-left:31px;
+    animation:crRandomPulse 1.1s ease-in-out infinite}
+  .combo-rec .cr-random.busy::before{content:'';position:absolute;left:11px;top:50%;
+    width:12px;height:12px;margin-top:-6px;border-radius:50%;
+    border:2px solid var(--line-strong);border-top-color:var(--primary);
+    animation:crspin .75s linear infinite}
+  @keyframes crRandomPulse{0%,100%{background:var(--s0)}50%{background:var(--s2)}}
   @media (max-width:860px){
     .combo-rec{flex-wrap:wrap;gap:8px}
     .combo-rec .cr-ic{display:none}
@@ -1588,7 +1600,7 @@
     <div class="ad-view"><div class="ad-track" id="adTrack">
       <div class="ad-item" id="adSamples" title="刚安装成功时，缩略图会在后台自动补齐，补完刷新就是真图">刚安装完需要点时间同步图型、风格、主题色缩略图。</div>
       <div class="ad-item">换了推荐组合之后，记得再点一次「生成提示词」。</div>
-      <div class="ad-item">如果不知道怎么上手，可以试着直接点击「批量出图」。</div>
+      <div class="ad-item">多图不知道怎么上手，点「随机出图」；要自己写就填空内容再批量出图。</div>
       <div class="ad-item">使用过程中有任何问题，可以多看看公众号详细介绍。</div>
       <div class="ad-item">如果发现其他问题，估计作者也搞不定，就直接问 AI 吧。</div>
     </div></div>
@@ -1596,7 +1608,7 @@
   <div class="head-acts">
     <span class="status-marquee" id="imageStatusWrap" title=""><span class="status-track" id="imageStatusTrack"><span class="status" id="imageStatus"></span><span class="msep">　　</span><span class="status status-dup" id="imageStatusDup"></span><span class="msep">　　</span></span></span>
     <button class="btn ghost mini" id="resetAll" type="button"
-      title="只清空当前分组的内容：单图清关键字和单图结果，文案清右侧内容工坊，多图清选题正文分镜和多图结果；其他分组、选型和参考图都不动">一键清空</button>
+      title="清空当前页内容：单图清关键字和单图结果，文案清右侧内容工坊，多图清选题正文分镜和多图结果；四张选型卡（图型/风格/主题色/参考图）一起清掉，其他分组内容不动">一键清空</button>
     <button class="btn" id="composeAll" type="button">生成提示词</button>
     <button class="btn primary" id="genImage" type="button">批量出图</button>
     <button class="btn stop" id="stopGen" type="button" title="停止当前正在出图与排队中的任务" disabled>停止生图</button>
@@ -1711,6 +1723,10 @@
     <div class="combo-rec" id="comboRec">
       <span class="cr-ic"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l1.9 5.4L19 9.3l-5.1 1.9L12 16.6l-1.9-5.4L5 9.3l5.1-1.9L12 2z"/><path d="M18.5 15l.8 2.3 2.3.8-2.3.8-.8 2.3-.8-2.3-2.3-.8 2.3-.8.8-2.3z"/></svg></span>
       <span class="cr-txt" id="comboRecNote">写了内容就会自动配一套图型 · 风格 · 主题色；也可以点右边手动配。</span>
+      <!-- 随机推荐：只跟单图走。随机挑一个主题，按主题配出合得来的三张卡，再让 AI 按素材库的真实图文信息写画面描述并拼好提示词。参考图不参与：用户要用会自己传（用户 2026-11-28） -->
+      <button class="btn cr-btn cr-random" id="comboRandomBtn" type="button" title="随机挑一个主题，按它配出图型 + 风格 + 主题色，AI 按素材库的真实特征写好提示词，直接填进单图输入框；参考图不参与">随机推荐</button>
+      <!-- 多图专属：把以前「空手点批量出图」的随机示例能力剥成显式按钮，放在按内容推荐前面；单图页不露这个入口 -->
+      <button class="btn cr-btn cr-random" id="comboRandomMultiBtn" type="button" title="多图页专属：随机生成选题、文案和分镜，配好组合后直接批量出图；单图页不会出现" hidden>随机出图</button>
       <button class="btn primary cr-btn" id="comboRecBtn" type="button" title="按本页内容（单图读关键字，多图读选题/正文/分镜）推荐一套组合，直接替换上面三张卡">按内容推荐</button>
     </div>
     <div class="demo-note" id="demoNote" hidden>
@@ -2830,6 +2846,86 @@ async function comboRecommend(src){
   }
 }
 
+/* ---------- 单图「随机推荐」（用户 2026-11-28） ----------
+   不读用户写的内容，也不调 AI：后端随机挑一个主题方向，用该主题的词按推荐器配出合得来的三张卡，
+   再从这套卡的真实说明文字（图型 title / 风格 features / 主题色 name）本地抽一句关键词，秒回。
+   关键词当原始关键字写进输入框（不预先拼提示词），弹窗让人选「直接出图」还是「优化提示词再出图」，
+   像「还原示例」一样快。参考图不参与：用户要用会自己上传（用户 2026-11-28）。 */
+let _randomBusy = false;
+let _randomLast = null;   // 上一套：换一套时避开同一主题和同一组卡
+async function comboRandom(){
+  if (_randomBusy) return;
+  if (window.currentNav && window.currentNav !== 'single'){
+    toast('「随机推荐」只在单图快出这里用', {type:'err', title:'单图专用'});
+    return;
+  }
+  _randomBusy = true;
+  const btn = $('#comboRandomBtn');
+  const prevHtml = $('#comboRecNote') ? $('#comboRecNote').innerHTML : '';
+  const bar = $('#comboRec');
+  if (btn){ btn.disabled = true; btn.classList.add('busy'); btn.textContent = '随机中…'; }
+  if (bar) bar.classList.add('busy');
+  comboNote('正在随机配一套图型 / 风格 / 主题色，并从卡片说明里抽关键词…');
+  try{
+    const last = _randomLast || {};
+    const body = {
+      mode: state.qsMode === 'pure-image' ? 'pure-image' : 'graphic-text',
+      avoid_layout: last.layout || '', avoid_style: last.style || '', avoid_color: last.color || '',
+      avoid_theme: last.theme || ''
+    };
+    const r = await fetch('/api/random-combo', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    const L = (state.layouts || []).find(x => x.id === (d.layout || {}).id);
+    const S = (state.styles  || []).find(x => x.id === (d.style  || {}).id);
+    const C = (state.colors  || []).find(x => x.id === (d.color  || {}).id);
+    if (!L || !S || !C) throw new Error('随机结果没在库里找到');
+    if (!d.keyword) throw new Error('没拿到画面描述');
+
+    state.sel.layout = L;
+    state.sel.style  = S;
+    state.sel.color  = C;
+    state.selTouched = true;
+    state.styleOptOut = false;
+    try{ localStorage.setItem('iw_style_last', S.id); }catch(e){}
+    _randomLast = {layout: L.id, style: S.id, color: C.id, theme: (d.theme || {}).key || ''};
+    syncPicks();
+
+    /* 随机推荐严格跟随单图页当前选的纯图 / 图文：选图文就带字，选纯图只出画面。
+       不再替用户偷偷把纯图切成图文——用哪种模式是用户自己的选择（用户 2026-11-28 明确）。
+       syncPicks() 里的 qsAutoMode 只在用户没手动切过时按图型跟随；手动选过就不再动。 */
+
+    /* 关键词当原始关键字写进输入框，不预先拼提示词（像「还原示例」那样秒出）。
+       标记成「未优化」态、指纹清空：后面点「直接出图」会在 qsGenerate 里按这套卡现拼，
+       点「优化提示词」会在 qsPolish 里拼好摊在框里给人改。参考图全程不碰，
+       用户要用会自己上传，随机只是给一套组合（用户 2026-11-28）。 */
+    _qsRawKey = d.keyword;
+    _qsOptimized = false;
+    _qsFingerprint = '';
+    const box = $('#qsKey');
+    if (box){ box.value = d.keyword; qsFitKey(); }
+
+    const styleName = S.ref || S.name_en || S.id;
+    const themeName = (d.theme || {}).name || '随机';
+    comboNote('<span class="cr-read">' + esc(themeName) + '</span>' +
+      '<i class="cr-tag">' + esc(themeName) + '</i> ' +
+      esc(L.id + ' ' + L.title) + ' · ' + esc(styleName) + ' · ' + esc(C.name));
+    qsStatus('随机就绪 · 可直接出图，也可先优化提示词', 'ok');
+    toast('随机到「' + themeName + '」：' + L.title + ' · ' + styleName + ' · ' + C.name +
+      '。关键词已填好，可直接出图，也可点「优化提示词」手改后再出',
+      {type:'ok', title:'已随机配好一套'});
+  }catch(e){
+    comboNote(prevHtml || '随机失败，可以手选三张卡');
+    toast('随机失败：' + e.message, {type:'err', title:'随机推荐'});
+  }finally{
+    _randomBusy = false;
+    if (bar) bar.classList.remove('busy');
+    if (btn){ btn.disabled = false; btn.classList.remove('busy'); btn.textContent = '随机推荐'; }
+  }
+}
+if ($('#comboRandomBtn')) $('#comboRandomBtn').onclick = comboRandom;
+
 /* 自动推荐：手动按钮已撤（2026-11-27，单图 / 多图分组后推荐改自动）。
    进单图 / 多图分组时，选型还是启动基线（默认组合或上次会话存下来的）且那边有内容，
    就自动按内容配一套；用户手选过任何一张卡、或刻意清成「不限」，都绝不覆盖。
@@ -2965,9 +3061,12 @@ function drawText(text){
 }
 
 function syncPreview(){
-  /* 单图页不再借用多图的标题 / 正文：预览只显示关键字和这一张图 */
+  /* 单图页不再借用多图的标题 / 正文：预览只显示关键字和这一张图。
+     提示词是给 AI 的生成指令，不是发布后的正文：优化 / 随机把 #qsKey 覆盖成九行提示词后，
+     预览这里只镜像原始关键字（短句），别把整段提示词搬过来糊成一片（用户 2026-11-28）。 */
   if (window.currentNav === 'single'){
-    const key = (($('#qsKey') && $('#qsKey').value) || '').trim();
+    const raw = (_qsOptimized && _qsRawKey) ? _qsRawKey : (($('#qsKey') && $('#qsKey').value) || '');
+    const key = String(raw).trim();
     $('#pTitle').textContent = '单图预览';
     $('#pBody').textContent = key ? key.slice(0, 4000) : '在上方写关键字，出图后这里显示这一张。';
     $('#pTags').textContent = '';
@@ -3763,9 +3862,11 @@ async function qsPolish(){
     if (!prompt) throw new Error('拼词返回为空');
     // 优化结果原地覆盖关键字，不碰下方「出图指令」
     $('#qsKey').value = prompt;
-    qsFitKey();                             // 九行提示词撑开输入框，不用在小框里滚
+    /* 顺序不能反：qsFitKey() 会顺手刷新右侧预览。若还是「关键字态」，
+       预览会把刚写进框里的九行提示词当短句搬过去；先标优化态，预览才会读 _qsRawKey。 */
     _qsOptimized = true;
     _qsFingerprint = qsCardFingerprint();   // 记住这次是按哪套选型拼的
+    qsFitKey();                             // 九行提示词撑开输入框，不用在小框里滚
     qsStatus('提示词已优化，可在这个框里继续手改', 'ok');
     toast('提示词已生成在输入框，可手改', {type:'ok', title:'提示词就绪'});
   }catch(e){ qsStatus('拼词失败：' + e.message, 'err'); toast('拼词失败：' + e.message, {type:'err'}); }
@@ -3799,7 +3900,12 @@ async function qsGenerate(){
     }
     // 选型没变的优化态：直接用框里的文本（含用户手改），不重复拼词
     qsStatus('已提交，正在排队出图…');
+    /* 单图和多图绝对隔离（用户 2026-11-28）：payload() 是两者共用的，会带上多图的
+       group（整组主题）和 num_items（分镜张数）。单图任务一旦带了 group，历史列表
+       优先显示 group，单图就顶着多图的标题。这里显式清掉多图专属字段，
+       标题用自己的关键字，张数固定为 1，绝不牵连多图那边的输入。 */
     const p = {...payload('image', text.slice(0, 60)), prompt,
+      group: '', num_items: 1,
       task_id: 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2,5)};
     const {job_id} = await submitGenerate(p);
     submitted = true;
@@ -4491,13 +4597,19 @@ function fillDemoSample(){
   return idea;
 }
 
-async function runImage(){
+async function runImage(opts = {}){
   if (!redoGuard()) return;
   if (_batchRunning){ toast('上一批还在出图，等它跑完再点'); return; }
+  /* 2026-11-28：随机示例从「批量出图」里剥出来，变成多图页独立按钮「随机出图」。
+     普通批量出图不再偷偷替用户编文案：空着手点就提示去写内容或点随机出图。 */
+  if (!opts.forceDemo && isBlankStart()){
+    toast('还没有选题和文案，先写内容，或点「随机出图」生成一套示例', {type:'info', title:'先给点内容'});
+    return;
+  }
   ensureStyle();                 // 多图同理：没选风格就没画风约束
   _stopRequested = false;
-  // 什么都没有就直接点：先补一套随机示例，否则出的图没有依据
-  const demoIdea = isBlankStart() ? fillDemoSample() : null;
+  // 只有「随机出图」按钮才补一套随机示例：效果跟以前的空手批量出图一样
+  const demoIdea = opts.forceDemo ? fillDemoSample() : null;
   let items = state.items.map(it=>({...it}));
   if (!items.length){
     const t = $('#topic').value.trim();
@@ -4521,7 +4633,7 @@ async function runImage(){
   const taskId = 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   statusEl.className = 'status run';
   statusEl.textContent = demoIdea ? '已随机生成示例，准备提示词…' : '准备提示词…';
-  if (demoIdea) toast('没写内容，先给一套随机示例：' + demoIdea.title);
+  if (demoIdea) toast('随机示例已生成，正在批量出图：' + demoIdea.title);
   renderStrip();
   try{
     // 缺提示词的先拼出来；已经手改过的保留手改版本
@@ -6043,6 +6155,13 @@ $('#polishText').onclick = polishText;
   el.addEventListener('blur', clamp);
 })();
 $('#genImage').onclick = runImage;
+/* 多图页「随机出图」：走和以前空手点批量出图完全一样的示例生成链路，
+   但只在多图页露出；单图页的「随机推荐」只配三张卡和关键词，绝不触发出图。 */
+async function runRandomMulti(){
+  if (window.currentNav !== 'multi') return;
+  await runImage({forceDemo:true});
+}
+if ($('#comboRandomMultiBtn')) $('#comboRandomMultiBtn').onclick = runRandomMulti;
 $('#qsPolish').onclick = qsPolish;
 $('#qsGen').onclick = qsGenerate;
 /* 单图停止：只停单图快出自己那个任务（job_id 精确停止），多图批量、文案任务都不受影响 */
@@ -7578,11 +7697,11 @@ $('#splitToItems').onclick = function(){
     }
   });
 })();
-/* ---------- 一键清空：每个分组只清自己页面上的内容，绝不跨分组（用户 2026-11-27） ----------
-   单图 / 文案 / 多图三个页面共用一个按钮，但清的东西完全分开：
-   单图只清单图侧（关键字 + 单图结果），多图只清多图侧（选题正文分镜 + 多图结果），
-   文案只清右侧内容工坊。选型卡、参考图、画幅情绪是两个出图页面共用的
-   工作台级配置，哪个页面的清空都不碰它们——清了必然串到另一页。 */
+/* ---------- 一键清空：清当前页内容 + 四张选型卡，绝不跨分组（用户 2026-11-27，2026-11-28 改） ----------
+   单图 / 文案 / 多图三个页面共用一个按钮，内容各清各的：
+   单图清关键字 + 单图结果，多图清选题正文分镜 + 多图结果，文案清右侧内容工坊；
+   2026-11-28 起四张卡（图型/风格/主题色/参考图）跟着一起清，见 clearPicksAndRef。
+   画幅、情绪、补充要求这些参数仍不动——它们是排版调节，不是这一页的内容。 */
 function patchSession(patch){
   /* 会话快照是三个页面共用的存储：整条删掉会把别的页面的内容一起冲掉，
      改成只改自己名下的字段，其余原样保留 */
@@ -7595,10 +7714,35 @@ function patchSession(patch){
   }catch(e){}
 }
 
+/* 一键清空连四张选型卡一起清（用户 2026-11-28：清空时图型/风格/主题色/参考图也要清掉）。
+   三张卡是单图和内容侧共用的一份 DOM、切页只换 state.sel 指向，所以两份都要清，
+   否则清完切个页卡又冒出来；参考图本来就是全局一份，一起清。
+   推荐按钮的「换一组」状态也复位，免得卡空了按钮还写着换一组。 */
+function clearPicksAndRef(){
+  ['single', 'content'].forEach(page=>{
+    ['style', 'layout', 'color'].forEach(k=>{ state.selByPage[page][k] = null; });
+    if (typeof _comboLastByPage !== 'undefined' && _comboLastByPage) _comboLastByPage[page] = null;
+  });
+  state.ref = null;
+  state.selTouched = false;
+  syncPicks();
+  syncRef();
+  const cb = $('#comboRecBtn');
+  if (cb) cb.textContent = '按内容推荐';
+  /* 会话快照里的选型和参考图一起抹掉，刷新后不会又从 wb_session 回填回来。
+     注意只改这几个字段，话题/正文/分镜由各 reset 自己负责，别在这里整条覆盖。 */
+  patchSession({sel_single: {style:'', layout:'', color:''},
+                sel_content: {style:'', layout:'', color:''},
+                sel: {style:'', layout:'', color:''},
+                ref: null});
+}
+
 function resetSingle(){
-  const touched = ($('#qsKey').value || '').trim() || state.singleResults.length;
-  if (touched && !confirm('清空单图页内容？\n\n关键字和单图结果会清掉；选题正文、分镜清单、'
-    + '多图结果、草稿箱都不动；图型 / 风格 / 主题色、参考图保留。')) return;
+  const touched = ($('#qsKey').value || '').trim() || state.singleResults.length
+    || state.sel.layout || state.sel.style || state.sel.color || state.ref;
+  if (touched && !confirm('清空单图页内容？\n\n关键字、单图结果、图型 / 风格 / 主题色和参考图都会清掉；'
+    + '选题正文、分镜清单、多图结果、草稿箱都不动。')) return;
+  clearPicksAndRef();
   $('#qsKey').value = '';
   _qsOptimized = false; _qsRawKey = ''; _qsFingerprint = '';
   qsStatus('');
@@ -7608,15 +7752,16 @@ function resetSingle(){
   const st = $('#imageStatus');
   if (st){ st.className = 'status'; st.textContent = ''; }
   patchSession({singleResults: []});
-  toast('单图页已清空，多图内容和草稿箱不受影响');
+  toast('单图页已清空，四张卡和参考图也清掉了，多图内容和草稿箱不受影响');
 }
 
 async function resetMulti(){
   const touched = state.items.some(x=> (x.title || '').trim() || (x.body || '').trim())
     || ['#topic', '#docTitle', '#docBody', '#novelBody', '#note'].some(id=> ($(id).value || '').trim())
-    || state.results.length;
-  if (touched && !confirm('清空多图页内容？\n\n选题、标题、正文、小说原文、分镜清单、补充要求和'
-    + '多图结果会清掉；单图关键字和单图结果、草稿箱都不动；图型 / 风格 / 主题色、参考图保留。')) return;
+    || state.results.length || state.sel.layout || state.sel.style || state.sel.color || state.ref;
+  if (touched && !confirm('清空多图页内容？\n\n选题、标题、正文、小说原文、分镜清单、补充要求、'
+    + '多图结果、图型 / 风格 / 主题色和参考图都会清掉；单图关键字和单图结果、草稿箱都不动。')) return;
+  clearPicksAndRef();
   state.items = [];
   state.hotStory = null; state.hotRef = null;
   state.comicBible = '';          // 角色锚点也要清，否则下一批手写内容会串到上一部漫画的人物
@@ -7643,14 +7788,17 @@ async function resetMulti(){
     hot_story: null, hot_ref: null, comic_bible: '', comic_novel: false});
   markContentClean();          // 空白页不算改动，别让自动暂存把空壳存进草稿箱
   refreshDraftCount();
-  toast('多图页已清空，单图关键字和单图结果保留');
+  toast('多图页已清空，四张卡和参考图也清掉了，单图关键字和单图结果保留');
 }
 
-/* ---------- 文案页「一键清空」：只清右侧内容工坊，左侧草稿箱和配图设置都不动 ---------- */
+/* ---------- 文案页「一键清空」：清右侧内容工坊 + 四张选型卡，左侧草稿箱不动 ---------- */
 function resetCopyOnly(){
   const touched = state.items.some(x=> (x.title || '').trim() || (x.body || '').trim())
-    || ['#topic', '#docTitle', '#docBody', '#novelBody'].some(id=> ($(id).value || '').trim());
-  if (touched && !confirm('只清空右侧内容？\n\n选题、标题、正文、分镜清单会清掉；左侧草稿箱会原样保留。')) return;
+    || ['#topic', '#docTitle', '#docBody', '#novelBody'].some(id=> ($(id).value || '').trim())
+    || state.sel.layout || state.sel.style || state.sel.color || state.ref;
+  if (touched && !confirm('清空文案页内容？\n\n选题、标题、正文、分镜清单、图型 / 风格 / 主题色和参考图都会清掉；'
+    + '左侧草稿箱会原样保留。')) return;
+  clearPicksAndRef();
   state.items = [];
   state.hotStory = null; state.hotRef = null;
   state.comicBible = ''; state.comicNovel = false;
@@ -7673,7 +7821,7 @@ function resetCopyOnly(){
   patchSession({topic: '', title: '', body: '', novel: '', items: [], results: [],
     hot_story: null, hot_ref: null, comic_bible: '', comic_novel: false});
   markContentClean();
-  toast('右侧内容已清空，草稿箱保留');
+  toast('文案页已清空，四张卡和参考图也清掉了，草稿箱保留');
 }
 
 /* ---------- 参考图：点击 / 拖入 / Ctrl+V 粘贴 ---------- */
@@ -8485,17 +8633,25 @@ setInterval(refreshPool, 10000);
     if (gear) gear.title = on ? '有新版本可升级（点开 → 检查更新）' : '设置 / 接口与号池';
   }
 
-  /* 主动推一次：同一个版本只说一次，关掉就不再啰嗦（刷新也不重复） */
+  /* 主动推一次：看过的版本不再烦人；没看过的版本每次查到都补一条，
+     免得气泡 9 秒就消失、用户错过以后再也看不到。同一版本 30 分钟内最多一条，
+     工作台常年开着也不会一直弹。 */
   function pushOnce(v){
     try {
-      var k = 'iw_upd_tip_' + v;
-      if (sessionStorage.getItem(k) === '1') return;
-      sessionStorage.setItem(k, '1');
+      if (localStorage.getItem('iw_upd_read_' + v) === '1') return;
+      var now = Date.now();
+      var last = Number(localStorage.getItem('iw_upd_tipat_' + v) || 0);
+      if (now - last < 30 * 60 * 1000) return;
+      localStorage.setItem('iw_upd_tipat_' + v, String(now));
       toast('有新版本 v' + v + '，点这里看这次修好了什么',
         {title: '发现新版本', ms: 9000,
          click: function(){ if (window.openSettings) window.openSettings('update'); }});
     } catch (e) {}
   }
+  /* 用户点开「检查更新」就算看过了，之后不再补推这一版 */
+  window.markUpgradeSeen = function(v){
+    try{ if (v) localStorage.setItem('iw_upd_read_' + v, '1'); }catch(e){}
+  };
 
   function render(d){
     /* 服务端报回来的版本号先落卡。本地比 npm 新时（发版前的日常），latest 是个倒退的
@@ -8526,6 +8682,12 @@ setInterval(refreshPool, 10000);
       return;
     }
     setDots(true);
+    /* 面板已经开着「检查更新」就不弹气泡：人已经在看了 */
+    var sd = document.getElementById('settingsDlg');
+    var pu = document.getElementById('setPaneUpdate');
+    if (sd && sd.open && pu && pu.classList.contains('on')){
+      if (window.markUpgradeSeen) window.markUpgradeSeen(d.latest);
+    }
     pushOnce(d.latest);
     note.hidden = false;
     note.textContent = '新版本 v' + d.latest + ' →';
@@ -8558,6 +8720,7 @@ setInterval(refreshPool, 10000);
   }
   window.prepUpgradePanel = prepPanel;
   window.upCurrent = function(){ return curVer; };
+  window.upLatest = function(){ return latestVer; };
 
   /* 窗口拉高拉矮都要重新铺一遍：装得下就多列一版，装不下就少列一版 */
   var fitTimer = null;
@@ -9732,6 +9895,9 @@ setInterval(refreshPool, 10000);
   window.currentNav = '';
   window.navTo = function navTo(name, quiet){
     if (!P[name]) name = 'copy';
+    /* 示例提示条只属于多图「随机出图」，挂在共用 DOM 上会跟着搬到单图页；
+       切到非多图页先收起来，保证单图和多图完全隔离（用户 2026-11-28） */
+    if (name !== 'multi' && window.hideDemoNote) window.hideDemoNote();
     const prev = window.currentNav;
     if (prev in DLG && prev !== name) unmountDlg(prev);
     if (name === 'single'){
@@ -9755,6 +9921,12 @@ setInterval(refreshPool, 10000);
       const cb = document.getElementById('comboRecBtn');
       if (cb && !_comboBusy) cb.textContent = _comboLastByPage[selKey] ? '换一组' : '按内容推荐';
     }
+    /* 「随机推荐」是单图专属；「随机出图」是多图专属。两个入口同排但互不越界：
+       单图页只看到随机推荐，多图页只看到随机出图（用户 2026-11-28 明确）。 */
+    const rnd = document.getElementById('comboRandomBtn');
+    if (rnd) rnd.hidden = (name !== 'single');
+    const rndMulti = document.getElementById('comboRandomMultiBtn');
+    if (rndMulti) rndMulti.hidden = (name !== 'multi');
     const work = (name === 'single' || name === 'multi');
     if (aside) aside.hidden = !work;
     if (headActs){
@@ -9892,6 +10064,8 @@ setInterval(refreshPool, 10000);
     setTab(tab);
     if (!dlg.open) dlg.showModal();
     if (tab === 'update'){
+      /* 看过这一版就不再补推气泡：用户都已经点进检查更新了，别再弹 */
+      if (window.markUpgradeSeen && window.upLatest) window.markUpgradeSeen(window.upLatest());
       if (window.prepUpgradePanel) window.prepUpgradePanel();
       const cs = $('setCheckState');
       if (cs) cs.textContent = '检查中…';
@@ -9918,7 +10092,12 @@ setInterval(refreshPool, 10000);
   window.setSettingsTab = setTab;
 
   const gear = $('railSetting');
-  if (gear) gear.onclick = function(e){ e.stopPropagation(); openSettings('ws'); };
+  /* 红点亮着就直达「检查更新」，不用用户再点一次分组；没红点还是进工作台设置 */
+  if (gear) gear.onclick = function(e){
+    e.stopPropagation();
+    const dot = $('railSetDot');
+    openSettings(dot && !dot.hidden ? 'update' : 'ws');
+  };
   const closeBtn = $('settingsClose');
   if (closeBtn) closeBtn.onclick = closeSettings;
   dlg.addEventListener('cancel', function(e){ e.preventDefault(); closeSettings(); });
@@ -9926,6 +10105,7 @@ setInterval(refreshPool, 10000);
     b.onclick = function(){
       setTab(b.dataset.set);
       if (b.dataset.set === 'update'){
+        if (window.markUpgradeSeen && window.upLatest) window.markUpgradeSeen(window.upLatest());
         if (window.prepUpgradePanel) window.prepUpgradePanel();   // 先把当前版本卡填上，不等网络
         if (window.checkUpgrade){
           const cs = $('setCheckState'); if (cs) cs.textContent = '检查中…';

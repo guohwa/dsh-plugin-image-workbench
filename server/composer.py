@@ -467,10 +467,27 @@ def color_line(color: dict | None) -> str:
     return (color.get("prompt") or "").strip()
 
 
+# 少数图型的 prompt 是「提示词生成模板 + 用户交互规范 + 画面指令」混写的，
+# 后半段写给写词的人 / 前端 UI 看（类型枚举、点选序号、反引号代码示例），
+# 不是画面指令。喂给生图模型只会干扰出图（用户 2026-11-28 反馈 SC-021 提示词过长）。
+# 170 个图型里目前只有 SC-021 含这些标记，命中即从标记处截断，只留画面指令。
+_LAYOUT_NON_VISUAL_MARKS = (
+    "交互点选输出规范",
+    "七大核心转译类型体系",
+    "每次输出单义明确，并在文末附带编号清单供用户点选",
+)
+
+
 def layout_line(layout: dict | None) -> str:
     if not layout:
         return ""
     text = (layout.get("prompt") or "").strip()
+    cuts = [text.find(k) for k in _LAYOUT_NON_VISUAL_MARKS]
+    cuts = [c for c in cuts if c > 0]
+    if cuts:
+        text = text[:min(cuts)]
+        # 砍点常落在「3. 七大…」的序号前，收掉悬空的序号，别留半截「3.」
+        text = re.sub(r"(?:\s*\d+[.．、]\s*)+$", "", text).rstrip()
     if text and not text.endswith(("。", "！", "》", "」")):
         text += "。"
     return text
@@ -696,17 +713,11 @@ def build_prompt(item: dict, sel: dict, ratio: str, moods: list[str],
             if head:
                 blocks.append(head)
 
-    # 缩微摄影融合在纯图 / 图文 / 摄影三种模式下都生效（用户 2026-11-05 定）
-    # 但线稿类画风不能用写实摄影那套措辞，否则画风被改掉（用户 2026-11-26 反馈小林漫画出成暖调摄影）
-    # 图文模式把它放到「主题」之后，先让风格与版式立住，再补融合，别一上来就顶掉画风
-    fusion_block = ""
-    if fusion:
-        if is_ink_style(style):
-            fusion_block = MICRO_FUSION_INK
-        elif is_flat_layout(layout):
-            fusion_block = MICRO_FUSION_FLAT
-        else:
-            fusion_block = MICRO_FUSION
+    # 缩微比例融合：开关开着就统一带同一条，不再按图型 / 风格挑文案（用户 2026-11-28 明确）。
+    # 系统不替用户判断「这张图该不该带融合、该带哪条」——效果好不好用户自己看，
+    # 不满意他把前端那个融合勾去掉即可。以前按 is_ink_style / is_flat_layout 分流，
+    # SC-021 被判成留白卡套上「不要摄影质感」，和它自己的超写实摄影要求打架。
+    fusion_block = MICRO_FUSION_FLAT if fusion else ""
 
     if image_mode in ("photo", "pure-image"):
         if fusion_block:
@@ -786,10 +797,15 @@ def build_prompt(item: dict, sel: dict, ratio: str, moods: list[str],
     else:
         # 主题：官方写法是「主题：」+ 用户原话，文案的取舍交给固定后缀
         theme = subject or body
-        if theme and body and subject and body != subject:
+        # 单图快出只有一个 keyword 框、没有独立标题：这句 keyword 既是画面主体，
+        # 也是要排进图里的字。官方图文写法必须两行都给：
+        #   「主题：」告诉模型画什么，「正文文字：」告诉模型把哪句话排进图里。
+        # 2026-11-28 曾把这两行当「同一句重复」删成只剩主题，结果出图全是画面没有字
+        # ——缺的正是「正文文字」这条排字指令。内容即使一样，两行也不能省。
+        if body and body != theme:
             blocks.append(f"主题：{theme.rstrip('。')}。正文文字：{body.rstrip('。')}。")
         elif theme:
-            blocks.append(f"主题：{theme.rstrip('。')}。")
+            blocks.append(f"主题：{theme.rstrip('。')}。正文文字：{theme.rstrip('。')}。")
         # 纯色留白的社媒卡不硬塞「画面：一个小人和一件道具」——
         # 那句话会把模型钉在道具上（一句关于忘记的话被画成一页日历），
         # 隐喻交给固定后缀里的「由你先设计画面隐喻」来处理（用户 2026-11-26 对比官方效果）。

@@ -582,10 +582,16 @@ ok('升级走整包（增量实现保留可切回）',
                                  '_apply_full', '_write_code_files'))
    and 'await _apply_full(latest)' in _src_app
    and 'await _apply_delta(latest)' not in _src_app)
-ok('有新版本时两处红点 + 主动推一次',
+ok('有新版本时两处红点 + 主动补推（首屏/10 分钟/切回页面）',
    all(x in _src_html for x in ('id="railSetDot"', 'id="setUpdateDot"',
                                 'function setDots(on)', 'function pushOnce(v)',
-                                'setDots(true)', '看这次修好了什么')))
+                                'setDots(true)', '看这次修好了什么',
+                                'check();', 'setInterval(check, 10 * 60 * 1000)',
+                                "visibilitychange', function(){ if (!document.hidden) check()",
+                                "localStorage.getItem('iw_upd_read_'",
+                                "localStorage.getItem('iw_upd_tipat_'",
+                                'window.markUpgradeSeen = function(v)'))
+   and 'openSettings(dot && !dot.hidden ? \'update\' : \'ws\')' in _src_html)
 ok('已是最新时「立即升级」置灰，不让人点出 400',
    "goBtn.textContent = '已是最新'" in _src_html
    and 'if (newer === false){' in _src_html)
@@ -647,32 +653,32 @@ ok('元素库自动选：用户手填 scene 不被覆盖',
    _c2['items'][0]['scene'] == '我手填的：小人举着一杯奶茶',
    '手填被覆盖：' + _c2['items'][0]['scene'])
 
-# 线稿类画风不能套「暖调写实生活摄影」的融合措辞：用户选了小林漫画，出的却是暖调写实插画
+# 用户 2026-11-28 明确：融合不替用户判断用哪条，开关开着就统一「缩微比例融合」一条。
+# 效果不好用户自己把前端勾去掉，系统不按图型 / 风格切换文案。
 _cat_styles = {s['id']: s for s in catalog.build()['styles']}
 _ink_style = _cat_styles.get('FE-060')      # 小林漫画：白底、毛笔线稿、大面积留白
 _photo_style = _cat_styles.get('FI-015')    # 黑白肖像摄影：features 里有「黑白」但不是线稿
-ok('线稿类画风被识别出来（小林漫画 / 极简线描）',
-   composer.is_ink_style(_ink_style) is True
-   and composer.is_ink_style(_cat_styles.get('FA-002')) is True
-   and composer.is_ink_style(None) is False)
-ok('摄影组的「黑白」不会被误判成线稿（FI-015 是黑白照片）',
-   composer.is_ink_style(_photo_style) is False
-   and composer.is_ink_style(_cat_styles.get('FE-001')) is False)
 _ink_prompt = composer.build_prompt(
     {'title': '有很多事当时你想不通', 'body': '', 'scene': '一个微缩尺寸的小人和一本旧书'},
     {'style': _ink_style, 'layout': _L[0], 'color': None},
     '3:4', ['治愈'], True, 'normal', '', False, 'graphic-text', '')
-ok('线稿风格 + 缩微融合：不把场景改写成暖调写实摄影',
-   composer.MICRO_FUSION_INK in _ink_prompt
+ok('线稿风格开融合也只带统一一条缩微比例融合，不再切 INK 文案',
+   composer.MICRO_FUSION_FLAT in _ink_prompt
    and '暖调写实生活摄影' not in _ink_prompt
-   and '画风以所选风格为准' in _ink_prompt)
-ok('摄影 / 无风格时仍走原来的写实摄影融合',
-   composer.MICRO_FUSION in composer.build_prompt(
+   and composer.MICRO_FUSION_INK not in _ink_prompt)
+ok('摄影 / 无风格开融合同样只带这一条，不再切写实摄影文案',
+   composer.MICRO_FUSION_FLAT in composer.build_prompt(
        {'title': 't', 'body': '', 'scene': '小人和旧书'},
        {'style': _photo_style}, '3:4', [], True, 'normal', '', False, 'graphic-text', '')
-   and composer.MICRO_FUSION in composer.build_prompt(
+   and composer.MICRO_FUSION not in composer.build_prompt(
        {'title': 't', 'body': '', 'scene': '小人和旧书'},
        {'style': None}, '3:4', [], True, 'normal', '', False, 'graphic-text', ''))
+ok('融合关掉时三条都不出现（开关仍是用户说了算）',
+   all(m not in composer.build_prompt(
+       {'title': 't', 'body': 'b', 'scene': ''},
+       {'style': None}, '3:4', [], False, 'normal', '', False, 'graphic-text', '')
+       for m in (composer.MICRO_FUSION, composer.MICRO_FUSION_INK,
+                 composer.MICRO_FUSION_FLAT)))
 
 # 图文卡的另一半毛病（用户 2026-11-26）：图型写着「纯色背景、留白」，融合句却要求暖调实景摄影，
 # 两条要求打架，出来的不是卡片而是一张桌面实拍；而且「上方是角色或场景图」只说了位置、没说画什么，
@@ -786,6 +792,42 @@ ok('纯图提示词同样是官方字段结构，不再把风格名和特征揉�
    '纯图提示词：' + _pure_real[:60])
 ok('纯图不再出现「纯图模式。」这种模型读不懂的系统术语，也不写排版要求',
    '纯图模式' not in _pure_real and '排版要求' not in _pure_real)
+# 单图快出图文（用户 2026-11-28）：只有一个 keyword 框、title 恒为空，以前整行文字槽位被丢掉，
+# 出的全是画面没有字。现在 keyword 进「主题」槽位排字；theme 与 body 相同，只落一行不重复。
+_single_graphic = composer.build_prompt(
+    {'title': '', 'body': '有很多事你当时想不通，别着急，过段时间你可能就忘了。', 'scene': ''},
+    {'layout': _cat_layouts.get('SC-008')}, '3:4', ['治愈'], False, 'normal', '',
+    False, 'graphic-text', '')
+ok('单图图文「主题 + 正文文字」两行都在，缺正文文字就只出画面不出字',
+   '主题：有很多事你当时想不通' in _single_graphic
+   and '正文文字：有很多事你当时想不通' in _single_graphic,
+   '单图图文提示词：' + _single_graphic[-180:])
+# 多图正常图文：title 与 body 各一句，仍按官方写法两行都给，不能被单图的去重误伤
+_multi_graphic = composer.build_prompt(
+    {'title': '别着急，很多事过段时间就忘了',
+     'body': '有很多事你当时想不通，别着急，过段时间你可能就忘了。', 'scene': ''},
+    {'layout': _cat_layouts.get('SC-008')}, '3:4', ['治愈'], False, 'normal', '',
+    False, 'graphic-text', '')
+ok('多图图文仍是主题 + 正文文字两行，不被单图去重误伤',
+   '主题：别着急' in _multi_graphic and '正文文字：有很多事' in _multi_graphic,
+   '多图图文提示词：' + _multi_graphic[-200:])
+
+# SC-021 提示词截断（用户 2026-11-28）：2221 字里后半是类型枚举 + 点选交互规范，
+# 是写给写词的人 / UI 看的，不是画面指令。layout_line 命中标记即从那里截断。
+_sc021 = _cat_layouts.get('SC-021')
+if _sc021:
+    _sc021_line = composer.layout_line(_sc021)
+    _sc021_raw = _sc021.get('prompt', '')
+    ok('SC-021 排版要求砍掉类型枚举与交互点选规范，只留画面指令',
+       all(x not in _sc021_line for x in ('七大核心转译类型', '交互点选输出规范',
+                                          '1 种类型', '若需切换可直接回复编号'))
+       and '真实摄影区' in _sc021_line and '艺术转译区' in _sc021_line
+       and '40%–80%' in _sc021_line
+       and len(_sc021_line) < len(_sc021_raw) * 0.6,
+       '原始 %d 字 -> 保留 %d 字' % (len(_sc021_raw), len(_sc021_line)))
+    ok('SC-021 截断后不留半截序号',
+       not _sc021_line.rstrip().endswith(('3.', '3．', '3、')),
+       '结尾：' + _sc021_line[-40:])
 # 只选图型不选风格：提示词里一个画风字都没有，出图只能靠模型自由发挥（用户 2026-11-26 踩坑）
 _no_style = asyncio.run(composer.compose({'layout_id': 'SC-008', 'ratio': '3:4',
                                           'mood': '治愈、松弛、幽默', 'image_mode': 'graphic-text',
@@ -1858,21 +1900,28 @@ ok('单图清空不动多图内容，多图清空不动单图关键字',
    "['#topic', '#docTitle', '#docBody', '#novelBody', '#note'].forEach(id=>{ $(id).value = ''; });" in _html
    and "'#topic', '#docTitle', '#docBody', '#novelBody', '#note', '#qsKey'].forEach" not in _html
    and 'state.singleResults = []; state.singleIdx = 0;' in _html
-   and 'toast(\'多图页已清空，单图关键字和单图结果保留\');' in _html
-   and 'toast(\'单图页已清空，多图内容和草稿箱不受影响\');' in _html)
+   and '四张卡和参考图也清掉了' in _html)
+# 2026-11-28：用户改需求——一键清空连四张卡和参考图一起清。三张卡是单图/内容侧共用 DOM，
+# 两份 selByPage 都清，切页才不会又冒出来；推荐按钮状态、会话快照同步复位。
 _reset_region = _html[_html.index('function patchSession'): _html.index('/* ---------- 参考图：点击')]
-ok('清空不再动选型卡 / 参考图 / 设置，会话快照只抹自己名下字段',
-   'function patchSession(patch){' in _html
-   and 'Object.assign(s, patch);' in _html
+ok('一键清空连四张选型卡和参考图一起清（两份 selByPage 都清）',
+   'function clearPicksAndRef(){' in _html
+   and "['single', 'content'].forEach(page=>{" in _reset_region
+   and "['style', 'layout', 'color'].forEach(k=>{ state.selByPage[page][k] = null; });" in _reset_region
+   and 'state.ref = null;' in _reset_region
+   and 'syncPicks();' in _reset_region and 'syncRef();' in _reset_region
+   and _html.count('clearPicksAndRef();') >= 3)   # 三个 reset 都调用
+ok('清空后会话快照抹掉选型和参考图，刷新不会回填',
+   "sel_single: {style:'', layout:'', color:''}" in _reset_region
+   and "sel_content: {style:'', layout:'', color:''}" in _reset_region
+   and 'ref: null});' in _reset_region
    and "localStorage.removeItem('wb_session')" not in _html
-   and 'state.sel.style' not in _reset_region
-   and 'state.ref = null' not in _reset_region
-   and 'state.selTouched' not in _reset_region)
-ok('文案页一键清空只清右侧内容，草稿箱和配图设置保留',
+   and 'Object.assign(s, patch);' in _html)
+ok('文案页一键清空路由不变，草稿箱保留、提示同步改',
    'function resetCopyOnly(){' in _html
    and "if (window.currentNav === 'copy') return resetCopyOnly();" in _html
    and "patchSession({topic: '', title: '', body: '', novel: '', items: [], results: []," in _html
-   and 'toast(\'右侧内容已清空，草稿箱保留\');' in _html)
+   and 'toast(\'文案页已清空，四张卡和参考图也清掉了，草稿箱保留\');' in _html)
 ok('分镜写入后状态栏给出下一步指引',
    '不用再点「拆成分镜」，直接点右上「批量出图」' in _html)
 ok('兜底分镜抽小标题，不再一律第N格',
@@ -2064,6 +2113,14 @@ ok('单图页保留一键清空、隐藏批量按钮，预览与多图文案剥�
    and "$('#pTitle').textContent = '单图预览';" in _html
    and "bar.textContent = '单图 · 预览'" in _html
    and 'if (window.syncPreview) syncPreview();' in _html)
+# 2026-11-28 20:23 反馈：点「优化提示词」后右侧预览又搬了整段提示词。
+# qsFitKey() 内部会 syncPreview()：必须先置优化态，预览才会读 _qsRawKey 短句而不是框里的提示词。
+_polish_fn = _html.split('async function qsPolish(){', 1)[-1].split('async function qsGenerate(){', 1)[0]
+ok('优化提示词先标优化态再撑框，预览只留原始短句',
+   'const kw = qsCurrentKeyword();' in _polish_fn
+   and '_qsOptimized = true;' in _polish_fn
+   and 'qsFitKey();' in _polish_fn
+   and _polish_fn.index('_qsOptimized = true;') < _polish_fn.index('qsFitKey();'))
 # 2026-11-27 反馈：单图和多图结果列表按模式隔离，预览/翻页/查看/下载/快照各自独立
 ok('单图与多图结果列表隔离，预览按当前页取，切页不串图',
    'results:[], idx:0, singleResults:[], singleIdx:0' in _html
@@ -2080,6 +2137,14 @@ ok('历史任务行标注单图/多图，两类各自独立成任务',
    and "startsWith('k') ? '<span class=\"chipx kind-multi\">多图</span>'" in _html
    and "task_id: 'q' + Date.now().toString(36)" in _html
    and "const taskId = 'k' + Date.now().toString(36)" in _html)
+# 2026-11-28 反馈：单图历史任务的标题顶着多图的整组主题，单图多图必须绝对隔离
+_hist_src = (ROOT / 'history.py').read_text(encoding='utf-8')
+ok('单图出图显式清掉多图的 group / num_items，历史标题不取 group',
+   "group: '', num_items: 1,\n      task_id: 'q' + Date.now().toString(36)" in _html
+   and 'def _task_title(task_id: str, g: str, title: str, topic: str) -> str:' in _hist_src
+   and 'if str(task_id or "").startswith("q"):' in _hist_src
+   and '_task_title(tid, g, r.get("title"), r.get("topic"))' in _hist_src
+   and '_task_title(task_id, first.get("group"), first.get("title"), first.get("topic"))' in _hist_src)
 # 2026-11-27 反馈：整张卡都能点开选择器；「更换」按钮去掉；X 放大且不占文字宽度
 ok('四张选择卡整块可点，更换按钮已去掉，X 放大且浮在右上角',
    'id="chgLayout"' not in _html and 'id="chgStyle"' not in _html
@@ -2207,6 +2272,60 @@ ok('推荐后同步三张卡、记住这次风格，按钮变「换一组」',
    'state.sel.layout = L;' in _html and 'state.sel.color  = C;' in _html
    and "_comboLastByPage[pageKey] = {layout: L.id, style: S.id, color: C.id};" in _html
    and "btn.textContent = _comboLastByPage[pageKey] ? '换一组' : '按内容推荐';" in _html)
+# 2026-11-28：单图「随机一套」——随机主题成套配三张卡，AI 按 catalog 真实图文信息写画面描述
+ok('单图有「随机推荐」按钮，且只在单图页显示',
+   'id="comboRandomBtn"' in _html and '>随机推荐</button>' in _html
+   and "rnd.hidden = (name !== 'single')" in _html
+   and "if (window.currentNav && window.currentNav !== 'single')" in _html,
+   '多图页读的是选题和分镜，随机主题没有依据，不能在那边露出这个入口')
+# 2026-11-28：多图专属「随机出图」——把旧版空手点批量出图的随机示例能力剥成显式按钮
+ok('多图有「随机出图」按钮，只在多图页显示且排在按内容推荐前',
+   'id="comboRandomMultiBtn"' in _html and '>随机出图</button>' in _html
+   and "rndMulti.hidden = (name !== 'multi')" in _html
+   and _html.index('comboRandomMultiBtn') < _html.index('id="comboRecBtn"')
+   and 'function runRandomMulti()' in _html
+   and "if (window.currentNav !== 'multi') return;" in _html
+   and 'await runImage({forceDemo:true})' in _html
+   and "if ($('#comboRandomMultiBtn')) $('#comboRandomMultiBtn').onclick = runRandomMulti;" in _html,
+   '单图页绝不露随机出图；多图页按钮就在按内容推荐前面')
+ok('普通批量出图不再偷偷随机编文案，空内容只提示',
+   'if (!opts.forceDemo && isBlankStart())' in _html
+   and '或点「随机出图」生成一套示例' in _html
+   and 'const demoIdea = opts.forceDemo ? fillDemoSample() : null;' in _html
+   and 'const demoIdea = isBlankStart() ? fillDemoSample() : null;' not in _html,
+   '随机示例已剥离成显式入口，只有点随机出图才fillDemoSample')
+ok('多图随机示例提示条切到非多图页就收起，不串到单图',
+   "if (name !== 'multi' && window.hideDemoNote) window.hideDemoNote();" in _html
+   and "function hideDemoNote()" in _html
+   and 'id="demoNote"' in _html,
+   'demoNote 挂在共用 DOM，切页必须显式隐藏，否则示例提示跑到单图页')
+_rand_fn = _html[_html.index('async function comboRandom'):_html.index("if ($('#comboRandomBtn'))")]
+ok('随机推荐点击有按钮动效，且不碰用户参考图',
+   "btn.classList.add('busy')" in _rand_fn and "btn.classList.remove('busy')" in _rand_fn
+   and 'btn.textContent = \'随机中…\'' in _rand_fn
+   and 'cr-random.busy' in _html and '@keyframes crRandomPulse' in _html
+   and '_randomSavedRef' not in _rand_fn
+   and 'state.ref = null' not in _rand_fn and 'state.ref =' not in _rand_fn,
+   '用户有参考图会自己提交，随机全程不碰草稿里那张参考图')
+ok('随机推荐本地从卡片说明抽关键词，不调 AI、秒回（不再等 25 秒）',
+   'api_random_combo' in _src_app and 'def api_random_combo' in _src_app
+   and '/api/random-combo' in _html and 'recommend_mod.TAGS' in _src_app
+   and 'pool_mod.chat_once' not in _src_app[_src_app.index('def api_random_combo'):_src_app.index('@app.post("/api/recommend")')]
+   and 'def _bits(' in _src_app and 'feat_bits = _bits(S.get("features"))' in _src_app
+   and 'theme_words = list(theme["kw"][:3])' in _src_app
+   and 'layout_title + "版式"' in _src_app and 'color_name + "为主色调"' in _src_app,
+   '关键词全部从图型/风格/主题色卡片的真实说明文字抽取组合，不能调 AI 干等')
+ok('随机推荐只填关键词不预先拼词，右下角 toast 闪一下提示（不搞弹窗）',
+   'id="randDoneDlg"' not in _html and 'showRandDone' not in _html
+   and '_qsOptimized = false;' in _rand_fn and '_qsFingerprint = \'\';' in _rand_fn
+   and 'qsCompose(d.keyword)' not in _rand_fn
+   and '已随机配好一套' in _rand_fn and '可直接出图' in _rand_fn
+   and '优化提示词' in _rand_fn,
+   '像还原示例一样秒出关键词，toast 提示可直接出图或先优化，按钮用现成的')
+ok('随机推荐避开上一套主题和卡，连点换不同组合',
+   'avoid_theme' in _src_app and 'avoid_layout' in _src_app
+   and '_randomLast' in _html,
+   '连点两次要换到不同的一套，不能原地打转')
 # 2026-11-27：缩微摄影融合默认常开，只有用户自己关过才记住「关」
 ok('缩微摄影融合默认常开，用户关过才记住',
    '<input type="checkbox" id="fusion" checked>' in _html
@@ -2418,8 +2537,9 @@ ok('设置弹窗三分组：工作台设置 / 接口配置 / 检查更新',
    and 'data-set="update">检查更新<span class="dot-new" id="setUpdateDot" hidden></span></button>' in _html
    and 'id="setPaneWs"' in _html and 'id="setPaneIface"' in _html and 'id="setPaneUpdate"' in _html
    and '<div class="set-foot"><span id="cfgResult"></span></div>' in _html)
-ok('左下角设置打开弹窗而不是切到号池整页',
-   "gear.onclick = function(e){ e.stopPropagation(); openSettings('ws'); };" in _html
+ok('左下角设置打开弹窗而不是切到号池整页（亮红点直达检查更新）',
+   "gear.onclick = function(e){" in _html
+   and "openSettings(dot && !dot.hidden ? 'update' : 'ws');" in _html
    and 'window.openSettings = openSettings;' in _html
    and "note.onclick = function(){ if (window.openSettings) window.openSettings('update'); else openPanel(); };" in _html
    and 'window.prepUpgradePanel = prepPanel;' in _html
