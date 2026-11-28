@@ -17,7 +17,7 @@
 "size": 15516
 },
 "package.json": {
-"sha1": "cac67cea14ca104dca60291ca6a1b5d9ec62d024",
+"sha1": "506535eddff6c16ae6c7d471ee0d3bcde23d06da",
 "size": 1695
 },
 "scripts/fetch-style-images.mjs": {
@@ -49,8 +49,8 @@
 "size": 902
 },
 "server/app.py": {
-"sha1": "f91072e88b0ad017e95632a4f0bfeeb83fe96ca7",
-"size": 253949
+"sha1": "bd243d365947f0b0dd9261f3edd901185d265158",
+"size": 257424
 },
 "server/catalog.json": {
 "sha1": "e1103e8410cb2c4bdeb6cb36978f8a56b0cdbd81",
@@ -61,12 +61,12 @@
 "size": 4986
 },
 "server/changelog.json": {
-"sha1": "c1f48838b9112412894780914a682a691d71b754",
-"size": 62970
+"sha1": "fd187e849459598375ec6fedd20ed95a49903deb",
+"size": 63835
 },
 "server/composer.py": {
-"sha1": "a0269b1fb0450c6f29391e10d0f4f8be4c75ed67",
-"size": 50465
+"sha1": "9341f1b5228cd5602eff4d92ed98f76ecd8f407f",
+"size": 52845
 },
 "server/drafts.py": {
 "sha1": "0e94e8f162a98a40a0e172014d01dc265ebeaedb",
@@ -109,16 +109,16 @@
 "size": 61
 },
 "server/smoke_check.py": {
-"sha1": "34350f07e7b9b6311bf798a2d1627281bbfeb52d",
-"size": 171672
+"sha1": "623659291636944bc7158fb6273fb933a4296221",
+"size": 176709
 },
 "server/static/access.html": {
 "sha1": "277bcca42bb5ba255547ff2572c9777a8ea930f2",
 "size": 10369
 },
 "server/static/index.html": {
-"sha1": "a54504a07ac9fa990bbf2b55b70772675c07f185",
-"size": 557349
+"sha1": "d0b562d170f78306f62102e63c588bbaf1d77c29",
+"size": 559945
 },
 "server/trends/fs-json.js": {
 "sha1": "6fee56df31251530a6cdeb548a60f3437b251c06",
@@ -137,5 +137,5 @@
 "size": 4709
 }
 },
-"version": "1.1.129"
+"version": "1.1.130"
 }

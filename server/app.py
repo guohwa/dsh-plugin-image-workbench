@@ -678,9 +678,15 @@ def build_polish_prompt(req: GenRequest) -> str:
     )
 
 
+# 进程启动标识：升级等待时用它确认「进程真的换过了」，不能只看版本号——
+# package.json 在升级写盘时就变成新版本了，旧进程没退之前版本号已经是新的，
+# 前端若只等版本号会提前刷新，看到旧代码还以为升级成功。
+BOOT_ID = str(int(time.time() * 1000)) + "-" + secrets.token_hex(4)
+
+
 @app.get("/health")
 async def health():
-    return {"ok": True, "version": VERSION}
+    return {"ok": True, "version": VERSION, "boot": BOOT_ID}
 
 
 def _ver_key(v: str) -> tuple:
@@ -1030,15 +1036,37 @@ def _write_code_files(files: dict, bdir: Path) -> tuple[int, str]:
 
     _write_plans(plans)
 
+    # 回读校验：写盘接口返回成功但内容没落全（磁盘满 / 杀软拦截 / 进程被提前
+    # 结束）时，绝不能让前端拿着「成功」去重启。任何一个文件内容对不上就报错，
+    # 让 apply 整步失败、不重启，用户看到的才是真的失败而不是「重启完还是旧版」。
+    bad = []
+    for rel, dest, raw in plans:
+        try:
+            got = dest.read_bytes()
+        except OSError:
+            bad.append(rel)
+            continue
+        if sha_norm(got, rel) != sha_norm(raw, rel):
+            bad.append(rel)
+    if bad:
+        raise RuntimeError("代码写入后核对不通过（" + ", ".join(bad[:5]) + "），未重启，请重试")
+
     # 插件包目录也写一遍。写不进去不算失败：副本已经是新的，用户在 DSH 插件页
     # 重装一次同样能对齐，别因为 node_modules 只读就拦着人升级。
+    #
+    # 关键：package.json 绝不写进插件包。host.js 的版本守卫靠「运行时版本 > 包版本」
+    # 决定要不要跳过反向同步；一旦把新版本写进插件包，而 host.js/app.py 因为文件
+    # 被 DSH 占用而没写全，两边版本号就都是新的，守卫误判为一致，重启时用旧包
+    # 盖回新副本——表现就是「升级成功、界面代码还是旧的，要反复装好几次」。
+    # 让包版本停在旧值，守卫就永远跳过反向同步，运行时副本稳稳是最新那份。
     for pkg in _pkg_dirs():
         try:
-            sub = [(rel, (pkg / rel).resolve(), raw) for rel, _d, raw in plans]
+            sub = [(rel, (pkg / rel).resolve(), raw) for rel, _d, raw in plans
+                   if rel != "package.json"]
             sub = [(rel, d, raw) for rel, d, raw in sub if pkg in d.parents]
             if sub:
                 _write_plans(sub)
-                print(f"[升级] 已同步到插件包目录：{pkg}（{len(sub)} 个文件）")
+                print(f"[升级] 已同步到插件包目录：{pkg}（{len(sub)} 个文件，package.json 保留旧版用于同步守卫）")
         except OSError as e:
             print(f"[升级] 写插件包目录失败（{pkg}）：{e}")
 
@@ -3236,7 +3264,7 @@ def _seed_profiles(cfg: dict) -> list[dict]:
         seed = {
             "api_base_url": base, "pool_base_url": base, "pool_dir": str(d),
             "provider_name": ("本地写作号池" if port == "38650" else "本地生图号池"),
-            "model_image": str(cfg.get("model_image") or "gpt-image-2"),
+            "model_image": str(cfg.get("model_image") or ""),
             "model_text": str(cfg.get("model_text") or "auto"),
             "supports_edits": bool(cfg.get("supports_edits", True)),
             "edits_style": str(cfg.get("edits_style") or "auto"),
@@ -3393,10 +3421,12 @@ async def api_config_save(body: dict):
         put("output_dirs_seen", seen[-8:])
     if body.get("api_key"):       # 留空表示不改，保留原密钥
         put("api_key", str(body["api_key"]).strip())
-    if "model_image" in body:
-        put("model_image", str(body["model_image"]).strip() or "gpt-image-2")
-    if "model_text" in body:
-        put("model_text", str(body["model_text"]).strip() or "auto")
+    # 模型名留空 = 沿用已存值，绝不写死成 gpt-image-2 冒充用户选择。
+    # 全新安装没有已存值时，load_config 自带的默认仍兜得住。
+    if "model_image" in body and str(body["model_image"] or "").strip():
+        put("model_image", str(body["model_image"]).strip())
+    if "model_text" in body and str(body["model_text"] or "").strip():
+        put("model_text", str(body["model_text"]).strip())
     if "supports_edits" in body:
         put("supports_edits", bool(body["supports_edits"]))
     if "edits_style" in body:
@@ -3576,13 +3606,14 @@ async def api_config_profile_create(body: dict):
     v = {
         "api_base_url": base, "pool_base_url": base, "api_key": key,
         "provider_name": name, "pool_dir": pool_dir,
-        "model_image": str(b.get("model_image") or "gpt-image-2").strip(),
-        "model_text": str(b.get("model_text") or "auto").strip(),
         "supports_edits": bool(b.get("supports_edits", True)),
         "edits_style": str(b.get("edits_style") or "auto"),
         "image_response_format": str(b.get("image_response_format") or "auto"),
         "monitor_mode": "auto",
     }
+    # 新增接口：模型名留空就继承当前在用的那套，别写死 gpt-image-2。
+    v["model_image"] = str(b.get("model_image") or cfg.get("model_image") or "").strip()
+    v["model_text"] = str(b.get("model_text") or cfg.get("model_text") or "auto").strip()
     items = _upsert_profile(cfg, values=v, name=name)
     for x in items:
         if x.get("id") == pid:
@@ -3621,9 +3652,11 @@ async def api_config_profile_patch(pid: str, body: dict):
         raise HTTPException(409, "已有同名号池，换个名字")
     if b.get("api_key"):        # 留空 = 沿用，绝不把已保存的 Key 清空
         v["api_key"] = str(b["api_key"]).strip()
+    # 留空 = 沿用档案里的原值。前端读模型列表失败时下拉可能没选中项，
+    # 若把空串写进去，保存一次就把用户自定义的 gpt-image-2.6-flare 抹掉了。
     for k in ("model_image", "model_text", "edits_style", "image_response_format", "pool_dir"):
-        if k in b:
-            v[k] = str(b[k] or "").strip()
+        if k in b and str(b[k] or "").strip():
+            v[k] = str(b[k]).strip()
     if "supports_edits" in b:
         v["supports_edits"] = bool(b["supports_edits"])
     v["pool_dir"] = _profile_check_dir(v.get("pool_dir") or "")
@@ -3689,6 +3722,14 @@ async def api_config_models(body: dict):
                              "image_extra": []})
     if not base:
         base = str(cfg.get("api_base_url") or cfg.get("pool_base_url") or "")
+    # 这份档案已存的模型名：接口没返回它时也要塞进候选。否则升级后号池暂不可达，
+    # 前端只剩写死的 gpt-image-2 三个候选，用户自定义模型名会被顶掉（2026-11-29）。
+    saved_image = str(v.get("model_image") or "").strip()
+    saved_text = str(v.get("model_text") or "").strip()
+    if not saved_image and not pid:
+        saved_image = str(cfg.get("model_image") or "").strip()
+    if not saved_text and not pid:
+        saved_text = str(cfg.get("model_text") or "").strip()
     ov = {"base_url": base}
     if key:
         ov["api_key"] = key
@@ -3708,6 +3749,12 @@ async def api_config_models(body: dict):
         source = "fallback"
         message = str(r.get("message") or "接口未返回模型") + "，已显示常用候选"
         image_extra = []
+    # 已存值优先插到候选最前：它是用户真实在用的，不是「未列出的候选」。
+    # 两份来源都插，live 时号池没列出也保得住，fallback 时更不会丢。
+    if saved_image and saved_image not in images:
+        images.insert(0, saved_image)
+    if saved_text and saved_text not in texts:
+        texts.insert(0, saved_text)
     # auto 是号池「自动挑号」的内部约定，永远排在文案候选第一位
     texts = (["auto"] if "auto" in texts else []) + [m for m in texts if m != "auto"]
     return JSONResponse({"ok": bool(r.get("ok")), "source": source, "message": message,
@@ -4024,7 +4071,9 @@ async def api_random_combo(req: RandomComboRequest):
     S = _full(CATALOG["styles"], (rec.get("style") or {}).get("id", ""))
     C = _full(CATALOG["colors"], (rec.get("color") or {}).get("id", ""))
 
-    style_name = str(S.get("ref") or S.get("name_en") or S.get("id") or "").strip()
+    # 关键词会进提示词发给上游，绝不能用 ref（真实画家名），否则撞内容审核 400。
+    # 用 name_en（不点名的风格名）；catalog 里的 ref 只留给卡片展示。
+    style_name = str(S.get("name_en") or S.get("id") or "").strip()
     color_name = str(C.get("name") or "").strip()
 
     # 关键词全部本地拼：从这套卡片的真实说明文字抽取组合，不调 AI。
@@ -4041,7 +4090,7 @@ async def api_random_combo(req: RandomComboRequest):
     theme_words = list(theme["kw"][:3])
     if theme_words:
         parts.append("、".join(theme_words))
-    feat_bits = _bits(S.get("features"))
+    feat_bits = _bits(composer.strip_ref_name(S.get("features", ""), S.get("ref", "")))
     if feat_bits:
         parts.append("、".join(feat_bits))
     if style_name:

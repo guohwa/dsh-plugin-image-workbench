@@ -410,6 +410,43 @@ async def fill_scenes(items: list[dict], fusion: bool) -> list[str]:
     return out
 
 
+def _looks_like_person(name: str) -> bool:
+    """ref 是不是「具体人名」（相对「手绘漫画」这类泛化风格描述）。
+
+    命中才从 name_en / features 里剔除，避免误伤本来就是画风词的中文 ref。
+    """
+    s = str(name or "").strip()
+    if not s:
+        return False
+    # 拉丁人名：两词以上（Gemma Correll / Jean-Jacques Sempé），或带连字符
+    if re.search(r"[A-Za-z]", s):
+        return len(re.findall(r"[A-Za-z][A-Za-z\-']*", s)) >= 2
+    # 日文假名人名：なっくす / きくちあつこ
+    if re.search(r"[\u3040-\u30ff]", s):
+        return True
+    # 中文人名：2–4 字、不含常见画风词
+    generic = ("风格", "插画", "漫画", "绘本", "手绘", "风", "画", "卡通", "写实", "扁平",
+               "线稿", "水墨", "油画", "水彩", "涂鸦", "简笔", "像素", "国潮", "复古")
+    return 2 <= len(s) <= 4 and not any(g in s for g in generic)
+
+
+def strip_ref_name(text: str, ref: str) -> str:
+    """从给模型看的文本里剔除具体作者名，保留其余画风描述。
+
+    catalog 有些 style 的 name_en / features 自带作者名（如 FB-035
+    "Charlie Mackesy Expressive Ink & Watercolor"），只去掉 ref 字段还不够。
+    """
+    s = str(text or "")
+    if not _looks_like_person(ref):
+        return s
+    s = re.sub(re.escape(ref), "", s, flags=re.I)
+    # 删干净后可能留下重复空格 / 句首冒号 / 悬空括号
+    s = re.sub(r"\s{2,}", " ", s).strip()
+    s = re.sub(r"^[：:、，,\s]+", "", s)
+    s = re.sub(r"（\s*）|\(\s*\)", "", s).strip()
+    return s
+
+
 def clean_traits(features: str, limit: int | None = None) -> str:
     """只留正向特征，砍掉含否定词的分句；limit 为空表示不截断。
 
@@ -441,24 +478,26 @@ def clean_traits(features: str, limit: int | None = None) -> str:
 
 
 def style_line(style: dict | None) -> str:
-    """Loose Ink-and-Wash Storybook（参考 Quentin Blake：抖动墨线、松散水彩…）。"""
+    """风格名（视觉特征）。
+
+    绝不写 style.ref：那是 catalog 里的具体画家 / 作品名（Quentin Blake、Gemma
+    Correll、三体……），喂给上游会触发「相似内容 / 版权」审核返回 400。
+    1.1.126 的更新说明写过「统一改成不点名的风格描述」，但这里一直没改，
+    说明与代码对不上（2026-11-29 发现）。ref 只留在 catalog 给界面展示用。
+    """
     if not style:
         return ""
-    name = (style.get("name_en") or "").strip()
-    ref = (style.get("ref") or "").strip()
-    traits = clean_traits(style.get("features", ""))
-    inner = ""
-    if ref and traits:
-        inner = f"参考 {ref}：{traits}"
-    elif ref:
-        inner = f"参考 {ref}"
-    elif traits:
-        inner = traits
-    if not name and not inner:
+    ref = str(style.get("ref") or "").strip()
+    name = strip_ref_name((style.get("name_en") or "").strip(), ref)
+    traits = strip_ref_name(clean_traits(style.get("features", "")), ref)
+    if not name and not traits:
+        # 名字整个就是作者名时（如 FB-035），退回用风格 ID 当泛化标识
+        name = str(style.get("id") or "").strip()
+    if not name and not traits:
         return ""
-    if name and inner:
-        return f"{name}（{inner}）。"
-    return f"{name or inner}。"
+    if name and traits:
+        return f"{name}（{traits}）。"
+    return f"{name or traits}。"
 
 
 def color_line(color: dict | None) -> str:
@@ -511,13 +550,16 @@ def graphic_head(style: dict | None, color: dict | None, ratio: str,
     out: list[str] = []
     traits = ""
     if style:
-        name_en = _as_label(style.get("name_en") or style.get("name") or "")
-        ref = _as_label(style.get("ref") or "")
-        traits = clean_traits(style.get("features", ""))
+        ref = str(style.get("ref") or "").strip()
+        name_en = _as_label(strip_ref_name(style.get("name_en") or style.get("name") or "", ref))
+        traits = strip_ref_name(clean_traits(style.get("features", "")), ref)
+        if not name_en:
+            name_en = str(style.get("id") or "").strip()
         if name_en:
             out.append(f"风格名称：{name_en}。")
-        if ref:
-            out.append(f"参考作者/风格名称：{ref}。")
+        # 不再输出「参考作者/风格名称：{ref}」：catalog 的 ref 是真实画家 / 作品名，
+        # 发上游会撞内容审核 400（2026-11-29）。画风由 name_en + features 完整表达。
+        # 字段顺序里少了这一项没关系，核心风格特征在下面照样输出。
     if color:
         line = color_line(color)
         if line:

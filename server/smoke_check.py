@@ -623,10 +623,10 @@ cfg = pool.load_config()
 ok('接口地址可读', bool(cfg['pool_base_url']) and cfg['pool_base_url'].startswith('http'),
    cfg['pool_base_url'])
 ok('号池用户 Key 可读', bool(pool.pool_api_key(cfg)))
-# 出图模型允许在工作台里切换（gpt-image-2 / gpt-image-2.6 等），
-# 这里只校验配置能读出来且是合法标识，不再写死某个值——用户改过模型不该让冒烟假失败
+# 出图模型允许在工作台里切换，也可能是任意 OpenAI 兼容接口的自定模型名。
+# 只校验非空字符串：写死前缀会让用户换成 dall-e / 自定名后冒烟假失败。
 ok('出图模型可读且合法', isinstance(cfg.get('model_image'), str)
-   and cfg['model_image'].startswith('gpt-image'), cfg.get('model_image'))
+   and bool(cfg['model_image'].strip()), cfg.get('model_image'))
 
 # 公众号首图 2.35:1：上游没有这个尺寸，靠 3:2 出图 + 本地居中裁切；
 # 提示词里必须先说清「上下留可裁背景」，否则裁完砍标题
@@ -733,10 +733,9 @@ _order_prompt = composer.build_prompt(
     {'style': _ink_style, 'layout': _flat_layout, 'color': {'prompt': '主题色：奶油白（Cream White）。',
                                                             'name': '奶油白'}},
     '3:4', ['治愈', '松弛'], False, 'normal', '', False, 'graphic-text', '')
-_heads = ['风格名称：', '参考作者/风格名称：', '主题色：', '画幅比例：', '排版要求：',
-          '核心风格特征：', '情绪基调：']
+_heads = ['风格名称：', '主题色：', '画幅比例：', '排版要求：', '核心风格特征：', '情绪基调：']
 _pos = [_order_prompt.find(h) for h in _heads]
-ok('图文提示词按官方顺序排列：风格名称→参考作者→主题色→画幅→排版→核心特征→情绪',
+ok('图文提示词按官方顺序排列：风格名称→主题色→画幅→排版→核心特征→情绪',
    all(p >= 0 for p in _pos) and _pos == sorted(_pos), '字段位置：' + str(dict(zip(_heads, _pos))))
 ok('图文提示词带上官方固定图文后缀（文案升华 + 先设计隐喻 + 文字参与构图）',
    composer.GRAPHIC_SUFFIX in _order_prompt and '文案由你来升华' in _order_prompt
@@ -795,11 +794,42 @@ _pure_real = composer.build_prompt(
      'color': next((c for c in catalog.build()['colors'] if c['id'] == 'C-34'), None)},
     '3:4', ['治愈'], False, 'normal', ref=False, image_mode='pure-image')
 ok('纯图提示词同样是官方字段结构，不再把风格名和特征揉进括号',
-   all(x in _pure_real for x in ('风格名称：', '参考作者/风格名称：', '主题色：', '画幅比例：3:4。',
+   all(x in _pure_real for x in ('风格名称：', '主题色：', '画幅比例：3:4。',
                                  '核心风格特征：', '情绪基调：')),
    '纯图提示词：' + _pure_real[:60])
 ok('纯图不再出现「纯图模式。」这种模型读不懂的系统术语，也不写排版要求',
    '纯图模式' not in _pure_real and '排版要求' not in _pure_real)
+
+# ---------- 作者名不得进入提示词（2026-11-29）----------
+# catalog 每个 style.ref 都是真实画家 / 作品名（Quentin Blake、Gemma Correll、三体…），
+# 发给上游会撞「相似内容 / 版权」审核 400。1.1.126 的说明声称已修，代码却一直没改。
+_all_styles = catalog.build()['styles']
+_person_refs = [s for s in _all_styles if composer._looks_like_person(s.get('ref'))]
+_ref_bad = []
+for _st in _person_refs:
+    _rf = str(_st.get('ref') or '').strip()
+    _sel = {'style': _st, 'layout': _flat_layout, 'color': _cat_colors[0]}
+    for _mode in ('graphic-text', 'pure-image', 'photo'):
+        _p = composer.build_prompt(
+            {'title': 't', 'body': 'b', 'scene': ''}, _sel, '3:4', [], False, 'normal',
+            ref=False, image_mode=_mode)
+        _p += composer.style_line(_st)
+        if _rf.lower() in _p.lower():
+            _ref_bad.append((_st.get('id'), _mode, _rf))
+            break
+ok('全部 %d 个风格的作者名都不进入任何模式提示词' % len(_person_refs),
+   not _ref_bad, '前几条泄漏：' + str(_ref_bad[:5]))
+ok('style_line 不写「参考 作者名」，graphic_head 不写「参考作者/风格名称」',
+   '参考作者/风格名称' not in composer.graphic_head(
+       {'ref': 'Quentin Blake', 'name_en': 'Loose Ink', 'features': '抖动墨线'},
+       None, '3:4', None)
+   and 'Quentin Blake' not in composer.style_line(
+       {'ref': 'Quentin Blake', 'name_en': 'Loose Ink', 'features': '抖动墨线'})
+   and '抖动墨线' in composer.style_line(
+       {'ref': 'Quentin Blake', 'name_en': 'Loose Ink', 'features': '抖动墨线'}))
+ok('随机推荐的关键词用 name_en 不用 ref',
+   'style_name = str(S.get("name_en") or S.get("id") or "").strip()' in _src_app
+   and 'style_name = str(S.get("ref")' not in _src_app)
 # 单图快出图文（用户 2026-11-28）：只有一个 keyword 框、title 恒为空，以前整行文字槽位被丢掉，
 # 出的全是画面没有字。现在 keyword 进「主题」槽位排字；theme 与 body 相同，只落一行不重复。
 _single_graphic = composer.build_prompt(
@@ -1515,9 +1545,9 @@ _model_body = _model_fn.group(1) if _model_fn else ''
 ok('模型候选接口只在后端补 Key，不回明文',
    bool(_model_body) and 'str(v.get("api_key")' in _model_body
    and '"api_key":' not in _model_body and 'api_key_masked' not in _model_body)
-ok('pVal 同时读下拉与手动输入，pBody 无需改动',
+ok('pVal 同时读下拉与手动输入',
    'select[data-pm="${n}"]' in _src_html and 'input[data-pfi="${n}"]' in _src_html
-   and "model_image:pVal('model_image')" in _src_html)
+   and "pVal('model_image')" in _src_html)
 _r = client.post('/api/config/models', json={'base_url': ''})
 _d = _r.json() if _r.status_code == 200 else {}
 ok('没填地址时不去探当前在用的接口',
@@ -1534,6 +1564,34 @@ ok('只列一个出图模型时补常用候选，前端分组标注来源',
 ok('重拉候选保留手动输入值与 custom 状态',
    'const wasCustom = s.value === PM_CUSTOM' in _src_html
    and 'inp.value = typed' in _src_html)
+
+# ---------- 已存模型名不被写死默认值覆盖（2026-11-29）----------
+# 现象：改成 gpt-image-2.6-flare 后升级，重启瞬间号池没起来、模型候选读取失败，
+# 下拉只剩写死的三个候选 → 选中态落到 gpt-image-2 → 一保存用户的值就没了。
+ok('前端已存模型进 main 且从 extra 排除，fallback 时也不从下拉消失',
+   'if (cur && !main.includes(cur)) main.unshift(cur)' in _src_html
+   and 'const extra2 = extra.filter(m => m !== cur)' in _src_html
+   and 'data-pm-cur=' in _src_html)
+ok('重拉候选以打开表单时的已存值为准，不回退写死默认',
+   "const saved = f ? String(f.getAttribute('data-pm-cur') || '') : ''" in _src_html
+   and "const cur = wasCustom ? typed : (saved || String(s.value || ''))" in _src_html
+   and "kind === 'image' ? 'gpt-image-2'" not in _src_html)
+ok('表单与新增态不预选写死的模型名',
+   "pModelField('出图模型','model_image',d.model_image||'','image'" in _src_html
+   and "model_image:'', model_text:''" in _src_html)
+ok('保存时空模型值不发写死的 gpt-image-2',
+   'if (mi) b.model_image = mi;' in _src_html
+   and 'if (mt) b.model_text = mt;' in _src_html
+   and "model_image:pVal('model_image')||'gpt-image-2'" not in _src_html)
+ok('后端保存空模型值沿用原值，不写死覆盖',
+   'if "model_image" in body and str(body["model_image"] or "").strip():' in _src_app
+   and 'if k in b and str(b[k] or "").strip():' in _src_app)
+ok('模型候选接口把已存模型名插进候选，接口不通也保得住',
+   all(s in _model_body for s in ('saved_image', 'saved_text',
+       'if saved_image and saved_image not in images:', 'images.insert(0, saved_image)',
+       'if saved_text and saved_text not in texts:')))
+ok('新增档案继承当前配置模型，不写死 gpt-image-2',
+   'v["model_image"] = str(b.get("model_image") or cfg.get("model_image") or "").strip()' in _src_app)
 
 # ---- 推荐话题：知乎 / 小红书讨论方向加工（1.1.36）----
 ok('GET /api/topics/recommend 已注册',
@@ -1705,6 +1763,28 @@ ok('host.js 在版本守卫跳过同步与常规同步两处都补齐热榜脚�
    and '跳过反向同步' in _host_src
    and "'trends.js', 'fs-json.js', 'wechat-article.js'" in _host_src,
    '1.1.121 的版本守卫会整棵跳过同步，旧副本缺 trends/ 时就补不到了')
+ok('升级写盘后回读校验，内容不符就报错不重启',
+   'def _write_code_files' in _src_app
+   and 'sha_norm(got, rel) != sha_norm(raw, rel)' in _src_app
+   and 'bad = []' in _src_app
+   and '未重启，请重试' in _src_app,
+   '写一半还报成功，前端拿成功去重启，用户看到的是「重启完还是旧版」')
+ok('插件包的 package.json 不写新版本，避免守卫误判一致后用旧代码盖新副本',
+   "if rel != \"package.json\"]" in _src_app
+   and 'package.json 保留旧版用于同步守卫' in _src_app
+   and 'for pkg in _pkg_dirs():' in _src_app,
+   'host.js 靠「副本版本 > 包版本」跳过反向同步；包版本一旦被写成新的，'
+   '旧包代码就会盖回新副本，得反复升级好几次')
+ok('/health 带进程启动标识，重启等待确认进程真的换过',
+   'BOOT_ID = ' in _src_app
+   and '"boot": BOOT_ID' in _src_app
+   and 'waitBack(b.to, oldBoot, 90000)' in _src_html
+   and 'd.boot !== oldBoot' in _src_html,
+   'package.json 写盘后版本号已是新的、旧进程还没退，只看版本号会提前刷新看到旧代码')
+ok('下载阶段有明确进度文案，不让用户以为卡住或提前重启',
+   '正在下载约 16MB 的完整安装包' in _src_html
+   and 'setInterval(function(){' in _src_html
+   and '已等 ' in _src_html)
 ok('热榜视图保留同步时间、八个平台、按日快照和来源状态',
    all(k in app._hotv_view({'v': 2, 'updatedAt': '2026-11-26 10:00',
                             'byDate': {'2026-11-26': []}, 'sources': []})
@@ -2345,7 +2425,8 @@ ok('随机推荐本地从卡片说明抽关键词，不调 AI、秒回（不再�
    'api_random_combo' in _src_app and 'def api_random_combo' in _src_app
    and '/api/random-combo' in _html and 'recommend_mod.TAGS' in _src_app
    and 'pool_mod.chat_once' not in _src_app[_src_app.index('def api_random_combo'):_src_app.index('@app.post("/api/recommend")')]
-   and 'def _bits(' in _src_app and 'feat_bits = _bits(S.get("features"))' in _src_app
+   and 'def _bits(' in _src_app
+   and 'feat_bits = _bits(composer.strip_ref_name(S.get("features", ""), S.get("ref", "")))' in _src_app
    and 'theme_words = list(theme["kw"][:3])' in _src_app
    and 'layout_title + "版式"' in _src_app and 'color_name + "为主色调"' in _src_app,
    '关键词全部从图型/风格/主题色卡片的真实说明文字抽取组合，不能调 AI 干等')

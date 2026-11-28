@@ -5153,7 +5153,9 @@ document.addEventListener('click', function(e){
     });
 });
 function pEmptyForm(){
-  return {name:'', base_url:'', api_key:'', model_image:'gpt-image-2', model_text:'auto', pool_dir:'',
+  /* 新增态不预选模型：留空，保存时后端继承当前在用的那套，
+     不让 gpt-image-2 这种写死默认值替用户做决定。 */
+  return {name:'', base_url:'', api_key:'', model_image:'', model_text:'', pool_dir:'',
     supports_edits:true, edits_style:'auto', image_response_format:'auto'};
 }
 /* 模型下拉：候选取自「正在编辑的这份档案」对应接口的 /v1/models，不是全局在用接口。
@@ -5171,8 +5173,14 @@ function pmGroups(kind, cur){
       ? PM_OPTS[kind].slice() : PM_FALLBACK[kind].slice();
   const extra = (kind === 'image' && PM_OPTS.source === 'live')
       ? (PM_OPTS.imageExtra || []).filter(m => !main.includes(m)) : [];
-  if (cur && !main.includes(cur) && !extra.includes(cur)) extra.unshift(cur);  // 已存的值永远可选
-  return {main, extra};
+  /* 已存的值放进 main（唯一一份），extra 里排除它：
+     source=fallback 时 pmSelectHtml 只渲染 main，若只塞进 extra，用户自定义
+     模型名（gpt-image-2.6-flare 之类）会从下拉里消失，选中态落到写死的
+     gpt-image-2，一保存就被覆盖（2026-11-29）。模型名以用户配置为准，
+     代码里的候选只是「可选项」，绝不反过来改用户的值。 */
+  if (cur && !main.includes(cur)) main.unshift(cur);
+  const extra2 = extra.filter(m => m !== cur);
+  return {main, extra: extra2};
 }
 function pmSelectHtml(name, cur, kind){
   const g = pmGroups(kind, cur);
@@ -5187,8 +5195,11 @@ function pmSelectHtml(name, cur, kind){
   return html + `<option value="${PM_CUSTOM}">手动输入…</option>`;
 }
 function pModelField(label, name, val, kind, hint){
-  const cur = String(val || (kind === 'image' ? 'gpt-image-2' : 'auto'));
-  return `<div class="prof-f"><label>${label}</label>
+  /* val 是用户已存的值。没有就留空让「选择模型…」当首项，绝不写死成
+     gpt-image-2 冒充用户选择——那会让「没设置过」和「设成 gpt-image-2」
+     混成一件事，重拉候选时分不清。 */
+  const cur = String(val || '');
+  return `<div class="prof-f" data-pm-cur="${pEsc(cur)}"><label>${label}</label>
     <select data-pm="${name}">${pmSelectHtml(name, cur, kind)}</select>
     <input data-pfi="${name}" value="${pEsc(cur)}" hidden placeholder="输入模型名">
     <span class="hint" data-pe="${name}">${pEsc(hint)}</span></div>`;
@@ -5217,7 +5228,11 @@ function pApplyModelOptions(){
     const wasCustom = s.value === PM_CUSTOM;
     const f = s.closest('.prof-f'), inp = f && f.querySelector('input[data-pfi]');
     const typed = wasCustom && inp ? inp.value : '';
-    const cur = (!wasCustom && s.value) ? s.value : (kind === 'image' ? 'gpt-image-2' : 'auto');
+    /* 权威值优先级：①正在手输的内容 ②打开表单时用户已存的值 ③当前选中项。
+       最后一项绝不能写死成 gpt-image-2：候选没拉到时它会把用户自定义模型名
+       顶掉，升级后号池暂不可达就会踩到（2026-11-29）。没存过就留空。 */
+    const saved = f ? String(f.getAttribute('data-pm-cur') || '') : '';
+    const cur = wasCustom ? typed : (saved || String(s.value || ''));
     const g = pmGroups(kind, cur);
     s.innerHTML = pmSelectHtml(n, cur, kind);
     s.value = wasCustom ? PM_CUSTOM : (g.main.concat(g.extra).includes(cur) ? cur : '');
@@ -5272,8 +5287,8 @@ function pForm(d, isCreate){
     ${pField('API Key','api_key','',{req:true,pw:true,full:true,ph:'sk-...',
       mask:isCreate?'':(d.api_key_masked||''), pid:isCreate?'':(d.id||''),
       hint:isCreate?'新增必填':'留空沿用已保存密钥'})}
-    ${pModelField('出图模型','model_image',d.model_image||'gpt-image-2','image','正在读取接口模型…')}
-    ${pModelField('文案模型','model_text',d.model_text||'auto','text','auto = 由号池挑号')}
+    ${pModelField('出图模型','model_image',d.model_image||'','image','正在读取接口模型…')}
+    ${pModelField('文案模型','model_text',d.model_text||'','text','auto = 由号池挑号')}
     ${isCreate ? '' : pField('号池数据目录（选填）','pool_dir',d.pool_dir||'',{hint:'需为已存在的目录'})}
     ${pSelect('支持参考图','supports_edits',se,[['1','支持（/v1/images/edits）'],['0','不支持']],'关掉后只用文生图')}
     ${pSelect('返回格式','image_response_format',d.image_response_format||'auto',
@@ -5421,12 +5436,17 @@ function pValidate(isCreate){
 }
 function pBody(){
   const se = pVal('supports_edits');
-  return {name:pVal('name'), base_url:pVal('base_url'), api_key:pVal('api_key'),
-    model_image:pVal('model_image')||'gpt-image-2', model_text:pVal('model_text')||'auto',
+  /* 模型留空就不要造一个写死的值发出去。新增态后端会补默认；编辑态后端按
+     「留空=沿用」处理，用户已存的 gpt-image-2.6-flare 才不会被悄悄改掉。 */
+  const mi = pVal('model_image'), mt = pVal('model_text');
+  const b = {name:pVal('name'), base_url:pVal('base_url'), api_key:pVal('api_key'),
     pool_dir:pVal('pool_dir'),
     supports_edits: se !== '0',
     edits_style: pVal('edits_style')||'auto',
     image_response_format: pVal('image_response_format')||'auto'};
+  if (mi) b.model_image = mi;
+  if (mt) b.model_text = mt;
+  return b;
 }
 async function pSave(isCreate){
   const n = pValidate(isCreate);
@@ -8735,8 +8755,11 @@ setInterval(refreshPool, 10000);
     if (!dlg.open) dlg.showModal();
   }
 
-  /* 盯着 /health，等新版本号出现。重启期间连接会失败，失败就隔 1.5 秒再试。 */
-  function waitBack(target, timeout){
+  /* 盯着 /health，等「新进程 + 新版本号」同时出现才认升级成功。
+     只看版本号会被骗：升级写盘时 package.json 就变成新版本了，旧进程还没退，
+     这时刷新看到的还是旧代码。boot 是进程启动标识，换了才算真重启。
+     重启期间连接会失败，失败就隔 1.5 秒再试。 */
+  function waitBack(target, oldBoot, timeout){
     var t0 = Date.now();
     return new Promise(function(resolve){
       (function tick(){
@@ -8744,7 +8767,8 @@ setInterval(refreshPool, 10000);
         fetch('/health', {cache: 'no-store'})
           .then(function(r){ return r.ok ? r.json() : null; })
           .then(function(d){
-            if (d && d.version === target) return resolve(d.version);
+            var booted = d && d.boot && d.boot !== oldBoot;
+            if (d && d.version === target && (!oldBoot || booted)) return resolve(d.version);
             setTimeout(tick, 1500);
           })
           .catch(function(){ setTimeout(tick, 1500); });
@@ -8755,25 +8779,41 @@ setInterval(refreshPool, 10000);
   function doUpgrade(){
     if (!goBtn) return;
     goBtn.disabled = true;
-    goBtn.textContent = '升级中…';
-    setStep('正在下载安装包、核对版本…', 'busy');
+    goBtn.textContent = '准备中…';
+    // 先记下当前进程标识，等重启时必须换成新进程才认成功
+    fetch('/health', {cache: 'no-store'})
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){ return d && d.boot || ''; })
+      .catch(function(){ return ''; })
+      .then(function(oldBoot){ return applyUpgrade(oldBoot); });
+  }
+
+  function applyUpgrade(oldBoot){
+    goBtn.textContent = '下载中…';
+    setStep('正在下载约 16MB 的完整安装包，网络慢时要十几秒甚至更久，期间不用做任何操作。', 'busy');
+    var t0 = Date.now();
+    var sec = setInterval(function(){
+      var n = Math.round((Date.now() - t0) / 1000);
+      setStep('正在下载安装包（已等 ' + n + ' 秒），网络慢时请耐心等，不要关窗口。', 'busy');
+    }, 1000);
     fetch('/api/upgrade/apply', {method: 'POST', cache: 'no-store'})
       .then(function(r){
         return r.json().catch(function(){ return null; }).then(function(b){ return {r: r, b: b}; });
       })
       .then(function(x){
+        clearInterval(sec);
         var b = x.b;
         if (!x.r.ok || !b || !b.ok){
           setStep((b && b.error ? b.error : '升级失败，HTTP ' + x.r.status) + '。可点「复制命令」手工升级。', 'err');
           goBtn.disabled = false; goBtn.textContent = '重试';
           return;
         }
-        setStep('已更新到 v' + b.to + '，正在重启服务…', 'busy');
+        setStep('新版本已写入，正在重启服务（约 10 秒），页面会自己回来…', 'busy');
         setDots(false);
         // 重启会让这个请求被掐断，报错是正常的，忽略
         fetch('/api/upgrade/restart', {method: 'POST', cache: 'no-store'}).catch(function(){});
         goBtn.textContent = '等待重启…';
-        waitBack(b.to, 90000).then(function(v){
+        waitBack(b.to, oldBoot, 90000).then(function(v){
           if (v){
             setStep('已升级到 v' + v + '，正在刷新页面…', 'ok');
             goBtn.textContent = '已升级';
@@ -8785,6 +8825,7 @@ setInterval(refreshPool, 10000);
         });
       })
       .catch(function(e){
+        clearInterval(sec);
         setStep('升级失败：' + (e && e.message ? e.message : '网络异常') + '。可点「复制命令」手工升级。', 'err');
         goBtn.disabled = false; goBtn.textContent = '重试';
       });
