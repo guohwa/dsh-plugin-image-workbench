@@ -48,7 +48,9 @@ def upgrade_rel(rel: str) -> str | None:
         if len(parts) == 2:
             ok = name.endswith(".py") or name in SERVER_EXTRA
             return rel if ok else None
-        return rel if parts[1] == "static" else None
+        # static 是前端，trends 是自带热榜数据层。两者都要随版本更新：
+        # 漏掉 trends 会让热榜脚本永远停在旧版，修好的抓取逻辑下发不到客户端。
+        return rel if parts[1] in ("static", "trends") else None
     if top == "scripts":
         return rel if name.endswith((".mjs", ".py")) else None
     return None

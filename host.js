@@ -606,7 +606,8 @@ export function apply(ctx, config = {}) {
         '--port', String(state.port), '--log-level', 'warning',
       ], {
         cwd: state.serverDir, windowsHide: true, stdio: ['ignore', fd, fd],
-        env: { ...process.env, DSH_IMAGE_POOL_PORT: String(poolPort), DSH_IMAGE_PLUGIN_DIR: PLUGIN_DIR },
+        env: { ...process.env, DSH_IMAGE_POOL_PORT: String(poolPort), DSH_IMAGE_PLUGIN_DIR: PLUGIN_DIR,
+               DSH_IMAGE_NODE: process.execPath },
       });
       state.serverChild = child;
       const forget = message => {

@@ -2654,14 +2654,51 @@ def _hotv_empty(view):
     return not ((view.get("byDate") or {}).get(view["today"]) or [])
 
 
+def _find_node() -> str:
+    """找跑热榜脚本用的 node：宿主注入 → PATH → WorkBuddy 运行时 → 常见安装位置。
+
+    新装电脑常见两种坑：node 不在系统 PATH；或只装了 DSH 没有 WorkBuddy。
+    host.js 启动后端时会把宿主自己的 process.execPath 注入 DSH_IMAGE_NODE，
+    这是最可靠的一条——DSH 能跑插件就必然自带 JS 运行时，不依赖用户配 PATH。
+    """
+    injected = (os.environ.get("DSH_IMAGE_NODE") or "").strip()
+    if injected and Path(injected).is_file():
+        return injected
+    n = shutil.which("node")
+    if n:
+        return n
+    home = Path(os.environ.get("USERPROFILE") or str(Path.home()))
+    bases = [home / ".workbuddy" / "binaries" / "node" / "versions"]
+    dsh_home = os.environ.get("DSH_HOME")
+    if dsh_home:
+        bases.append(Path(dsh_home).parent / ".workbuddy" / "binaries" / "node" / "versions")
+    cands: list[Path] = []
+    for base in bases:
+        if base.is_dir():
+            for pat in ("*/node.exe", "*/node"):
+                try:
+                    cands.extend(sorted(base.glob(pat), reverse=True))
+                except OSError:
+                    pass
+    for pf in (os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)")):
+        if pf:
+            p = Path(pf) / "nodejs" / "node.exe"
+            if p.is_file():
+                cands.append(p)
+    for p in cands:
+        if p.is_file():
+            return str(p)
+    return ""
+
+
 async def _hotv_refresh(force: bool):
     """调用本插件自带的数据层抓热榜；脚本自己写 hot.json，这里只读返回的视图。"""
     async with _HOTV_LOCK:
         if not _HOTV_JS.exists():
             raise RuntimeError("找不到自带热榜数据层：" + str(_HOTV_JS))
-        node = shutil.which("node")
+        node = _find_node()
         if not node:
-            raise RuntimeError("本机找不到 node，无法抓取热榜")
+            raise RuntimeError("本机找不到 node（PATH / 宿主运行时 / WorkBuddy 目录都没有），无法抓取热榜")
         call = "m.refreshHotFor(root)" if force else "m.hotViewFor(root)"
         script = (
             "import { pathToFileURL } from 'node:url';\n"
@@ -2669,11 +2706,15 @@ async def _hotv_refresh(force: bool):
             "const root = " + json.dumps(_HOTV_ROOT.as_posix()) + ";\n"
             "await " + call + ";\n"
         )
+        # DSH 宿主的 execPath 可能是 Electron 主程序，要带 ELECTRON_RUN_AS_NODE
+        # 才会按 node 解释脚本；纯 node.exe 加上这个变量也无害。
+        node_env = os.environ.copy()
+        node_env["ELECTRON_RUN_AS_NODE"] = "1"
         try:
             proc = await asyncio.to_thread(
                 lambda: subprocess.run([node, "--input-type=module", "-e", script],
                                        capture_output=True, text=True, timeout=90,
-                                       env=os.environ.copy(), cwd=str(_DSH_HOME)))
+                                       env=node_env, cwd=str(_DSH_HOME)))
         except subprocess.TimeoutExpired:
             raise RuntimeError("抓取超时（超过 90 秒）")
         if proc.returncode != 0:

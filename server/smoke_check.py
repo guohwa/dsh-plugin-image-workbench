@@ -491,6 +491,11 @@ ok('更新说明不落后于当前版本', app._ver_key(_vers[0]) >= app._ver_ke
 ok('升级白名单带上 changelog.json',
    app._upgrade_rel('server/changelog.json') == 'server/changelog.json'
    and app._upgrade_rel('server/other.json') is None)
+# 热榜数据层随版本更新：漏了 server/trends 会让它永远停在旧脚本
+ok('升级白名单放行自带热榜脚本 server/trends/*.js',
+   app._upgrade_rel('server/trends/trends.js') == 'server/trends/trends.js'
+   and app._upgrade_rel('server/trends/fs-json.js') == 'server/trends/fs-json.js'
+   and app._upgrade_rel('server/trends/wechat-article.js') == 'server/trends/wechat-article.js')
 ok('升级面板有更新说明区块',
    all(x in _src_html for x in ('id="upNotes"', 'id="upNotesBody"', 'function renderNotes',
                                 '本次升级解决什么')))
@@ -618,7 +623,10 @@ cfg = pool.load_config()
 ok('接口地址可读', bool(cfg['pool_base_url']) and cfg['pool_base_url'].startswith('http'),
    cfg['pool_base_url'])
 ok('号池用户 Key 可读', bool(pool.pool_api_key(cfg)))
-ok('出图模型 = gpt-image-2', cfg['model_image'] == 'gpt-image-2')
+# 出图模型允许在工作台里切换（gpt-image-2 / gpt-image-2.6 等），
+# 这里只校验配置能读出来且是合法标识，不再写死某个值——用户改过模型不该让冒烟假失败
+ok('出图模型可读且合法', isinstance(cfg.get('model_image'), str)
+   and cfg['model_image'].startswith('gpt-image'), cfg.get('model_image'))
 
 # 公众号首图 2.35:1：上游没有这个尺寸，靠 3:2 出图 + 本地居中裁切；
 # 提示词里必须先说清「上下留可裁背景」，否则裁完砍标题
@@ -1671,6 +1679,17 @@ ok('热榜数据层自带且写到本插件目录，不依赖成稿台插件',
            for f in ('trends.js', 'fs-json.js', 'wechat-article.js')))
 _pkg_json = json.loads((pathlib.Path(app.__file__).resolve().parent.parent / 'package.json').read_text(encoding='utf-8'))
 ok('发布白名单包含自带热榜脚本', 'server/trends' in (_pkg_json.get('files') or []))
+ok('抓热榜找 node 优先用宿主注入，再退 PATH/WorkBuddy 目录，不依赖用户配 PATH',
+   hasattr(app, '_find_node')
+   and 'DSH_IMAGE_NODE' in _src_app and '.workbuddy' in _src_app and 'binaries' in _src_app
+   and 'node = _find_node()' in _src_app
+   and 'shutil.which("node")' not in _src_app[_src_app.index('async def _hotv_refresh'):]
+   and 'ELECTRON_RUN_AS_NODE' in _src_app,
+   '新电脑 node 常不在 PATH，注入宿主 execPath 后 Electron 也能当 node 跑脚本')
+_host_src = (pathlib.Path(app.__file__).resolve().parent.parent / 'host.js').read_text(encoding='utf-8')
+ok('host.js 把宿主 node 运行时注入后端，热榜不靠系统 PATH',
+   'DSH_IMAGE_NODE: process.execPath' in _host_src,
+   'DSH 自带 JS 运行时，注入后新电脑无需装 node 也能抓热榜')
 ok('热榜视图保留同步时间、八个平台、按日快照和来源状态',
    all(k in app._hotv_view({'v': 2, 'updatedAt': '2026-11-26 10:00',
                             'byDate': {'2026-11-26': []}, 'sources': []})

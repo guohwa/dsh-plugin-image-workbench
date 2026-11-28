@@ -9,15 +9,15 @@
 "size": 638
 },
 "host.js": {
-"sha1": "14dc31ee5daa6fe0067d4ec0e110c8b4d678fb6b",
-"size": 33181
+"sha1": "b2ac3daf5eed3ad9860cd9039ecd8284e5d7b8f4",
+"size": 33230
 },
 "install.mjs": {
 "sha1": "2605c34c6baaa18bd039d94d3b4f1905f0c4ceae",
 "size": 15516
 },
 "package.json": {
-"sha1": "0c25ff02a619f77edcdd8ed3ca727fe18fbb5df2",
+"sha1": "39555ef3906f9bca35ef81d8f9b17fc041ecbcad",
 "size": 1695
 },
 "scripts/fetch-style-images.mjs": {
@@ -49,8 +49,8 @@
 "size": 902
 },
 "server/app.py": {
-"sha1": "92b5c9612179160fcf45783916acf51841e24c88",
-"size": 250844
+"sha1": "12b4679a11d3bbdca28f9293f591d1dcf676c121",
+"size": 252631
 },
 "server/catalog.json": {
 "sha1": "e1103e8410cb2c4bdeb6cb36978f8a56b0cdbd81",
@@ -61,8 +61,8 @@
 "size": 4986
 },
 "server/changelog.json": {
-"sha1": "779e675c8f21fc3d4b01a76568bab47640e6a2a7",
-"size": 61645
+"sha1": "da24b4bc17c5f60731b364f093bb7bee5f2cb994",
+"size": 62320
 },
 "server/composer.py": {
 "sha1": "a0269b1fb0450c6f29391e10d0f4f8be4c75ed67",
@@ -109,8 +109,8 @@
 "size": 61
 },
 "server/smoke_check.py": {
-"sha1": "74bb8690230b795e4ddb13d1c23835d0e53b5167",
-"size": 169238
+"sha1": "87a001cf3d79bd5681e010f4344cf7b42470848b",
+"size": 170744
 },
 "server/static/access.html": {
 "sha1": "277bcca42bb5ba255547ff2572c9777a8ea930f2",
@@ -120,10 +120,22 @@
 "sha1": "a54504a07ac9fa990bbf2b55b70772675c07f185",
 "size": 557349
 },
+"server/trends/fs-json.js": {
+"sha1": "6fee56df31251530a6cdeb548a60f3437b251c06",
+"size": 1623
+},
+"server/trends/trends.js": {
+"sha1": "cdb860b4d53654c32d7c880610eec45fb0d8fde9",
+"size": 22927
+},
+"server/trends/wechat-article.js": {
+"sha1": "25bfe979a1c09c0fc82cbcf71445bd29e98ac966",
+"size": 14362
+},
 "server/upgrade_files.py": {
-"sha1": "55bd243bee493a492b8752e452255e6bb946848e",
-"size": 4494
+"sha1": "a75acc8b75297dfd455c77491e8c2a94e45c6212",
+"size": 4709
 }
 },
-"version": "1.1.126"
+"version": "1.1.127"
 }
