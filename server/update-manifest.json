@@ -9,15 +9,15 @@
 "size": 638
 },
 "host.js": {
-"sha1": "b2ac3daf5eed3ad9860cd9039ecd8284e5d7b8f4",
-"size": 33230
+"sha1": "bf41c86c3ec055d3833dc8159f212e2348faae1e",
+"size": 34468
 },
 "install.mjs": {
 "sha1": "2605c34c6baaa18bd039d94d3b4f1905f0c4ceae",
 "size": 15516
 },
 "package.json": {
-"sha1": "072ea5a69b23047455b446297e90ceeb602f3a38",
+"sha1": "cac67cea14ca104dca60291ca6a1b5d9ec62d024",
 "size": 1695
 },
 "scripts/fetch-style-images.mjs": {
@@ -49,8 +49,8 @@
 "size": 902
 },
 "server/app.py": {
-"sha1": "12b4679a11d3bbdca28f9293f591d1dcf676c121",
-"size": 252631
+"sha1": "f91072e88b0ad017e95632a4f0bfeeb83fe96ca7",
+"size": 253949
 },
 "server/catalog.json": {
 "sha1": "e1103e8410cb2c4bdeb6cb36978f8a56b0cdbd81",
@@ -61,8 +61,8 @@
 "size": 4986
 },
 "server/changelog.json": {
-"sha1": "d544d18c589b2969ac0241a976b4de0c34be6757",
-"size": 62320
+"sha1": "c1f48838b9112412894780914a682a691d71b754",
+"size": 62970
 },
 "server/composer.py": {
 "sha1": "a0269b1fb0450c6f29391e10d0f4f8be4c75ed67",
@@ -109,8 +109,8 @@
 "size": 61
 },
 "server/smoke_check.py": {
-"sha1": "87a001cf3d79bd5681e010f4344cf7b42470848b",
-"size": 170744
+"sha1": "34350f07e7b9b6311bf798a2d1627281bbfeb52d",
+"size": 171672
 },
 "server/static/access.html": {
 "sha1": "277bcca42bb5ba255547ff2572c9777a8ea930f2",
@@ -137,5 +137,5 @@
 "size": 4709
 }
 },
-"version": "1.1.128"
+"version": "1.1.129"
 }

@@ -2600,6 +2600,7 @@ _DSH_HOME = Path(os.environ.get("DSH_HOME") or str(Path.home() / ".dsh"))
 _HOTV_ROOT = _DSH_HOME / "image-workbench"
 _HOTV_FILE = _HOTV_ROOT / "trends" / "hot.json"
 _HOTV_JS = Path(__file__).resolve().parent / "trends" / "trends.js"
+_HOTV_JS_FILES = ("trends.js", "fs-json.js", "wechat-article.js")
 _HOTV_TTL = 6 * 3600          # 只用来提示「快照偏旧」，不再触发自动抓取
 _HOTV_LOCK = asyncio.Lock()
 _HOTV_PLATFORMS = ("今日头条", "百度", "抖音", "微博", "知乎", "B站", "AI 热点", "AI 资讯")
@@ -2691,18 +2692,46 @@ def _find_node() -> str:
     return ""
 
 
+def _hotv_js() -> Path:
+    """热榜脚本路径：运行时副本优先，缺了就从真实插件包拷回来（自愈）。
+
+    1.1.127 把 server/trends 加进升级白名单，但升级链路任何一环没写进运行时
+    目录，后端就只剩一个固定路径可找，报错后再也不会去别处看。新电脑从旧版
+    一路升上来最容易踩这个坑。这里在每次抓取前兜一次底：包本体带这三个脚本，
+    拷回运行时目录后照常走原路径，下次就不用再找。拷贝失败也不吞掉原始错误。
+    """
+    if _HOTV_JS.is_file():
+        return _HOTV_JS
+    for pkg in _pkg_dirs():
+        src = pkg / "server" / "trends"
+        if not (src / "trends.js").is_file():
+            continue
+        try:
+            _HOTV_JS.parent.mkdir(parents=True, exist_ok=True)
+            for name in _HOTV_JS_FILES:
+                s = src / name
+                if s.is_file():
+                    shutil.copyfile(s, _HOTV_JS.parent / name)
+            print(f"[热榜] 运行时脚本缺失，已从插件包补齐：{pkg}")
+            return _HOTV_JS
+        except OSError as exc:
+            print(f"[热榜] 从插件包补脚本失败（{pkg}）：{exc}")
+    return _HOTV_JS
+
+
 async def _hotv_refresh(force: bool):
     """调用本插件自带的数据层抓热榜；脚本自己写 hot.json，这里只读返回的视图。"""
     async with _HOTV_LOCK:
-        if not _HOTV_JS.exists():
-            raise RuntimeError("找不到自带热榜数据层：" + str(_HOTV_JS))
+        js = _hotv_js()
+        if not js.is_file():
+            raise RuntimeError("找不到自带热榜数据层：" + str(js))
         node = _find_node()
         if not node:
             raise RuntimeError("本机找不到 node（PATH / 宿主运行时 / WorkBuddy 目录都没有），无法抓取热榜")
         call = "m.refreshHotFor(root)" if force else "m.hotViewFor(root)"
         script = (
             "import { pathToFileURL } from 'node:url';\n"
-            "const m = await import(pathToFileURL(" + json.dumps(_HOTV_JS.as_posix()) + ").href);\n"
+            "const m = await import(pathToFileURL(" + json.dumps(js.as_posix()) + ").href);\n"
             "const root = " + json.dumps(_HOTV_ROOT.as_posix()) + ";\n"
             "await " + call + ";\n"
         )

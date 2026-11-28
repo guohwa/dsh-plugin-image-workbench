@@ -1690,6 +1690,21 @@ _host_src = (pathlib.Path(app.__file__).resolve().parent.parent / 'host.js').rea
 ok('host.js 把宿主 node 运行时注入后端，热榜不靠系统 PATH',
    'DSH_IMAGE_NODE: process.execPath' in _host_src,
    'DSH 自带 JS 运行时，注入后新电脑无需装 node 也能抓热榜')
+ok('运行时脚本缺失时后端从插件包自愈拷回，不再只认一个固定路径',
+   hasattr(app, '_hotv_js')
+   and callable(app._hotv_js)
+   and app._hotv_js() == app._HOTV_JS
+   and 'def _hotv_js()' in _src_app
+   and '_pkg_dirs()' in _src_app[_src_app.index('def _hotv_js()'):_src_app.index('async def _hotv_refresh')]
+   and 'js = _hotv_js()' in _src_app
+   and _src_app.count('_HOTV_JS.as_posix()') == 0,
+   '新电脑从旧版升上来，运行时副本可能没有 trends/；后端要能从包本体补回')
+ok('host.js 在版本守卫跳过同步与常规同步两处都补齐热榜脚本',
+   'function ensureTrends(bundled, dst)' in _host_src
+   and _host_src.count('ensureTrends(bundled, dst)') >= 2
+   and '跳过反向同步' in _host_src
+   and "'trends.js', 'fs-json.js', 'wechat-article.js'" in _host_src,
+   '1.1.121 的版本守卫会整棵跳过同步，旧副本缺 trends/ 时就补不到了')
 ok('热榜视图保留同步时间、八个平台、按日快照和来源状态',
    all(k in app._hotv_view({'v': 2, 'updatedAt': '2026-11-26 10:00',
                             'byDate': {'2026-11-26': []}, 'sources': []})

@@ -64,6 +64,29 @@ function syncTree(src, dst, skip) {
   }
 }
 
+/**
+ * 热榜脚本单独保底：server/trends 在运行时副本缺失时从插件包补回去。
+ * 版本守卫会在「运行时比包新」时整棵跳过同步，旧副本要是没有 trends/，
+ * 后端就只剩一个固定路径可找，报「找不到自带热榜数据层」后再也不会自愈。
+ * 这三个文件不随用户数据走，补丢了也不影响任何账号/图片。
+ */
+function ensureTrends(bundled, dst) {
+  const src = join(bundled, 'trends');
+  if (!existsSync(join(src, 'trends.js'))) return;
+  try {
+    mkdirSync(join(dst, 'trends'), { recursive: true });
+    for (const name of ['trends.js', 'fs-json.js', 'wechat-article.js']) {
+      const s = join(src, name);
+      const d = join(dst, 'trends', name);
+      if (!existsSync(s)) continue;
+      if (existsSync(d) && statSync(d).size === statSync(s).size) continue;
+      copyFileSync(s, d);
+    }
+  } catch (e) {
+    console.error('[image-workbench] 补热榜脚本失败：' + e.message);
+  }
+}
+
 /** 目录里 package.json 的版本；读不到返回空串。 */
 function dirVersion(dir) {
   try {
@@ -94,10 +117,13 @@ function isolatedServer(bundled) {
   const pkgVer = dirVersion(PLUGIN_DIR);
   if (verKey(runVer) > verKey(pkgVer)) {
     console.log(`[image-workbench] 运行时副本 ${runVer} 比插件包 ${pkgVer} 新，跳过反向同步`);
+    // 整棵跳过可以，热榜脚本不能一起跳过：旧副本缺 trends/ 时新电脑就打不开热榜
+    ensureTrends(bundled, dst);
     return isServerDir(dst) ? dst : bundled;
   }
   try {
     syncTree(bundled, dst, SERVER_RUNTIME);
+    ensureTrends(bundled, dst);   // 守卫没触发也补一次，挡住同步被中途跳过的情况
     // 号池源码快照放到 server 的同级 vendor/，pool_service 会从那里找
     const vendSrc = join(PLUGIN_DIR, 'vendor', 'chatgpt2api');
     if (existsSync(join(vendSrc, 'source', 'main.py'))) {
