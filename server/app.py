@@ -744,6 +744,41 @@ def _notes_between(current: str, latest: str, log: list) -> list:
     return rows[:_NOTES_MAX_VERSIONS]
 
 
+_RECENT_MAX_VERSIONS = 6      # 「已是最新」时用最近几个版本填满面板，别让下半截空着；画不下时前端自己往下减
+_RECENT_MAX_ITEMS = 3
+
+
+def _recent_log(upto: str, limit: int = _RECENT_MAX_VERSIONS) -> list:
+    """读本机这份 changelog.json，取不高于当前版本的最近几条。
+
+    「已是最新版本」的时候面板不能空着：把已经装上的这几个版本改了什么列出来，
+    比空白区块有用。只读本地文件，不联网，读不到就返回空列表（前端会退回收起）。
+    """
+    try:
+        log = json.loads((LAB / "changelog.json").read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if not isinstance(log, list):
+        return []
+    rows = []
+    for it in log:
+        if not isinstance(it, dict):
+            continue
+        v = str(it.get("version") or "").strip()
+        if not v:
+            continue
+        # 只列已经装上的版本：比当前版本新的一律不显示，免得把「还没升级」的内容当成已有功能
+        if upto and upto != "unknown" and _ver_key(v) > _ver_key(upto):
+            continue
+        items = [str(t) for t in (it.get("items") or []) if str(t).strip()]
+        if not items:
+            continue
+        rows.append({"version": v, "date": str(it.get("date") or ""),
+                     "items": items[:_RECENT_MAX_ITEMS]})
+    rows.sort(key=lambda x: _ver_key(x["version"]), reverse=True)
+    return rows[:limit]
+
+
 async def _latest_version() -> str:
     """问所有源，取最高的版本号。
 
@@ -783,11 +818,13 @@ async def api_upgrade():
         return JSONResponse(cached)
     if VERSION == "unknown":
         # 独立运行读不到 package.json：没有可比基准，不做升级判定，免得永远提示有新版本
-        data, ttl = {"current": VERSION, "latest": "", "has_new": False, "notes": []}, _UPGRADE_TTL_SAME
+        data, ttl = {"current": VERSION, "latest": "", "has_new": False,
+                     "notes": [], "recent": _recent_log(VERSION)}, _UPGRADE_TTL_SAME
     else:
         lat = await _latest_version()
         has_new = bool(lat) and _ver_key(lat) > _ver_key(VERSION)
-        data = {"current": VERSION, "latest": lat, "has_new": has_new, "notes": [], "delta": None}
+        data = {"current": VERSION, "latest": lat, "has_new": has_new, "notes": [],
+                "delta": None, "recent": _recent_log(VERSION)}
         if has_new:
             # 只说清了「有新版本」还不够，得让人知道新在哪：随包发的 changelog 里捞
             data["notes"] = _notes_between(VERSION, lat, await _fetch_changelog(lat))
@@ -3411,6 +3448,23 @@ async def api_config_profile_get(pid: str):
     if not hit:
         raise HTTPException(404, "这份接口配置不存在")
     return JSONResponse(_profile_detail(hit, cfg))
+
+
+@app.get("/api/config/profiles/{pid}/api-key")
+async def api_config_profile_key(pid: str):
+    """「显示」按钮专用：把这份档案已保存的 Key 明文交给本机页面。
+
+    查看态和列表一律只给脱敏值（`_profile_detail`），这里是唯一的明文出口，
+    只在用户手动点「显示」时才调——编辑态输入框是空的（留空=沿用），
+    不给明文的话用户点了按钮看不到任何东西（用户 2026-11-28 反馈）。
+    服务只监听 127.0.0.1，不对外暴露。
+    """
+    cfg = _read_cfg_file()
+    hit = next((x for x in _profiles(cfg) if x.get("id") == pid), None)
+    if not hit:
+        raise HTTPException(404, "这份接口配置不存在")
+    v = dict(hit.get("values") or {})
+    return JSONResponse({"api_key": str(v.get("api_key") or "")})
 
 
 @app.post("/api/config/profiles")

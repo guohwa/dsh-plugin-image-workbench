@@ -17,8 +17,8 @@
 "size": 15516
 },
 "package.json": {
-"sha1": "4a18c1be2d30f268690cb25cb892957c803af56d",
-"size": 1762
+"sha1": "c94798e1966a149a3836f30b2e075458b29e1a10",
+"size": 1695
 },
 "scripts/fetch-style-images.mjs": {
 "sha1": "f92e839f08a95cc0f6023c172841ee71f88415d8",
@@ -49,8 +49,8 @@
 "size": 902
 },
 "server/app.py": {
-"sha1": "a8a6e1a0799f2d358b7cc1101c38f2b5d8488e9a",
-"size": 244303
+"sha1": "a84044e9fda3e2e33a04e6d95dfc5b0d3c95707c",
+"size": 246728
 },
 "server/catalog.json": {
 "sha1": "e1103e8410cb2c4bdeb6cb36978f8a56b0cdbd81",
@@ -61,8 +61,8 @@
 "size": 4986
 },
 "server/changelog.json": {
-"sha1": "1cc6b774fe60f3a8ecd981d41fe9f4f50f376b21",
-"size": 60474
+"sha1": "236ec7ef5ea90f3ff6fe312bc4b1874cf44f1028",
+"size": 60170
 },
 "server/composer.py": {
 "sha1": "3ab584a197efa70a935f6b8bac67388a4eb3042c",
@@ -109,21 +109,21 @@
 "size": 61
 },
 "server/smoke_check.py": {
-"sha1": "75c1a957163e4f8cf941014fb94c98e32b41cf9d",
-"size": 159126
+"sha1": "99d1ff600a976a417fe8624216495ccb95b74790",
+"size": 160130
 },
 "server/static/access.html": {
 "sha1": "277bcca42bb5ba255547ff2572c9777a8ea930f2",
 "size": 10369
 },
 "server/static/index.html": {
-"sha1": "d72eceb9a67dcafc5f23ed29d207d878622db3c7",
-"size": 543294
+"sha1": "7d4e8887b3d630a489384cba3db1c677ad11e424",
+"size": 545153
 },
 "server/upgrade_files.py": {
 "sha1": "55bd243bee493a492b8752e452255e6bb946848e",
 "size": 4494
 }
 },
-"version": "1.1.124"
+"version": "1.1.125"
 }

@@ -498,8 +498,26 @@ ok('升级面板不放升级过程说明（下包 / 覆盖 / 备份路径那些�
    '不会动的数据' not in _src_html and '>升级流程<' not in _src_html
    and 'server/workbench/backup/' not in _src_html)
 
+# 「已是最新版本」时面板原来空着一大片：现在换成最近几个版本的更新记录。
+# 只列已经装上的版本（比当前新的一律不显示），条数有上限，否则末行会被卡片裁掉。
+_rec = app._recent_log(app.VERSION)
+ok('已是最新时列出最近几个版本（上限内、不含未来版本、当前版本在最前）',
+   bool(_rec) and len(_rec) <= app._RECENT_MAX_VERSIONS
+   and (app.VERSION == 'unknown' or _rec[0]['version'] == app.VERSION)
+   and all(app._ver_key(r['version']) <= app._ver_key(app.VERSION) for r in _rec)
+   and all(r['items'] for r in _rec),
+   f"{len(_rec)} 条：{[r['version'] for r in _rec]}")
+ok('已是最新时说明块撑满面板（标题会切到最近版本）',
+   all(x in _src_html for x in ('id="upNotesT"', '最近几个版本更新了什么',
+                                '.up-notes.fill{flex:1 1 auto')),
+   '空着大半屏就是这条丢了')
+
 # 界面风格：护眼（默认）/ 浅色 / 黑色 / 跟随系统。全站配色走 CSS 变量，
 # 任何一处写死颜色都会在换主题时变成刺眼亮块，所以这两条要守住。
+ok('更早版本的页脚是可点击展开按钮（不说「没列出」）',
+   'data-up-more' in _src_html and '展开查看' in _src_html
+   and '收起更早的版本' in _src_html and '个更早的版本没列出' not in _src_html,
+   '裁掉版本后只写一句「没列出」又不给入口太随意；现在点一下展开全部，再点收起')
 ok('界面风格四档齐备（护眼为默认）',
    all(x in _src_html for x in (':root[data-theme="light"]', ':root[data-theme="dark"]',
                                 '--s0:', '--accent-ink:', "var mode = 'eye'",
@@ -2431,6 +2449,33 @@ ok('接口配置表单常驻设置弹窗，首次打开才查询',
    and '<dialog id="upDlg">' not in _html
    and '#settingsDlg .up-step' in _html
    and '#settingsDlg .up-ver-row' in _html)
+
+# 接口配置的 API Key：粘进去只剩一串圆点，用户没法确认粘的是哪把钥匙（2026-11-28 反馈）。
+# 现在框下提示写头 6 尾 4 加位数，右边给「显示 / 隐藏」；默认仍是 password，不外露。
+ok('API Key 粘完能看头尾，右侧可摊开',
+   all(x in _html for x in ('class="pw-eye"', 'function pMaskKey', '将保存 ',
+                            ".slice(0, 6) + '***'", 'data-def')),
+   '没有头尾和位数，粘错整段也看不出来')
+ok('点「显示完整」才载入已存密钥（唯一明文出口）',
+   'api_config_profile_key' in _src_app and '/api-key' in _src_html
+   and '已载入完整密钥' in _src_html and '绝不回明文' in _src_app,
+   '输入框平时只摆掩码，真值只有点「显示完整」时才取；查看态必须仍然只给脱敏值')
+ok('API Key 栏独占整行、按钮不压明文（35 位密钥看得清）',
+   "pField('API Key','api_key','',{req:true,pw:true,full:true" in _src_html
+   and '.prof-f .pw-box{display:flex' in _src_html
+   and '.prof-f .pw-box input[type="text"]{font-family:ui-monospace' in _src_html
+   and 'position:absolute;right:3px' not in _src_html,
+   '两列半宽约 240px 装不下 35 位明文，按钮压在字符上会看不清；改成整行 + 并排按钮 + 等宽字体')
+ok('编辑态输入框直接回显掩码，但保存时按留空沿用（掩码不写回配置）',
+   'data-mask="1" data-maskval=' in _src_html
+   and "n === 'api_key' && e.getAttribute('data-mask') === '1') return ''" in _src_html
+   and '显示完整' in _src_html and '已保存的密钥 · 不修改则原样沿用' in _src_html,
+   '掩码若被当成真值提交，服务端「非空即覆盖」会把 sk-GDa***wtwh 写进配置，密钥直接毁掉')
+ok('编辑档案输入框回显掩码（不是真值、不是空占位符）',
+   'const shown = masked ? opt.mask : val' in _src_html
+   and "mask:isCreate?'':(d.api_key_masked||'')" in _html
+   and 'data-mask="1" data-maskval=' in _src_html,
+   '以前输入框是空的只写 sk-... 占位，既不专业也看不出粘的是哪把钥匙；现在直接露头尾掩码')
 
 client.close()
 print(f'\n结果：{passed} 通过 / {failed} 失败')

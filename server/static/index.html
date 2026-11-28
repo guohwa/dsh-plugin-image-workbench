@@ -1324,6 +1324,26 @@
     font-size:12px;min-height:18px;line-height:1.5;color:var(--ink-2)}
   #settingsDlg .up-notes{margin:0 0 12px;padding:9px 11px;border:1px solid var(--line);
     border-radius:10px;background:var(--s1);max-height:196px;overflow:auto}
+  /* 已是最新版本时，这块内容改成「最近几个版本」，让它撑满面板剩下的高度，
+     别把大半屏留成空白。条数按窗口高度挑（装不下就少列一版），任何高度都不裁行。 */
+  #settingsDlg .up-notes.fill{flex:1 1 auto;min-height:0;max-height:none;overscroll-behavior:contain;
+    display:flex;flex-direction:column}
+  /* 「还有 N 个更早的版本」做成卡片页脚：压到底部并拉一条细线，
+     中间那点余量就变成留白，不会被当成排版漏了 */
+  #settingsDlg .up-notes.fill > #upNotesBody{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+  #settingsDlg .up-notes.fill .up-more{margin-top:auto;padding-top:7px;
+    border-top:1px solid var(--line);border-left:0;border-right:0;border-bottom:0}
+  #settingsDlg .up-notes.fill::-webkit-scrollbar{width:6px}
+  #settingsDlg .up-notes.fill::-webkit-scrollbar-thumb{background:var(--s2);border-radius:3px}
+  #settingsDlg .up-notes.fill::-webkit-scrollbar-track{background:transparent}
+  #settingsDlg .up-note-cur{display:inline-block;margin-left:6px;padding:0 5px;border-radius:6px;
+    font-size:10px;font-weight:600;line-height:16px;background:var(--ok-bg);color:var(--accent-ink);
+    border:1px solid var(--bd-ok);vertical-align:1px}
+  /* 页脚做成按钮：点一下把被裁掉的更早版本展开，不再写「没列出」那种说不清的话 */
+  #settingsDlg .up-more{display:block;width:100%;margin-top:7px;padding:2px 0;border:0;
+    background:transparent;color:var(--primary);font:inherit;font-size:11px;line-height:1.5;
+    text-align:left;cursor:pointer}
+  #settingsDlg .up-more:hover{text-decoration:underline}
   #settingsDlg .up-notes-t{font-size:11.5px;font-weight:600;color:var(--ink-3);margin-bottom:5px}
   #settingsDlg .up-notes .up-v{font-size:11.5px;color:var(--primary);font-weight:600;margin:6px 0 2px}
   #settingsDlg .up-notes .up-v:first-child{margin-top:0}
@@ -1393,6 +1413,19 @@
   .prof-f label{display:block;font-size:11px;color:var(--ink-3);margin:0 0 3px}
   .prof-f label i{color:var(--err-ink-2);font-style:normal}
   .prof-f input,.prof-f select{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:7px;font-size:12px;background:var(--s0);color:var(--ink);outline:none;font:inherit}
+  /* 密钥框：粘完就是一串圆点，看不出粘的是哪把钥匙。右侧给个「显示 / 隐藏」，
+     下面那行提示顺手把头尾几位写出来（跟左侧列表一个口径）。 */
+  /* 密钥这一栏独占整行：35 位明文塞进半列（约 240px）必然看不全。
+     按钮不再压在输入框上，改成并排的独立元素，输入框宽度 = 整行减按钮。 */
+  .prof-f .pw-box{display:flex;align-items:center;gap:6px;min-width:0}
+  .prof-f .pw-box input{flex:1 1 auto;width:auto;min-width:0;letter-spacing:0}
+  .prof-f .pw-box input[type="text"]{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+    font-size:11.5px;letter-spacing:.2px}
+  .prof-f .pw-eye{flex:0 0 auto;position:static;transform:none;border:1px solid var(--line);
+    background:var(--s1);color:var(--primary);font:inherit;font-size:10.5px;line-height:1.4;
+    padding:3px 8px;border-radius:6px;cursor:pointer;white-space:nowrap}
+  .prof-f .pw-eye:hover{background:var(--s2)}
+  .prof-f .pw-eye:disabled{opacity:.45;cursor:default;background:var(--s1)}
   .prof-f input:focus{border-color:var(--primary);box-shadow:0 0 0 3px #f0edff}
   .prof-f .hint{display:block;font-size:10.5px;color:var(--ink-3);margin-top:3px;line-height:1.4}
   .prof-f .hint.bad{color:var(--err-ink-2)}
@@ -2103,7 +2136,7 @@
           <!-- 这块只讲「这一版修好了什么」，条目来自新版本包里的 server/changelog.json。
                升级怎么做（下包、覆盖、重启、备份路径）是过程，用户不关心，别往这儿堆。 -->
           <div class="up-notes" id="upNotes" hidden>
-            <div class="up-notes-t">本次升级解决什么</div>
+            <div class="up-notes-t" id="upNotesT">本次升级解决什么</div>
             <div id="upNotesBody"></div>
           </div>
           <div class="up-step" id="upStep">点「立即升级」开始：下载完成后自动替换代码并重启，页面会自己刷新回来。</div>
@@ -4811,9 +4844,9 @@ function cfgFill(d){
   // 留个空框反而得多点一次「打开目录」才知道图存哪（用户 2026-11-27）
   const def = d.output_dir_default || '';
   $('#cfgOutDir').value = d.output_dir || def;
-  $('#cfgOutDir').placeholder = def ? '默认：' + def : '绝对路径，例如 D:\\DH_Picture';
+  $('#cfgOutDir').placeholder = def ? '默认：' + def : '绝对路径，例如 D:\\DSH_pictures';
   $('#cfgOutHint').textContent = d.output_dir_is_default
-    ? '图就存在这个目录；想换地方改成别的绝对路径（例如 D:\\DH_Picture），旧图在历史里仍打得开。'
+    ? '图就存在这个目录；想换地方改成别的绝对路径（例如 D:\\DSH_pictures），旧图在历史里仍打得开。'
     : '改回 ' + def + ' 即回到默认目录；旧图在历史里仍打得开。';
   $('#cfgEdits').checked = !!d.supports_edits;
   $('#cfgFormat').value = d.image_response_format || 'auto';
@@ -4905,12 +4938,108 @@ async function loadProfileList(activeId){
 }
 function pField(label, name, val, opt){
   opt = opt || {};
+  const hint = opt.hint || '';
+  /* 编辑态把已保存密钥的掩码直接摆进输入框，没点「显示完整」时只露头尾。
+     掩码不是真值：input 上挂 data-mask=1，pVal() 读到就返回空串，保存时沿用已存密钥，
+     绝不把掩码写回配置。按钮文案也分开：有已存密钥叫「显示完整」，新增态才叫「显示」。 */
+  const masked = !!(opt.pw && opt.mask);
+  const shown = masked ? opt.mask : val;
+  const def = opt.pw ? (masked ? '已保存的密钥 · 不修改则原样沿用' : hint) : hint;
+  const input = `<input data-pf="${name}" value="${pEsc(shown)}"${opt.pid?` data-pid="${pEsc(opt.pid)}"`:''}${masked?` data-mask="1" data-maskval="${pEsc(opt.mask)}"`:''} ${opt.pw&&!masked?'type="password" autocomplete="new-password"':'type="text"'} placeholder="${pEsc(opt.ph||'')}">`;
   return `<div class="prof-f ${opt.full?'full':''}">
     <label>${label}${opt.req?'<i> *</i>':''}</label>
-    <input data-pf="${name}" value="${pEsc(val)}" ${opt.pw?'type="password" autocomplete="off"':''} placeholder="${pEsc(opt.ph||'')}">
-    <span class="hint" data-pe="${name}">${pEsc(opt.hint||'')}</span>
+    ${opt.pw ? `<div class="pw-box">${input}<button type="button" class="pw-eye" data-pw="${name}"${opt.pid?'':' disabled'}>${masked?'显示完整':'显示'}</button></div>` : input}
+    <span class="hint" data-pe="${name}"${opt.pw?` data-def="${pEsc(def)}"`:''}>${pEsc(def)}</span>
   </div>`;
 }
+/* 密钥头尾：长密钥露 6 头 4 尾，短的就少露几位，长度一并写出来，
+   粘错了（比如把整段「邮箱--密码--令牌」贴进来）长度会明显不对。 */
+function pMaskKey(v){
+  const s = String(v || '').trim();
+  if (!s) return '';
+  if (s.length > 12) return s.slice(0, 6) + '***' + s.slice(-4);
+  if (s.length > 6) return s.slice(0, 3) + '***' + s.slice(-2);
+  return s.slice(0, 1) + '***' + s.slice(-1);
+}
+/* 边输边算头尾：否则用户粘完只能看到一串圆点，不知道粘进去的是什么 */
+document.addEventListener('input', function(e){
+  const t = e.target;
+  if (!t || !t.getAttribute || t.getAttribute('data-pf') !== 'api_key') return;
+  const f = t.closest('.prof-f'), h = f && f.querySelector('.hint');
+  if (!h) return;
+  const v = t.value.trim();
+  /* 用户开始改密钥：清掉掩码标记，恢复 password 态，按钮回到「显示」。
+     这一步只挪标记和类型，不动输入值；清空输入框则按「留空沿用」处理。 */
+  if (t.getAttribute('data-mask') === '1'){
+    t.removeAttribute('data-mask');
+    t.type = 'password';
+    const eb = t.parentElement && t.parentElement.querySelector('.pw-eye');
+    if (eb) eb.textContent = '显示';
+  }
+  h.classList.remove('bad');
+  h.textContent = v ? ('将保存 ' + pMaskKey(v) + ' · ' + v.length + ' 位') : (h.dataset.def || '');
+  pEyeSync(t);
+});
+/* 没东西可显示时按钮置灰：编辑态的输入框默认是空的（留空=沿用已保存），
+   以前点「显示」什么都不会发生，看着像坏了（用户 2026-11-28 反馈）。 */
+function pEyeSync(inp){
+  const b = inp && inp.parentElement && inp.parentElement.querySelector('.pw-eye');
+  if (!b) return;
+  b.disabled = !inp.value && !inp.getAttribute('data-pid');
+}
+/* 「显示完整」/「显示」三态：
+   ① 掩码态（编辑档案，框里是 sk-GDa***wtwh）→ 取回已存密钥摊开，按钮变「隐藏」；
+   ② 明文态 → 收回。编辑档案回到掩码（不是圆点），新增态回到圆点；
+   ③ 新增态框里有值 → 直接摊开刚粘的那串。
+   没有任何可显示内容时按钮置灰，不会点了没反应。 */
+document.addEventListener('click', function(e){
+  const b = e.target && e.target.closest ? e.target.closest('.pw-eye') : null;
+  if (!b || b.disabled) return;
+  const box = b.parentElement, inp = box && box.querySelector('input');
+  if (!inp) return;
+  const f = b.closest('.prof-f'), h = f && f.querySelector('.hint');
+  const def = (h && h.dataset.def) || '';
+  const pid = inp.getAttribute('data-pid') || '';
+  const isMask = inp.getAttribute('data-mask') === '1';
+
+  if (inp.type === 'text' && !isMask){
+    /* 收回：编辑档案回掩码，新增态回圆点；都不动真值，只换展示 */
+    if (pid && inp.getAttribute('data-maskval')){
+      inp.value = inp.getAttribute('data-maskval');
+      inp.setAttribute('data-mask', '1');
+      b.textContent = '显示完整';
+      if (h){ h.classList.remove('bad'); h.textContent = def; }
+    } else {
+      /* 新增态的提示行本来就在边输边算头尾，收回时别抹掉 */
+      inp.type = 'password';
+      b.textContent = '显示';
+    }
+    return;
+  }
+  if (!isMask && inp.value){ inp.type = 'text'; b.textContent = '隐藏'; return; }
+  if (!pid) return;
+
+  b.disabled = true; b.textContent = '读取中…';
+  fetch('/api/config/profiles/' + encodeURIComponent(pid) + '/api-key', {cache: 'no-store'})
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+    .then(d => {
+      const k = (d && d.api_key) || '';
+      if (!k){ if (h) h.textContent = '这份档案没有保存密钥，直接粘贴新的'; return; }
+      inp.value = k;
+      inp.removeAttribute('data-mask');
+      inp.type = 'text';
+      if (h){ h.classList.remove('bad');
+              h.textContent = '已载入完整密钥 · ' + k.length + ' 位 · 保存会原样写回'; }
+    })
+    .catch(() => {
+      if (h){ h.classList.add('bad'); h.textContent = '读取已存密钥失败，可直接粘贴新的'; }
+    })
+    .finally(() => {
+      b.textContent = inp.getAttribute('data-mask') === '1' ? '显示完整'
+                    : (inp.type === 'text' ? '隐藏' : '显示');
+      b.disabled = false;
+    });
+});
 function pEmptyForm(){
   return {name:'', base_url:'', api_key:'', model_image:'gpt-image-2', model_text:'auto', pool_dir:'',
     supports_edits:true, edits_style:'auto', image_response_format:'auto'};
@@ -5028,7 +5157,9 @@ function pForm(d, isCreate){
   return `<div class="prof-grid">
     ${pField('名称 / 标识','name',d.name,{req:true,hint:'1–40 字，不可重名'})}
     ${pField('接口地址 Base URL','base_url',d.base_url,{req:true,ph:'http://127.0.0.1:38651/v1',hint:'漏写 /v1 会自动补全'})}
-    ${pField('API Key','api_key','',{req:true,pw:true,hint:isCreate?'新增必填':'留空沿用已保存密钥'})}
+    ${pField('API Key','api_key','',{req:true,pw:true,full:true,ph:'sk-...',
+      mask:isCreate?'':(d.api_key_masked||''), pid:isCreate?'':(d.id||''),
+      hint:isCreate?'新增必填':'留空沿用已保存密钥'})}
     ${pModelField('出图模型','model_image',d.model_image||'gpt-image-2','image','正在读取接口模型…')}
     ${pModelField('文案模型','model_text',d.model_text||'auto','text','auto = 由号池挑号')}
     ${isCreate ? '' : pField('号池数据目录（选填）','pool_dir',d.pool_dir||'',{hint:'需为已存在的目录'})}
@@ -5048,6 +5179,9 @@ function pVal(n){
     return i ? String(i.value).trim() : '';
   }
   const e = box.querySelector(`[data-pf="${n}"]`);
+  /* 输入框里摆的是掩码（sk-GDa***wtwh）时，用户没动过密钥 —— 返回空串，
+     服务端按「留空 = 沿用」处理。否则这串星号会被当成真钥写进配置。 */
+  if (e && n === 'api_key' && e.getAttribute('data-mask') === '1') return '';
   return e ? String(e.value).trim() : '';
 }
 function pErr(n, msg){
@@ -8255,25 +8389,69 @@ setInterval(refreshPool, 10000);
   var cancelEl = document.getElementById('upCancel');
   var notesEl = document.getElementById('upNotes');
   var notesBody = document.getElementById('upNotesBody');
+  var notesT = document.getElementById('upNotesT');
   var curVer = '', latestVer = '';
   var newer = null;       // null=还没查到 / true=有新版本 / false=已是最新
+  var recentRows = [];    // 本机 changelog 的最近几个版本，已是最新时用来填面板
+  var recentExpanded = false;   // 页脚「展开全部」的状态，窗口变化时保持
+
+  function noteRow(n, cur){
+    var head = 'v' + esc(n.version) + (n.date ? ' · ' + esc(n.date) : '');
+    if (cur && n.version === cur) head += '<span class="up-note-cur">当前</span>';
+    var items = (n.items || []).map(function(t){ return '<li>' + esc(t) + '</li>'; }).join('');
+    return '<div class="up-v">' + head + '</div><ul>' + items + '</ul>';
+  }
 
   /* 更新说明来自新版本包里的 server/changelog.json，由后端 /api/upgrade 带回来。
      这里只放「这一版修好了什么」；下包、覆盖、重启、备份路径这些过程信息不进面板。
-     拿不到说明时给一句兜底，不让「本次升级解决什么」下面空着。 */
-  function renderNotes(notes){
+     拿不到说明时给一句兜底，不让「本次升级解决什么」下面空着。
+     cur 传当前版本号时，对应的那条挂一个「当前」小标，让人知道自己站在哪。 */
+  function renderNotes(notes, cur, emptyText){
     if (!notesEl || !notesBody) return;
     var rows = (notes || []).filter(function(n){ return n && n.version; });
     if (!rows.length){
-      notesBody.innerHTML = '<div class="up-note-empty">这一版没有单独写更新说明，点下面按钮就能升级。</div>';
+      notesBody.innerHTML = '<div class="up-note-empty">' + esc(emptyText || '这一版没有单独写更新说明，点下面按钮就能升级。') + '</div>';
       return;
     }
-    notesBody.innerHTML = rows.map(function(n){
-      var head = 'v' + esc(n.version) + (n.date ? ' · ' + esc(n.date) : '');
-      var items = (n.items || []).map(function(t){ return '<li>' + esc(t) + '</li>'; }).join('');
-      return '<div class="up-v">' + head + '</div><ul>' + items + '</ul>';
-    }).join('');
+    notesBody.innerHTML = rows.map(function(n){ return noteRow(n, cur); }).join('');
   }
+
+  /* 已是最新版本时用最近几个版本填满卡片。窗口有高有矮，卡片高度跟着变，
+     所以先按全部画出来，装不下就把最老的几条摘掉再画一次——宁可少列一版，
+     也不要让最后一行被卡片裁掉一半，看着像界面坏了。 */
+  function renderRecent(rows, cur){
+    recentRows = rows || [];
+    if (!notesEl || !notesBody) return;
+    if (!recentRows.length){
+      notesBody.innerHTML = '<div class="up-note-empty">没读到本机的版本记录，不影响使用。</div>';
+      return;
+    }
+    var n = recentRows.length;
+    function paint(){
+      var cut = n < recentRows.length;
+      var foot = cut
+        ? '<button type="button" class="up-more" data-up-more>还有 ' + (recentRows.length - n) + ' 个更早的版本 · 展开查看</button>'
+        : (recentExpanded ? '<button type="button" class="up-more" data-up-more>收起更早的版本</button>' : '');
+      notesBody.innerHTML = recentRows.slice(0, n).map(function(r){ return noteRow(r, cur); }).join('') + foot;
+    }
+    /* 展开后全部列出，卡片内部滚动，不再裁行 */
+    if (recentExpanded){ paint(); return; }
+    paint();
+    /* 分组还没切过来时量不到高度（clientHeight=0），等切过去再量 */
+    if (!notesEl.clientHeight) return;
+    while (n > 2 && notesEl.scrollHeight > notesEl.clientHeight + 1){
+      n -= 1;
+      paint();
+    }
+  }
+  /* 页脚按钮：点一下展开全部版本，再点收起。别说「没列出」然后不给入口。 */
+  document.addEventListener('click', function(e){
+    var b = e.target && e.target.closest ? e.target.closest('[data-up-more]') : null;
+    if (!b) return;
+    recentExpanded = !recentExpanded;
+    renderRecent(recentRows, curVer);
+    if (notesEl) notesEl.scrollTop = 0;
+  });
 
   function setStep(text, kind){
     if (!stepEl) return;
@@ -8336,8 +8514,15 @@ setInterval(refreshPool, 10000);
       note.hidden = true;
       note.textContent = '';
       note.title = '';
-      if (notesEl) notesEl.hidden = true;
-      renderNotes([]);
+      /* 已是最新不代表这块要空着：把本机 changelog 里最近几个版本改了什么列出来，
+         顺手让它撑满面板剩下的高度（.fill），别留一大片空白。 */
+      var recent = (d && d.recent) || [];
+      if (notesT) notesT.textContent = '最近几个版本更新了什么';
+      if (notesEl){
+        notesEl.hidden = !recent.length;
+        notesEl.classList.toggle('fill', !!recent.length);
+      }
+      renderRecent(recent, curVer);
       return;
     }
     setDots(true);
@@ -8345,7 +8530,8 @@ setInterval(refreshPool, 10000);
     note.hidden = false;
     note.textContent = '新版本 v' + d.latest + ' →';
     note.title = '点击打开升级面板（下载完整安装包，只覆盖代码，不动草稿和图片）';
-    if (notesEl) notesEl.hidden = false;
+    if (notesT) notesT.textContent = '本次升级解决什么';
+    if (notesEl){ notesEl.hidden = false; notesEl.classList.remove('fill'); }
     renderNotes(d.notes);
   }
 
@@ -8362,7 +8548,7 @@ setInterval(refreshPool, 10000);
     /* 已是最新就别让人点「立即升级」——点下去只能换来一句 400 红字，很难看 */
     if (newer === false){
       if (goBtn){ goBtn.disabled = true; goBtn.textContent = '已是最新'; }
-      setStep('当前已是最新版本。以后有新版本，会在这里列出修好了什么，左栏设置也会亮小红点。', '');
+      setStep('当前已是最新版本，不用升级。以后有新版本会在上面列出改了什么，左栏设置也会亮小红点。', '');
       return;
     }
     if (goBtn){ goBtn.disabled = false; goBtn.textContent = '立即升级'; }
@@ -8372,6 +8558,14 @@ setInterval(refreshPool, 10000);
   }
   window.prepUpgradePanel = prepPanel;
   window.upCurrent = function(){ return curVer; };
+
+  /* 窗口拉高拉矮都要重新铺一遍：装得下就多列一版，装不下就少列一版 */
+  var fitTimer = null;
+  window.addEventListener('resize', function(){
+    if (newer !== false || !recentRows.length) return;
+    clearTimeout(fitTimer);
+    fitTimer = setTimeout(function(){ renderRecent(recentRows, curVer); }, 160);
+  });
   function openPanel(){
     if (!dlg) return;
     prepPanel();
